@@ -105,6 +105,7 @@ def create_search_parser(subparser: _SubParsersAction) -> _SubParsersAction:
         "--genome",
         type=str,
         metavar="GENOME-DIR",
+        required=True,
         dest="genome_dir",
         help="folder containing genome FASTA files for off-targets search. Each "
         "chromosome must be in a separate FASTA file (e.g., chr1.fa, chr2.fa). "
@@ -133,22 +134,6 @@ def create_search_parser(subparser: _SubParsersAction) -> _SubParsersAction:
         help="optional folder storing VCF files to consider in the off-targets search. "
         "(default: no variant-aware analysis)",
     )
-    optional_group.add_argument(
-        "--verbosity",
-        type=int,
-        metavar="VERBOSITY",
-        dest="verbosity",
-        nargs="?",
-        default=1,  # minimal output
-        help="verbosity level of output messages: 0 = Silent, 1 = Normal, 2 = "
-        "Verbose, 3 = Debug (default: 1)",
-    )
-    optional_group.add_argument(
-        "--debug",
-        action="store_true",
-        default=False,
-        help="enter debug mode and trace the full error stack",
-    )
     return parser_search
 
 
@@ -160,7 +145,7 @@ def main():
             parser.error_noargs()
         args = parser.parse_args(sys.argv[1:])  # parse input args
         if args.command == SEARCH:  # complete-search command
-            complete_search()
+            complete_search(Crisprme2SearchInputArgs(args, parser))
     except KeyboardInterrupt:
         sigint_handler()  # catch SIGINT and exit gracefully
     sys.stdout.write(f"{TOOLNAME} - Elapsed time {(time() - start):.2f}s\n")
