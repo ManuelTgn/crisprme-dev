@@ -1,18 +1,29 @@
 """ """
 
-from typing import Optional, Union
+from .utils import TOOLNAME, warning
+
+from typing import Optional, Dict
 from logging.handlers import RotatingFileHandler
+from colorama import Fore, Style
 
 import logging
+import shutil
+import sys
 import os
 
 LOGLEVELS = [0, 1, 2]
 
 class BaseLogger:
-    def __init__(self, name: str, log_file: str, log_dir: str = "logs", level: int = logging.INFO, max_bytes : int = 10**6, backup_count: int = 5) -> None:
+
+    _logs_cleaned = False  # class variable to track if logs have been cleaned this run
+
+    def __init__(self, name: str, log_file: str, log_dir: str = "logs", level: int = logging.INFO, max_bytes : int = 10**6, backup_count: int = 5, clean_logs: bool = True) -> None:
+        # clean logs folder only once per run
+        if clean_logs and not BaseLogger._logs_cleaned:
+            self._clean_logs_folder(log_dir)
+            BaseLogger._logs_cleaned = True  # logs folder is clean now        
         self.logger = logging.getLogger(name + "_" + log_file)
         self.logger.setLevel(logging.DEBUG)  # Capture all; filter later
-
         if not self.logger.handlers:
             os.makedirs(log_dir, exist_ok=True)
             file_path = os.path.join(log_dir, log_file)
@@ -25,6 +36,25 @@ class BaseLogger:
             log_filter = self._get_filter(level)  
             if log_filter:
                 handler.addFilter(log_filter)
+
+    def _clean_logs_folder(self, log_dir: str) -> None:
+        if os.path.exists(log_dir) and os.path.isdir(log_dir):
+            try:
+                for fname in os.listdir(log_dir):  # remove all files in the logs folders
+                    fpath = os.path.join(log_dir, fname)
+                    try:
+                        if os.path.isfile(fpath) or os.path.islink(fpath):
+                            os.unlink(fpath)  # delete log
+                        elif os.path.isdir(fpath):  # what? better remove it anyway
+                            shutil.rmtree(fpath)
+                    except Exception as e:
+                        warning(f"Failed to delete {fpath}. Reason {e}", 1)
+            except Exception as e:  # throw a warning, but do not halt execution
+                warning(f"Failed to clean logs folder {log_dir}. Reason: {e}", 1)
+
+    @classmethod
+    def reset_cleanup_flag(cls):
+        cls._logs_cleaned = False
 
     def _get_formatter(self) -> logging.Formatter:
         return logging.Formatter(
@@ -64,7 +94,22 @@ class VerboseLogger(BaseLogger):
 class ErrorLogger(BaseLogger):
     def __init__(self, name: str, log_dir: str = "logs"):
         super().__init__(name, log_file="errors.log", log_dir=log_dir, level=logging.ERROR)
+        self._log_dir = log_dir
 
+    def log_exception(self, message: str, code: int, exc_info: bool = True) -> None:
+        _halt_message(self._log_dir)  # print execution halt message in terminal
+        self.logger.error(message, exc_info=exc_info)
+        sys.exit(code)  # halt execution
+
+    def log_error_with_context(self, message: str, code: int, context: Optional[Dict] = None) -> None:
+        if context:
+            context_str = " | ".join([f"{k}={v}" for k, v in context.items()])
+            fullmessage = f"{message} | Context: {context_str}"
+        else:
+            fullmessage = message
+        _halt_message(self._log_dir)  # print execution halt message in terminal
+        self.logger.error(fullmessage)
+        sys.exit(code)  # halt execution
 
 def logger(log_file: logging.Logger, message: str, level: int) -> None:
     assert level in LOGLEVELS  # shouldn't be different
@@ -74,3 +119,11 @@ def logger(log_file: logging.Logger, message: str, level: int) -> None:
         log_file.debug(message)
     else:  # error log
         log_file.error(message)
+
+def _halt_message(log_dir: str) -> None:
+    log_dir = os.path.abspath(log_dir)  # absolute path to logs folder
+    haltmsg = (
+        f"{Fore.RED}{Style.BRIGHT}\nERROR: {TOOLNAME} run failed.\n\n" 
+        f"Check log files in: {log_dir} for more information.{Fore.RESET}\n\n"
+    )
+    sys.stderr.write(haltmsg)

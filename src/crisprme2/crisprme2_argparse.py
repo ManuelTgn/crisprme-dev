@@ -157,13 +157,13 @@ class Crisprme2SearchInputArgs:
             None
         """
         # fasta file
-        if not os.path.exists(self._args.fasta) or not os.path.isdir(self._args.fasta):
+        if not os.path.exists(self._args.genome_dir) or not os.path.isdir(self._args.genome_dir):
             self._parser.error(f"Cannot find input FASTA folder {self._args.fasta}")
-        self._fastas = glob(os.path.join(self._args.fasta, "*.fa")) + glob(
-            os.path.join(self._args.fasta, "*.fasta")
+        self._fastas = glob(os.path.join(self._args.genome_dir, "*.fa")) + glob(
+            os.path.join(self._args.genome_dir, "*.fasta")
         )
         if not self._fastas:
-            self._parser.error(f"No FASTA file found in {self._args.fasta}")
+            self._parser.error(f"No FASTA file found in {self._args.genome_dir}")
         # vcf folder
         if self._args.vcf and (not os.path.isdir(self._args.vcf)):
             self._parser.error(f"Cannot find VCF folder {self._args.vcf}")
