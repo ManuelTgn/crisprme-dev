@@ -1,0 +1,127 @@
+""" """
+
+from .logger import CrisprmeLoggers
+
+from typing import Union
+from pysam.utils import SamtoolsError
+from time import time
+
+import pysam
+import os
+
+FAI = "fai"  # fasta index extension format
+
+
+class Sequence:
+
+    def __init__(self, sequence: str, loggers: CrisprmeLoggers) -> None:
+        self._loggers = loggers  # store loggers
+        self._sequence = list(self._sequence)  # sequence as list
+
+    def __eq__(self, value: object) -> bool:
+        if not isinstance(value, Sequence):
+            return NotImplemented
+        return "".join(self._sequence) == value.sequence
+    
+    def __len__(self) -> int:
+        return len(self._sequence)
+    
+    def __getitem__(self, idx: int) -> str:  # type: ignore
+        if not hasattr(self, "_sequence_"):
+            self._loggers.errorlog.log_raise_exception(f"Missing _sequence_ attribute on class {self.__class__.__name__}", os.EX_DATAERR, AttributeError)
+        try:
+            return self._sequence[idx]
+        except IndexError as e:
+            self._loggers.errorlog.log_exception(f"Index {idx} out of bounds", os.EX_DATAERR)
+
+    def __iter__(self) -> "SequenceIterator":
+        return SequenceIterator(self, self._loggers)
+
+    @property
+    def sequence(self) -> str:
+        return "".join(self._sequence)
+    
+    
+class SequenceIterator:
+
+    def __init__(self, sequence: Sequence, loggers: CrisprmeLoggers) -> None:
+        self._loggers = loggers
+        if not hasattr(sequence, "_sequence_"):
+            self._loggers.errorlog.log_raise_exception(f"Missing _sequence_ attribute on class {self.__class__.__name__}", os.EX_DATAERR, AttributeError)
+        self._sequence = sequence  # sequence object to iterate
+        self._index = 0  # iterator index
+    
+    def __next__(self) -> str:
+        if self._index < len(self._sequence):
+            result = self._sequence[self._index]
+            self._index += 1  # go to next position in sequence
+            return result
+        raise StopIteration  # stop iteration over sequence object
+
+
+class Fasta:
+
+    def __init__(self, fname: str, loggers: CrisprmeLoggers) -> None:
+        self._loggers = loggers  # store loggers
+        self._fname = fname  # store input file
+        self._faidx = self._index_fasta()  # initialize fasta index
+        # initialize contig name and fasta length
+        self._contig = _retrieve_contig(self._fname, self._faidx, self._loggers)
+        self._length = _compute_contig_length(self._fname, self._faidx, self._loggers)
+
+
+    def _index_fasta(self) -> str:
+        # look for index file for the current fasta file, if not found compute it
+        if _find_fai(self._fname):  # index found, return it
+            return f"{self._fname}.{FAI}"
+        self._loggers.verboselog.debug(f"FASTA index not found for {self._fname}. Generating FASTA index")
+        start = time()  # measure indexing  time
+        try:
+            pysam.faidx(self._fname)  # index fasta using samtools
+        except (SamtoolsError, Exception) as e:
+            self._loggers.errorlog.log_exception(f"An error occurred while indexing {self._fname}", os.EX_SOFTWARE)
+        assert _find_fai(self._fname)  # index must be available now
+        self._loggers.verboselog.debug(f"FASTA index for {self._fname} computed in {time() - start: .2f}s")
+        return f"{self._fname}.{FAI}"
+    
+    def read(self) -> None:
+        try:
+            with open(self._fname, mode="r") as infile:
+                infile.readline()  # skip fasta header
+                # read fasta content 
+                self._sequence = Sequence("".join([l.strip() for l in infile.readlines()]), self._loggers)
+        except (IOError, Exception) as e:
+            self._loggers.errorlog.log_exception(f"An error occurred while reading {self._fname}", os.EX_IOERR)
+
+
+def _find_fai(fastafile: str) -> bool:
+    """Check if a FASTA index file exists for the given FASTA file.
+
+    Checks if a FASTA index file (.fai) exists for the given FASTA file in the same
+    directory.
+
+    Args:
+        fastafile: The path to the FASTA file.
+
+    Returns:
+        True if the index file exists and is not empty, False otherwise.
+    """
+    # search index for the input fasta file, assumes that the index is located
+    # in the same folder as the indexed fasta
+    fastaindex = f"{os.path.abspath(fastafile)}.{FAI}"  # avoid unexpected crashes
+    if os.path.exists(fastaindex):
+        return os.path.isfile(fastaindex) and os.stat(fastaindex).st_size > 0
+    return False
+
+
+def _retrieve_contig(fasta: str, fastaidx: str, loggers: CrisprmeLoggers) -> str:
+    f = pysam.FastaFile(fasta, filepath_index=fastaidx)
+    if len(f.references) != 1:  # fastas are expected to be chromosome-wise
+        loggers.errorlog.log_raise_exception(f"Unexpected number of contigs ({len(f.references)}) found in {fasta}", os.EX_DATAERR, ValueError)
+    return f.references[0]  # contig name
+
+def _compute_contig_length(fasta: str, fastaidx: str, loggers: CrisprmeLoggers) -> int:
+    f = pysam.FastaFile(fasta, filepath_index=fastaidx)
+    if len(f.lengths) != 1:  # fastas are expected to be chromosome-wise
+        loggers.errorlog.log_raise_exception(f"Unexpected number of contigs ({len(f.references)}) found in {fasta}", os.EX_DATAERR, ValueError)
+    return f.lengths[0]  # contig name 

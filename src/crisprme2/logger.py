@@ -78,6 +78,9 @@ class BasicLogger(BaseLogger):
             def filter(self, record):
                 return record.levelno == logging.INFO
         return InfoOnlyFilter()
+    
+    def info(self, message: str) -> None:
+        self.logger.info(message)  # write basic info level to log
 
 
 class VerboseLogger(BaseLogger):
@@ -89,6 +92,12 @@ class VerboseLogger(BaseLogger):
             def filter(self, record):
                 return record.levelno in (logging.DEBUG, logging.INFO)
         return DebugAndInfoFilter()
+    
+    def info(self, message: str) -> None:
+        self.logger.info(message)  # write basic info level to log
+
+    def debug(self, message: str) -> None:
+        self.logger.debug(message)  # write debug level to log
 
 
 class ErrorLogger(BaseLogger):
@@ -101,6 +110,12 @@ class ErrorLogger(BaseLogger):
         self.logger.error(message, exc_info=exc_info)
         sys.exit(code)  # halt execution
 
+    def log_raise_exception(self, message: str, code: int, exception_type: type = Exception, exc_info: bool = True) -> None:
+        try:  # force exception raise to capture it in log file
+            raise exception_type(message)
+        except exception_type: # type: ignore
+            self.log_exception(message, code, exc_info=exc_info)
+
     def log_error_with_context(self, message: str, code: int, context: Optional[Dict] = None) -> None:
         if context:
             context_str = " | ".join([f"{k}={v}" for k, v in context.items()])
@@ -111,14 +126,25 @@ class ErrorLogger(BaseLogger):
         self.logger.error(fullmessage)
         sys.exit(code)  # halt execution
 
-def logger(log_file: logging.Logger, message: str, level: int) -> None:
-    assert level in LOGLEVELS  # shouldn't be different
-    if level == LOGLEVELS[0]:  # basic log
-        log_file.info(message)
-    elif level == LOGLEVELS[1]:  # verbose log
-        log_file.debug(message)
-    else:  # error log
-        log_file.error(message)
+
+class CrisprmeLoggers:
+    def __init__(self) -> None:
+        self._basiclog = BasicLogger(TOOLNAME)  # 1) basic run info
+        self._verboselog = VerboseLogger(TOOLNAME)  # 2) verbose debug + info
+        self._errorlog = ErrorLogger(TOOLNAME)  # 3) error + critical
+
+    @property
+    def basiclog(self) -> BasicLogger:
+        return self._basiclog
+    
+    @property
+    def verboselog(self) -> VerboseLogger:
+        return self._verboselog
+    
+    @property
+    def errorlog(self) -> ErrorLogger:
+        return self._errorlog
+    
 
 def _halt_message(log_dir: str) -> None:
     log_dir = os.path.abspath(log_dir)  # absolute path to logs folder
