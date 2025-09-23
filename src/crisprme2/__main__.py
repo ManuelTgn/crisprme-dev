@@ -13,7 +13,7 @@ and population genomes
 
 
 Usage:
-    crisprme2 complete-search -f <fasta-dir> -v <vcf-dir>
+    crisprme2 complete-search --genome <genome-dir> --vcf <vcf-dir> --guide <guide>
 
 Run 'crisprme2 -h/--help' to display the complete help
 """
@@ -112,6 +112,15 @@ def create_search_parser(subparser: _SubParsersAction) -> _SubParsersAction:
         "All files in the folder will be used as the reference genome",
     )
     required_group.add_argument(
+        "--guide",
+        type=str,
+        metavar="GUIDE",
+        required=True,
+        dest="guide",
+        help="guide RNA sequence (spacer only, without PAM) used to search for "
+        "potential off-targets in both the reference and alternative genomes",
+    )
+    required_group.add_argument(
         "-o",
         "--outdir",
         type=str,
@@ -124,7 +133,6 @@ def create_search_parser(subparser: _SubParsersAction) -> _SubParsersAction:
     )
     optional_group = parser_search.add_argument_group("Optional arguments")
     optional_group.add_argument(
-        "-v",
         "--vcf",
         type=str,
         metavar="VCF-DIR",

@@ -17,7 +17,7 @@ from argparse import (
     _MutuallyExclusiveGroup,
     Namespace,
 )
-from typing import Iterable, Optional, TypeVar, Tuple, Dict, NoReturn
+from typing import Iterable, Optional, TypeVar, Tuple, Dict, NoReturn, Union
 from colorama import Fore
 from glob import glob
 
@@ -178,4 +178,8 @@ class Crisprme2SearchInputArgs:
             if not os.path.exists(parent_folder) or not os.path.isdir(parent_folder):
                 self._parser.error(f"Cannot find output folder {self._args.outdir}")
             os.makedirs(self._args.outdir)
+
+    @property
+    def guide(self) -> str:
+        return self._args.guide
     

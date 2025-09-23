@@ -2,11 +2,12 @@
 
 from .logger import CrisprmeLoggers
 
-from typing import Union
+from typing import Union, List
 from pysam.utils import SamtoolsError
 from time import time
 
 import pysam
+import sys
 import os
 
 FAI = "fai"  # fasta index extension format
@@ -16,7 +17,13 @@ class Sequence:
 
     def __init__(self, sequence: str, loggers: CrisprmeLoggers) -> None:
         self._loggers = loggers  # store loggers
-        self._sequence = list(self._sequence)  # sequence as list
+        self._sequence = list(sequence)  # sequence as list
+
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__} object; sequence={self.sequence}>"
+    
+    def __str__(self) -> str:
+        return "".join(self._sequence)
 
     def __eq__(self, value: object) -> bool:
         if not isinstance(value, Sequence):
@@ -26,13 +33,14 @@ class Sequence:
     def __len__(self) -> int:
         return len(self._sequence)
     
-    def __getitem__(self, idx: int) -> str:  # type: ignore
+    def __getitem__(self, idx: Union[int, slice]) -> Union[str, List[str]]:  # type: ignore
         if not hasattr(self, "_sequence_"):
             self._loggers.errorlog.log_raise_exception(f"Missing _sequence_ attribute on class {self.__class__.__name__}", os.EX_DATAERR, AttributeError)
         try:
             return self._sequence[idx]
-        except IndexError as e:
+        except IndexError:
             self._loggers.errorlog.log_exception(f"Index {idx} out of bounds", os.EX_DATAERR)
+            sys.exit(os.EX_DATAERR)
 
     def __iter__(self) -> "SequenceIterator":
         return SequenceIterator(self, self._loggers)
@@ -54,6 +62,7 @@ class SequenceIterator:
     def __next__(self) -> str:
         if self._index < len(self._sequence):
             result = self._sequence[self._index]
+            assert isinstance(result, str)  # slices not allowed here
             self._index += 1  # go to next position in sequence
             return result
         raise StopIteration  # stop iteration over sequence object

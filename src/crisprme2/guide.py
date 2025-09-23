@@ -1,0 +1,135 @@
+""" """
+
+from .crisprme2_error import Crisprme2GuideError
+from .sequence import Sequence
+from .logger import CrisprmeLoggers
+from .utils import reverse_complement
+
+from typing import Union, List
+from time import time
+
+import sys
+import os
+
+class Guide:
+
+    def __init__(self, sequence: Sequence, right: bool, loggers: CrisprmeLoggers) -> None:
+        self._loggers = loggers  # store loggers
+        self._sequence = sequence  # guide sequence
+        self._reverse_complement()  # compute guide reverse complement 
+        self._right = right  # whether guide is upstream or downstream wrt pam
+
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__} object; sequence={self._sequence}>"
+    
+    def __len__(self) -> int:
+        return len(self._sequence)
+
+    def __eq__(self, value: object) -> bool:
+        if not isinstance(value, Guide):
+            return NotImplemented
+        return self._sequence == value.sequence
+    
+    def __getitem__(self, idx: Union[int, slice]) -> Union[str, List[str]]:
+        if not hasattr(self, "_sequence"):
+            self._loggers.errorlog.log_raise_exception(f"Missing _sequence attribute on class {self.__class__.__name__}", os.EX_DATAERR, AttributeError)
+        try:
+            return self._sequence[idx]
+        except IndexError:
+            self._loggers.errorlog.log_exception(f"Index {idx} out of bounds", os.EX_DATAERR)
+            sys.exit(os.EX_DATAERR)
+
+    def _reverse_complement(self) -> None:
+        assert hasattr(self, "_sequence")  # required 
+        try:  # reverse complement is used to find off-targets on 3'-5'
+            self._sequence_rc = Sequence(reverse_complement(self._sequence.sequence), self._loggers)
+        except (KeyError, Exception):
+            self._loggers.errorlog.log_exception(f"Failed reverse complement on guide {self._sequence}", os.EX_DATAERR) 
+
+    @property
+    def sequence(self) -> Sequence:
+        return self._sequence
+    
+    @property
+    def rc(self) -> Sequence:
+        return self._sequence_rc
+    
+
+class GuidesList:
+
+    def __init__(self, guides: List[Guide], loggers: CrisprmeLoggers) -> None:
+        self._loggers = loggers  # store loggers
+        self._guides = guides  # guides list
+
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__} object; num guides={len(self)}>"
+
+    def __str__(self) -> str:
+        return "\n".join(str(guide) for guide in self)
+
+    def __len__(self) -> int:
+        return len(self._guides)
+
+    def __iter__(self) -> "GuidesListIterator":
+        return GuidesListIterator(self)
+
+    def __getitem__(self, idx: Union[int, slice]) -> Union[Guide, List[Guide]]:
+        if not hasattr(self, "_guides"):  
+            self._loggers.errorlog.log_raise_exception(f"Missing _guides attribute on {self.__class__.__name__}", os.EX_DATAERR, AttributeError)
+        try:
+            return self._guides[idx]
+        except IndexError:
+            self._loggers.errorlog.log_exception(f"Index {idx} out of range", os.EX_DATAERR)
+            sys.exit(os.EX_DATAERR)
+
+    def extend(self, value: "GuidesList") -> None:
+        if not isinstance(value, GuidesList):
+            self._loggers.errorlog.log_raise_exception(f"Cannot extend {self.__class__.__name__} with objects of type {type(value).__name__}", os.EX_DATAERR, TypeError)
+        self._guides.extend(value.guides)  # extend guides list
+
+    def append(self, guide: Guide) -> None:
+        if not isinstance(guide, Guide):
+            self._loggers.errorlog.log_raise_exception(f"Cannot append to {self.__class__.__name__} objects of type {type(guides).__name__}", os.EX_DATAERR, TypeError)
+        self._guides.append(guide)
+
+    @property
+    def guides(self) -> List[Guide]:
+        return self._guides
+
+
+class GuidesListIterator:
+
+    def __init__(self, guides: GuidesList) -> None:
+        self._guides = guides  # guides list object to iterate over
+        self._index = 0  # iterator index used over the list
+
+    def __next__(self) -> Guide:
+        if self._index < len(self._guides):
+            result = self._guides[self._index]
+            assert isinstance(result, Guide)
+            self._index += 1  # go to next position in list
+            return result
+        raise StopIteration  # stop iteration over regions list
+    
+
+def _read_guide(guide: str, loggers: CrisprmeLoggers) -> GuidesList:
+    # single grna as input (--guide)
+    loggers.verboselog.debug(f"Reading input guide: {guide}")
+    start = time()
+    grna = Sequence(guide, loggers)
+    loggers.verboselog.debug(f"Input guide {guide} read in {time() - start:.2f}s")
+    return GuidesList([Guide(grna, False, loggers)], loggers)
+    
+
+def read_guides(guide: str, fasta_guides: str, bed_guides: str, loggers: CrisprmeLoggers) -> GuidesList:
+     # only one option is allowed
+    assert sum(bool(e) for e in [guide, fasta_guides, bed_guides]) == 1 
+    if guide:
+        return _read_guide(guide, loggers)  # --guide option (single guide)
+    elif fasta_guides:
+        pass  # --sequence option (guides fasta)
+    elif bed_guides:
+        pass  # --coordinates option (guides extracted via bed)
+    loggers.errorlog.log_raise_exception("Invalid input: no guide input option selected. None of the following selected: --guide, --sequence, or --coordinates", os.EX_DATAERR, Crisprme2GuideError)
+    sys.exit(os.EX_DATAERR)
+
