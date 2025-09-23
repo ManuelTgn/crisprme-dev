@@ -15,7 +15,7 @@ setup(
     version="0.1.0",
     author="Manuel Tognon",
     author_email="manu.tognon@gmail.com",
-    description="CRISPRme2: High-performance and scalable tool for variant- and" 
+    description="CRISPRme2: High-performance and scalable tool for variant- and"
     "haplotype-aware genome-wide off-target assessment in CRISPR-Cas systems",
     long_description=long_description,
     long_description_content_type="text/markdown",

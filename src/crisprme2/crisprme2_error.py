@@ -5,6 +5,7 @@ encountered in the CRISPRme2 tool, enabling precise and descriptive error
 reporting throughout the codebase.
 """
 
+
 class Crisprme2Error(Exception):
     def __init__(self, value: str):
         # initialize exception object when raised
@@ -12,7 +13,8 @@ class Crisprme2Error(Exception):
 
     def __str__(self):
         return repr(self._value)  # string representation for the exception
-    
+
+
 class Crisprme2FastaError(Crisprme2Error):
     def __init__(self, value: str):
         # initialize exception object when raised
@@ -21,6 +23,7 @@ class Crisprme2FastaError(Crisprme2Error):
     def __str__(self):
         return super().__str__()  # string representation for the exception
 
+
 class Crisprme2GuideError(Crisprme2Error):
     def __init__(self, value: str):
         # initialize exception object when raised
@@ -28,7 +31,8 @@ class Crisprme2GuideError(Crisprme2Error):
 
     def __str__(self):
         return super().__str__()  # string representation for the exception
-    
+
+
 class Crisprme2PamError(Crisprme2Error):
     def __init__(self, value: str):
         # initialize exception object when raised

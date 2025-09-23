@@ -1,13 +1,12 @@
 """Provides the PAM class for representing and encoding Protospacer Adjacent
 Motif sequences.
 
-This module defines the PAM class, which validates, and stores PAM sequences and 
+This module defines the PAM class, which validates, and stores PAM sequences and
 their reverse complements for efficient sequence matching.
 """
 
-from .crisprme2_error import Crisprme2PamError
 from .logger import CrisprmeLoggers
-from .utils import IUPAC, reverse_complement
+from .utils import reverse_complement
 
 from time import time
 
@@ -48,7 +47,9 @@ class PAM:
         self._loggers = loggers  # store loggers
         self._sequence = pamseq.upper()  # store pam sequence
         self._reverse_complement()  # store pam reverse complement
-        self._assess_cas_system(right)  # assess cas system (choose appropriate analysis)
+        self._assess_cas_system(
+            right
+        )  # assess cas system (choose appropriate analysis)
 
     def __len__(self) -> int:
         """Returns the length of the PAM sequence.
@@ -96,14 +97,16 @@ class PAM:
         Returns:
             str: The PAM sequence.
         """
-        return f"{self._sequence}"         
+        return f"{self._sequence}"
 
     def _reverse_complement(self) -> None:
-        assert hasattr(self, "_sequence")  # required 
+        assert hasattr(self, "_sequence")  # required
         try:  # reverse complement is used to find off-targets on 3'-5'
             self._sequence_rc = reverse_complement(self._sequence)
         except (KeyError, Exception):
-            self._loggers.errorlog.log_exception(f"Failed reverse complement on PAM {self._sequence}", os.EX_DATAERR) 
+            self._loggers.errorlog.log_exception(
+                f"Failed reverse complement on PAM {self._sequence}", os.EX_DATAERR
+            )
 
     def _assess_cas_system(self, right: bool) -> None:
         self._cas_system = -1  # unknown cas system pam
@@ -118,25 +121,24 @@ class PAM:
         elif self._sequence in XCAS9PAM and not right:  # xcas9 pam
             self._cas_system = XCAS9
 
-
     @property
     def pam(self) -> str:
         return self._sequence
-    
+
     @property
     def rc(self) -> str:
         return self._sequence_rc
-    
+
     @property
     def cas_system(self) -> int:
         return self._cas_system
-    
+
 
 def read_pam(pamseq: str, loggers: CrisprmeLoggers) -> PAM:
     loggers.verboselog.debug(f"Creating PAM object for PAM {pamseq}")
     start = time()
     pam = PAM(pamseq, False, loggers)  # initialize pam object
-    loggers.verboselog.debug(f"PAM object for PAM {pam} created in {time() - start:.2f}s")
+    loggers.verboselog.debug(
+        f"PAM object for PAM {pam} created in {time() - start:.2f}s"
+    )
     return pam
-
-

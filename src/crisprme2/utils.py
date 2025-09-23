@@ -98,6 +98,7 @@ def print_verbosity(message: str, verbosity: int, verbosity_threshold: int) -> N
         sys.stdout.write(f"{message}\n")
     return
 
+
 def warning(message: str, verbosity: int) -> None:
     """Display a warning message if the verbosity level is sufficient.
 
@@ -111,6 +112,7 @@ def warning(message: str, verbosity: int) -> None:
     if verbosity >= VERBOSITYLVL[1]:
         sys.stderr.write(f"{Fore.YELLOW}WARNING: {message}.{Fore.RESET}\n")
     return
+
 
 def reverse_complement(sequence: str) -> str:
     return "".join([RC[nt] for nt in sequence[::-1]])

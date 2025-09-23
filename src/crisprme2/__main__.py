@@ -3,12 +3,12 @@ CRISPRme2 {version}
 
 Copyright (C) 2025 Manuel Tognon <manu.tognon@gmail.com> <manuel.tognon@univr.it> <mtognon@mgh.harvard.edu>
 
-CRISPRme2: High-performance and scalable tool for variant- and haplotype-aware genome-wide off-target 
+CRISPRme2: High-performance and scalable tool for variant- and haplotype-aware genome-wide off-target
 assessment in CRISPR-Cas systems
 
-CRISPRme2 is a high-performance and scalable tool for genome-wide off-target assessment in CRISPR-Cas 
-systems. It supports variant-aware and haplotype-aware predictions, integrating SNVs, indels, and 
-population-scale haplotypes with orthogonal genomic annotations to prioritize off-targets across personal 
+CRISPRme2 is a high-performance and scalable tool for genome-wide off-target assessment in CRISPR-Cas
+systems. It supports variant-aware and haplotype-aware predictions, integrating SNVs, indels, and
+population-scale haplotypes with orthogonal genomic annotations to prioritize off-targets across personal
 and population genomes
 
 
@@ -92,7 +92,7 @@ def create_search_parser(subparser: _SubParsersAction) -> _SubParsersAction:
         "data through off-targets identification, scoring, and annotation of results",
         help="perform a comprehensive off-targets search across the reference genome "
         "and optionally variant-aware genomes. Includes CFD, CRISTA (for Cas9 "
-        "systems), CRISPR-bulge, and Elevation score (for compatible Cas systems) " \
+        "systems), CRISPR-bulge, and Elevation score (for compatible Cas systems) "
         "to evaluate genetic diversity impact on off-targets, and automated "
         "targets annotation",
         add_help=False,

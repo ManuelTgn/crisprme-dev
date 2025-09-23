@@ -157,7 +157,9 @@ class Crisprme2SearchInputArgs:
             None
         """
         # fasta file
-        if not os.path.exists(self._args.genome_dir) or not os.path.isdir(self._args.genome_dir):
+        if not os.path.exists(self._args.genome_dir) or not os.path.isdir(
+            self._args.genome_dir
+        ):
             self._parser.error(f"Cannot find input FASTA folder {self._args.fasta}")
         self._fastas = glob(os.path.join(self._args.genome_dir, "*.fa")) + glob(
             os.path.join(self._args.genome_dir, "*.fasta")
@@ -171,10 +173,14 @@ class Crisprme2SearchInputArgs:
         if self._args.vcf and not self._vcfs:
             self._parser.error(f"No VCF file found in {self._args.vcf}")
         # guide
-        if self._args.guide and any(nt.upper() not in DNA[:-1] for nt in self._args.guide):
+        if self._args.guide and any(
+            nt.upper() not in DNA[:-1] for nt in self._args.guide
+        ):
             self._parser.error(f"Invalid guide sequence: {self._args.guide}")
         if self._args.fasta_guide and (not os.path.isfile(self._args.fasta_guide)):
-            self._parser.error(f"Cannot find input guide FASTA {self._args.fasta_guide}")
+            self._parser.error(
+                f"Cannot find input guide FASTA {self._args.fasta_guide}"
+            )
         if self._args.bed_guide and (not os.path.isfile(self._args.bed_guide)):
             self._parser.error(f"Cannot find input guide BED {self._args.bed_guide}")
         self._guide = self._args.guide if self._args.guide else None
@@ -195,20 +201,19 @@ class Crisprme2SearchInputArgs:
     @property
     def guide(self) -> Union[None, str]:
         return self._guide
-    
+
     @property
     def fasta_guide(self) -> Union[None, str]:
         return self._fasta_guide
-    
+
     @property
     def bed_guide(self) -> Union[None, str]:
         return self._bed_guide
-    
+
     @property
     def pam(self) -> str:
         return self._args.pam
-    
+
     @property
     def right(self) -> bool:
         return self._args.right
-    
