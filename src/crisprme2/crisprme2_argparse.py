@@ -6,7 +6,7 @@ CRISPRitz configuration workflows. It ensures input consistency, provides helpfu
 error messages, and exposes validated arguments as convenient properties.
 """
 
-from .utils import COMMAND
+from .utils import COMMAND, DNA, IUPAC
 from .crisprme2_version import __version__
 
 from argparse import (
@@ -170,6 +170,19 @@ class Crisprme2SearchInputArgs:
         self._vcfs = glob(os.path.join(self._args.vcf, "*.vcf.gz"))
         if self._args.vcf and not self._vcfs:
             self._parser.error(f"No VCF file found in {self._args.vcf}")
+        # guide
+        if self._args.guide and any(nt.upper() not in DNA[:-1] for nt in self._args.guide):
+            self._parser.error(f"Invalid guide sequence: {self._args.guide}")
+        if self._args.fasta_guide and (not os.path.isfile(self._args.fasta_guide)):
+            self._parser.error(f"Cannot find input guide FASTA {self._args.fasta_guide}")
+        if self._args.bed_guide and (not os.path.isfile(self._args.bed_guide)):
+            self._parser.error(f"Cannot find input guide BED {self._args.bed_guide}")
+        self._guide = self._args.guide if self._args.guide else None
+        self._fasta_guide = self._args.fasta_guide if self._args.fasta_guide else None
+        self._bed_guide = self._args.bed_guide if self._args.bed_guide else None
+        # pam
+        if any(nt.upper() not in IUPAC for nt in self._args.pam):
+            self._parser.error(f"Invalid PAM sequence {self._args.pam}")
         # output folder
         parent_folder = os.path.dirname(self._args.outdir)
         if not os.path.exists(self._args.outdir) or not os.path.isdir(
@@ -180,6 +193,22 @@ class Crisprme2SearchInputArgs:
             os.makedirs(self._args.outdir)
 
     @property
-    def guide(self) -> str:
-        return self._args.guide
+    def guide(self) -> Union[None, str]:
+        return self._guide
+    
+    @property
+    def fasta_guide(self) -> Union[None, str]:
+        return self._fasta_guide
+    
+    @property
+    def bed_guide(self) -> Union[None, str]:
+        return self._bed_guide
+    
+    @property
+    def pam(self) -> str:
+        return self._args.pam
+    
+    @property
+    def right(self) -> bool:
+        return self._args.right
     

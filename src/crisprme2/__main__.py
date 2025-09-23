@@ -66,7 +66,7 @@ def create_parser_crisprme2() -> Crisprme2ArgumentParser:
         description=None,
     )
     # crisprme2 complete-search command
-    parser_search = create_search_parser(subparsers)
+    create_search_parser(subparsers)
     return parser
 
 
@@ -86,7 +86,8 @@ def create_search_parser(subparser: _SubParsersAction) -> _SubParsersAction:
     parser_search = subparser.add_parser(
         SEARCH,
         usage="CRISPRme2 complete-search {version}\n\nUsage:\n"
-        "\ncrisprme2 complete-search -f <fasta-dir> -v <vcf-dir> -o <output-dir>\n\n",
+        "\ncrisprme2 complete-search --genome <genome-dir> --vcf <vcf-dir> "
+        "--guide <guide> --pam <pam> --outdir <output-dir>\n\n",
         description="Automated end-to-end search pipeline that processes raw input "
         "data through off-targets identification, scoring, and annotation of results",
         help="perform a comprehensive off-targets search across the reference genome "
@@ -112,13 +113,38 @@ def create_search_parser(subparser: _SubParsersAction) -> _SubParsersAction:
         "All files in the folder will be used as the reference genome",
     )
     required_group.add_argument(
+        "--pam",
+        type=str,
+        metavar="PAM",
+        required=True,
+        dest="pam",
+        help="PAM sequence (e.g., NGG, NRG, TTTV, etc.)",
+    )
+    guide_group = parser_search.add_mutually_exclusive_group(required=True)
+    guide_group.add_argument(
         "--guide",
         type=str,
-        metavar="GUIDE",
-        required=True,
         dest="guide",
+        metavar="GUIDE",
         help="guide RNA sequence (spacer only, without PAM) used to search for "
-        "potential off-targets in both the reference and alternative genomes",
+        "potential off-targets in both the reference and alternative genomes. "
+        "Cannot be used with --sequence or --coordinates",
+    )
+    guide_group.add_argument(
+        "--sequence",
+        type=str,
+        dest="fasta_guide",
+        metavar="FASTA-FILE",
+        help="FASTA file containing guide sequences. Cannot be used with --guide "
+        "or --coordinates",
+    )
+    guide_group.add_argument(
+        "--coordinates",
+        type=str,
+        dest="bed_guide",
+        metavar="BED-FILE",
+        help="BED file with genomic coordinates for guide regions. Cannot be "
+        "used with --guide or --sequence",
     )
     required_group.add_argument(
         "-o",
@@ -141,6 +167,14 @@ def create_search_parser(subparser: _SubParsersAction) -> _SubParsersAction:
         default="",
         help="optional folder storing VCF files to consider in the off-targets search. "
         "(default: no variant-aware analysis)",
+    )
+    optional_group.add_argument(
+        "--right",
+        action="store_true",
+        dest="right",
+        default=False,
+        help="if set, guides occur downstream (right side) of the PAM "
+        "(default: guides occur upstream (left side))",
     )
     return parser_search
 

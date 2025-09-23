@@ -1,11 +1,12 @@
 """ """
 
 from .crisprme2_error import Crisprme2GuideError
-from .sequence import Sequence
+from .sequence import Sequence, GuideFasta
 from .logger import CrisprmeLoggers
 from .utils import reverse_complement
+from .pam import PAM
 
-from typing import Union, List
+from typing import Union, List, Optional
 from time import time
 
 import sys
@@ -13,11 +14,12 @@ import os
 
 class Guide:
 
-    def __init__(self, sequence: Sequence, right: bool, loggers: CrisprmeLoggers) -> None:
+    def __init__(self, sequence: Sequence, pam: PAM, right: bool, loggers: CrisprmeLoggers) -> None:
         self._loggers = loggers  # store loggers
         self._sequence = sequence  # guide sequence
         self._reverse_complement()  # compute guide reverse complement 
         self._right = right  # whether guide is upstream or downstream wrt pam
+        self._append_pam(pam)  # append encoded pam to guide sequence
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__} object; sequence={self._sequence}>"
@@ -46,6 +48,10 @@ class Guide:
         except (KeyError, Exception):
             self._loggers.errorlog.log_exception(f"Failed reverse complement on guide {self._sequence}", os.EX_DATAERR) 
 
+    def _append_pam(self, pam: PAM) -> None:
+        pam_ = "N" * len(pam)  # pam encoded with Ns (NGG -> NNN)
+        self._guidepam = f"{pam_}{self._sequence.sequence}" if self._right else f"{self._sequence.sequence}{pam_}"
+
     @property
     def sequence(self) -> Sequence:
         return self._sequence
@@ -53,6 +59,10 @@ class Guide:
     @property
     def rc(self) -> Sequence:
         return self._sequence_rc
+    
+    @property
+    def guidepam(self) -> str:
+        return self._guidepam
     
 
 class GuidesList:
@@ -65,7 +75,7 @@ class GuidesList:
         return f"<{self.__class__.__name__} object; num guides={len(self)}>"
 
     def __str__(self) -> str:
-        return "\n".join(str(guide) for guide in self)
+        return "\n".join(guide.guidepam for guide in self)
 
     def __len__(self) -> int:
         return len(self._guides)
@@ -112,22 +122,31 @@ class GuidesListIterator:
         raise StopIteration  # stop iteration over regions list
     
 
-def _read_guide(guide: str, loggers: CrisprmeLoggers) -> GuidesList:
+def _read_guide(guide: str, pam: PAM, right: bool, loggers: CrisprmeLoggers) -> GuidesList:
     # single grna as input (--guide)
     loggers.verboselog.debug(f"Reading input guide: {guide}")
     start = time()
     grna = Sequence(guide, loggers)
     loggers.verboselog.debug(f"Input guide {guide} read in {time() - start:.2f}s")
-    return GuidesList([Guide(grna, False, loggers)], loggers)
+    return GuidesList([Guide(grna, pam, right, loggers)], loggers)
+
+def _read_guides_fasta(fasta_guides: str, pam: PAM, right: bool, loggers: CrisprmeLoggers) -> GuidesList:
+    # multiple grnas as input in fasta (--sequence)
+    loggers.verboselog.debug(f"Reading input guide FASTA: {fasta_guides}")
+    start = time()
+    gf = GuideFasta(fasta_guides, loggers)  # parse fasta file
+    guides = [Guide(guide, pam, right, loggers) for guide in gf.guides]
+    loggers.verboselog.debug(f"Read {len(guides)} guides in {fasta_guides} in {time() - start:.2f}s")
+    return GuidesList(guides, loggers)
     
 
-def read_guides(guide: str, fasta_guides: str, bed_guides: str, loggers: CrisprmeLoggers) -> GuidesList:
+def read_guides(guide: Optional[str], fasta_guides: Optional[str], bed_guides: Optional[str], pam: PAM, right: bool, loggers: CrisprmeLoggers) -> GuidesList:
      # only one option is allowed
     assert sum(bool(e) for e in [guide, fasta_guides, bed_guides]) == 1 
     if guide:
-        return _read_guide(guide, loggers)  # --guide option (single guide)
+        return _read_guide(guide, pam, right, loggers)  # --guide option (single guide)
     elif fasta_guides:
-        pass  # --sequence option (guides fasta)
+        return _read_guides_fasta(fasta_guides, pam, right, loggers)  # --sequence option (guides fasta)
     elif bed_guides:
         pass  # --coordinates option (guides extracted via bed)
     loggers.errorlog.log_raise_exception("Invalid input: no guide input option selected. None of the following selected: --guide, --sequence, or --coordinates", os.EX_DATAERR, Crisprme2GuideError)
