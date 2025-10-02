@@ -5,8 +5,10 @@ This module defines the PAM class, which validates, and stores PAM sequences and
 their reverse complements for efficient sequence matching.
 """
 
+from .crisprme2_error import Crisprme2PamError
 from .logger import CrisprmeLoggers
 from .utils import reverse_complement
+from .encoder import encode
 
 from time import time
 
@@ -121,6 +123,13 @@ class PAM:
         elif self._sequence in XCAS9PAM and not right:  # xcas9 pam
             self._cas_system = XCAS9
 
+    def encode(self, loggers: CrisprmeLoggers) -> None:
+        try:  # encode in bit fwd and rev pam sequence
+            self._sequence_bits = encode(self._sequence, loggers)
+            self._sequence_rc_bits = encode(self._sequence_rc, loggers)
+        except ValueError:
+            self._loggers.errorlog.log_exception("PAM bit encoding failed", os.EX_DATAERR)
+
     @property
     def pam(self) -> str:
         return self._sequence
@@ -138,6 +147,7 @@ def read_pam(pamseq: str, loggers: CrisprmeLoggers) -> PAM:
     loggers.verboselog.debug(f"Creating PAM object for PAM {pamseq}")
     start = time()
     pam = PAM(pamseq, False, loggers)  # initialize pam object
+    pam.encode(loggers)  # encode pam in bits
     loggers.verboselog.debug(
         f"PAM object for PAM {pam} created in {time() - start:.2f}s"
     )
