@@ -145,7 +145,9 @@ class Bitset(object):
         """
         if any(bit not in "01" for bit in bits):
             self._loggers.errorlog.log_raise_exception(
-                f"{bits} is not a bit string", os.EX_DATAERR, Crisprme2BitsetError,
+                f"{bits} is not a bit string",
+                os.EX_DATAERR,
+                Crisprme2BitsetError,
             )
         bitstring_size = len(bits)
         for i, bit in enumerate(bits):
@@ -183,7 +185,7 @@ class Bitset(object):
         if index >= self._size:
             self._loggers.errorlog.log_raise_exception(
                 f"Index {index} out of bounds, unable to test bit",
-                 os.EX_DATAERR,
+                os.EX_DATAERR,
                 Crisprme2BitsetError,
             )
         return bool(self._bits & (1 << index))  # test if bit at position index

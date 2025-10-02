@@ -5,11 +5,12 @@ This module defines the PAM class, which validates, and stores PAM sequences and
 their reverse complements for efficient sequence matching.
 """
 
-from .crisprme2_error import Crisprme2PamError
 from .logger import CrisprmeLoggers
 from .utils import reverse_complement
 from .encoder import encode
+from .bitset import Bitset
 
+from typing import List
 from time import time
 
 import os
@@ -128,7 +129,9 @@ class PAM:
             self._sequence_bits = encode(self._sequence, loggers)
             self._sequence_rc_bits = encode(self._sequence_rc, loggers)
         except ValueError:
-            self._loggers.errorlog.log_exception("PAM bit encoding failed", os.EX_DATAERR)
+            self._loggers.errorlog.log_exception(
+                "PAM bit encoding failed", os.EX_DATAERR
+            )
 
     @property
     def pam(self) -> str:
@@ -142,12 +145,31 @@ class PAM:
     def cas_system(self) -> int:
         return self._cas_system
 
+    @property
+    def bits(self) -> List[Bitset]:
+        if not hasattr(self, "_sequence_bits"):  # always trace these errors
+            self._loggers.errorlog.log_raise_exception(
+                f"Missing _sequence_bits attribute on {self.__class__.__name__}",
+                os.EX_DATAERR,
+                AttributeError,
+            )
+        return self._sequence_bits
+
+    @property
+    def bitsrc(self) -> List[Bitset]:
+        if not hasattr(self, "_sequence_rc_bits"):  # always trace these errors
+            self._loggers.errorlog.log_raise_exception(
+                f"Missing _sequence_rc_bits attribute on {self.__class__.__name__}",
+                os.EX_DATAERR,
+                AttributeError,
+            )
+        return self._sequence_rc_bits
+
 
 def read_pam(pamseq: str, loggers: CrisprmeLoggers) -> PAM:
     loggers.verboselog.debug(f"Creating PAM object for PAM {pamseq}")
     start = time()
     pam = PAM(pamseq, False, loggers)  # initialize pam object
-    pam.encode(loggers)  # encode pam in bits
     loggers.verboselog.debug(
         f"PAM object for PAM {pam} created in {time() - start:.2f}s"
     )

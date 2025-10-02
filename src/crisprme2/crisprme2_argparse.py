@@ -146,6 +146,7 @@ class Crisprme2SearchInputArgs:
         self._args = args
         self._parser = parser
         self._check_consistency()  # check input args consistency
+        self._initialize_args()  # initialize input args
 
     def _check_consistency(self):  # sourcery skip: low-code-quality
         """Check the consistency and validity of parsed input arguments.
@@ -160,21 +161,27 @@ class Crisprme2SearchInputArgs:
         _validate_directory(
             self._args.genome_dir,
             self._parser,
-            f"Cannot find input FASTA folder {self._args.fasta}",
+            f"Cannot find input FASTA folder {self._args.genome_dir}",
         )
         # input vcf files folder
-        _validate_directory(
-            self._args.vcf, self._parser, f"Cannot find VCF folder {self._args.vcf}"
-        )
+        if self._args.vcf:  # if no input vcf, skip
+            _validate_directory(
+                self._args.vcf, self._parser, f"Cannot find VCF folder {self._args.vcf}"
+            )
         # input guide
         guidefname, errmsg = "", ""
         if self._args.fasta_guide:
-            guidefname = self._args.fasta_guide
-            errmsg = f"Cannot find input guide FASTA {self._args.fasta_guide}"
+            _validate_file(
+                self._args.fasta_guide,
+                self._parser,
+                f"Cannot find input guide FASTA {self._args.fasta_guide}",
+            )
         elif self._args.bed_guide:
-            guidefname = self._args.bed_guide
-            errmsg = f"Cannot find input guide BED {self._args.bed_guide}"
-        _validate_file(guidefname, self._parser, errmsg)
+            _validate_file(
+                self._args.bed_guide,
+                self._parser,
+                f"Cannot find input guide BED {self._args.bed_guide}",
+            )
         # output folder
         parent_folder = os.path.dirname(self._args.outdir)
         _validate_directory(
@@ -189,13 +196,13 @@ class Crisprme2SearchInputArgs:
             self._parser,
             f"No FASTA file found in {self._args.genome_dir}",
         )
-        # retreive vcf files in input folder
-        self._vcfs = _retrieve_files(
-            self._args.vcf,
-            ["vcf.gz"],
-            self._parser,
-            f"No VCF file found in {self._args.vcf}",
-        )
+        if self._args.vcf:  # retreive vcf files in input folder
+            self._vcfs = _retrieve_files(
+                self._args.vcf,
+                ["vcf.gz"],
+                self._parser,
+                f"No VCF file found in {self._args.vcf}",
+            )
         # retrieve input guide sequence or files
         self._guide, self._guidefasta, self._guidebed = _initialize_guides(
             self._args.guide, self._args.fasta_guide, self._args.bed_guide, self._parser
@@ -204,6 +211,10 @@ class Crisprme2SearchInputArgs:
         self._pam = _initialize_pam(self._args.pam, self._parser)
         # retrieve output folder
         self._outdir = _initialize_outputdir(self._args.outdir)
+
+    @property
+    def fastas(self) -> List[str]:
+        return self._fastas
 
     @property
     def guide(self) -> Optional[str]:
@@ -224,6 +235,10 @@ class Crisprme2SearchInputArgs:
     @property
     def right(self) -> bool:
         return self._args.right
+
+    @property
+    def outdir(self) -> str:
+        return self._outdir
 
 
 def _validate_directory(

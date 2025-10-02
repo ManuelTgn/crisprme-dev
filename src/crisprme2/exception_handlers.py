@@ -21,7 +21,7 @@ def sigint_handler() -> None:
     code when SIGINT is received.
     """
     # print message when SIGINT is caught to exit gracefully from the execution
-    sys.stderr.write("\nCaught SIGINT. Exit CRISPR-HAWK")
+    sys.stderr.write("\nCaught SIGINT. Exit CRISPRme2")
     sys.exit(os.EX_OSERR)  # mark as os error code
 
 

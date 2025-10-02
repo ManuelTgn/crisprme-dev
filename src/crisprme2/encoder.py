@@ -53,16 +53,13 @@ def _encoder(nt: str, position: int, loggers: CrisprmeLoggers) -> Bitset:
         loggers.errorlog.log_raise_exception(
             f"The nucleotide {nt} at {position} is not a IUPAC character",
             os.EX_DATAERR,
-            Crisprme2IupacTableError
+            Crisprme2IupacTableError,
         )
     return bitset
 
 
 def encode(sequence: str, loggers: CrisprmeLoggers) -> List[Bitset]:
     # encode sequence in bits for efficient matching
-    loggers.verboselog.debug(f"Encoding sequence {sequence} in bits")
-    start = time()  # encoding start time
     bits = [_encoder(nt.upper(), i, loggers) for i, nt in enumerate(sequence)]
     assert len(bits) == len(sequence)
-    loggers.verboselog.debug(f"Encoding completed in {time() - start:.2f}s")
     return bits
