@@ -12,6 +12,8 @@ import sys
 import os
 
 FAI = "fai"  # fasta index extension format
+# TODO: consider making it an input param
+PADDING = 100  # up/dowstream padding length
 
 
 class Sequence:
@@ -20,6 +22,9 @@ class Sequence:
         self._loggers = loggers  # store loggers
         self._sequence = list(sequence)  # sequence as list
         self._hash = None  # object hash (pre-computed for efficiency)
+        # define sequence start and stop boundaries
+        self._start_idx = PADDING  # assumes sequences longer than PADDING
+        self._stop_idx = len(sequence) - PADDING
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__} object; sequence={self.sequence}>"
@@ -40,10 +45,10 @@ class Sequence:
     def __len__(self) -> int:
         return len(self._sequence)
 
-    def __getitem__(self, idx: Union[int, slice]) -> Union[str, List[str]]:  # type: ignore
-        if not hasattr(self, "_sequence_"):
+    def __getitem__(self, idx: Union[int, slice]) -> Union[str, List[str]]:
+        if not hasattr(self, "_sequence"):
             self._loggers.errorlog.log_raise_exception(
-                f"Missing _sequence_ attribute on class {self.__class__.__name__}",
+                f"Missing _sequence attribute on class {self.__class__.__name__}",
                 os.EX_DATAERR,
                 AttributeError,
             )
@@ -58,9 +63,28 @@ class Sequence:
     def __iter__(self) -> "SequenceIterator":
         return SequenceIterator(self, self._loggers)
 
+    def fetch(self, start: int, stop: int) -> List[str]:
+        if start < PADDING:
+            self._loggers.errorlog.log_raise_exception(
+                f"start index ({start}) out of range", os.EX_DATAERR, ValueError
+            )
+        if stop > len(self) - PADDING:
+            self._loggers.errorlog.log_raise_exception(
+                f"stop index ({stop}) out of range", os.EX_DATAERR, ValueError
+            )
+        return self._sequence[start - PADDING : stop + PADDING]
+
     @property
     def sequence(self) -> str:
         return "".join(self._sequence)
+
+    @property
+    def start_index(self) -> int:
+        return self._start_idx
+
+    @property
+    def stop_index(self) -> int:
+        return self._stop_idx
 
 
 class SequenceIterator:
@@ -133,23 +157,15 @@ def _find_fai(fastafile: str) -> bool:
     return False
 
 
-def _retrieve_contig(fasta: str, fastaidx: str, loggers: CrisprmeLoggers) -> str:
-    f = pysam.FastaFile(fasta, filepath_index=fastaidx)
-    if len(f.references) != 1:  # fastas are expected to be chromosome-wise
-        loggers.errorlog.log_raise_exception(
-            f"Unexpected number of contigs ({len(f.references)}) found in {fasta}",
-            os.EX_DATAERR,
-            ValueError,
-        )
-    return f.references[0]  # contig name
-
-
 class GenomeFasta(Fasta):
 
     def __init__(self, fname: str, loggers: CrisprmeLoggers) -> None:
         super().__init__(fname, loggers)
-        self._retrieve_contig()  # initialize contig name
-        self._compute_contig_length()  # initialize fasta length
+        self._contig = self._retrieve_contig()  # initialize contig name
+        self._length = self._compute_contig_length()  # initialize fasta length
+
+    def __len__(self) -> int:
+        return self._length
 
     def _retrieve_contig(self) -> str:
         f = pysam.FastaFile(self._fname, filepath_index=self._faidx)
@@ -171,18 +187,29 @@ class GenomeFasta(Fasta):
             )
         return f.lengths[0]  # contig name
 
-    def read(self) -> None:
+    def read(self) -> List[str]:
         try:  # read fasta file sequence content
             with open(self._fname, mode="r") as infile:
                 infile.readline()  # skip fasta header
                 # read fasta content
-                self._sequence = Sequence(
-                    "".join([line.strip() for line in infile.readlines()]), self._loggers
-                )
+                # self._sequence = Sequence(
+                #     "".join([line.strip() for line in infile.readlines()]),
+                #     self._loggers,
+                # )
+                return list("".join([line.strip() for line in infile.readlines()]))
         except (IOError, Exception):
             self._loggers.errorlog.log_exception(
                 f"An error occurred while reading {self._fname}", os.EX_IOERR
             )
+            sys.exit(os.EX_IOERR)
+
+    # @property
+    # def sequence(self) -> Sequence:
+    #     return self._sequence
+
+    @property
+    def contig(self) -> str:
+        return self._contig
 
 
 class GuideFasta(Fasta):

@@ -83,7 +83,8 @@ def _retrieve_pam(offtarget: List[str], right: bool, pamlen: int) -> List[str]:
 
 
 def fetch_offtargets(
-    sequence: Sequence,
+    # sequence: Sequence,
+    sequence: List[str],
     pam: PAM,
     guidepamlen: int,
     right: bool,
@@ -93,21 +94,27 @@ def fetch_offtargets(
         [],
         [],
     )  # iterate over sequence to fetch offtargets (with padding)
-    total = sequence.stop_index - guidepamlen + 1 - sequence.start_index  # TODO: remove
+    start_index, stop_index = PADDING, len(sequence) - PADDING
+    # total = sequence.stop_index - guidepamlen + 1 - sequence.start_index  # TODO: remove
+    total = stop_index - guidepamlen + 1 - start_index  # TODO: remove
     progress_interval = max(1, total // 100)
     # compute matching patterns for pam
     pam_patterns_fw, pam_patterns_rc = _compute_pam_patterns(pam, loggers)
-    for i in range(sequence.start_index, sequence.stop_index - guidepamlen + 1):
+    # for i in range(sequence.start_index, sequence.stop_index - guidepamlen + 1):
+    for i in range(start_index, stop_index - guidepamlen + 1):
         if i % progress_interval == 0:
             print(f"Progress: {((i + 1) / total) * 100:.2f}%", end="\r")
-        candidate = sequence[i : i + guidepamlen]
+        candidate = sequence[i - PADDING: i + guidepamlen + PADDING]
+        # candidate = sequence[i: i + guidepamlen]
         # recover pam sequence from offtarget on forward and reverse strands
         candidate_pam_fw = _retrieve_pam(candidate, right, len(pam))  # type: ignore
         candidate_pam_rc = _retrieve_pam(candidate, (not right), len(pam))  # type: ignore
         if filter_offtarget(candidate_pam_fw, pam_patterns_fw):  # check on fw
-            offtargets_fw.append(sequence.fetch(i, i + guidepamlen))
+            # offtargets_fw.append(sequence.fetch(i, i + guidepamlen))
+            offtargets_fw.append(candidate)
         if filter_offtarget(candidate_pam_rc, pam_patterns_rc):  # check on rev
-            offtargets_rc.append(sequence.fetch(i, i + guidepamlen))
+            offtargets_fw.append(candidate)
+            # offtargets_rc.append(sequence.fetch(i, i + guidepamlen))
     print()
     return offtargets_fw, offtargets_rc
 
@@ -126,8 +133,8 @@ def compute_offtargets(
             f"Fetching off-target candidates from contig: {contig.contig}"
         )
         start = time()
-        contig.read()  # read contig sequence
-        offtargets = fetch_offtargets(contig.sequence, pam, guidepamlen, right, loggers)
+        contig_seq = contig.read()  # read contig sequence
+        offtargets = fetch_offtargets(contig_seq, pam, guidepamlen, right, loggers)
         loggers.verboselog.debug(
             f"Fetched {len(offtargets[0])} on 5'-3' and {len(offtargets[1])} on 3'-5' on contig {contig.contig}"
         )
@@ -138,7 +145,7 @@ def compute_offtargets(
         # with open(os.path.join(outdir, f"offtargets_fw_{contig.contig}.txt"), mode="w") as outfile:
         #     outfile.write("\n".join([ot[PADDING:PADDING+guidepamlen]for ot in offtargets[0]]))
         # with open(os.path.join(outdir, f"offtargets_rc_{contig.contig}.txt"), mode="w") as outfile:
-        #     outfile.write("\n".join(ot[PADDING:PADDING+guidelen]for ot in offtargets[1]))
+        #     outfile.write("\n".join(ot[PADDING:PADDING+guidelen] for ot in offtargets[1]))
 
 
 def process_genome(
