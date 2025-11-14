@@ -7,7 +7,6 @@ their reverse complements for efficient sequence matching.
 
 from .logger import CrisprmeLoggers
 from .utils import reverse_complement
-from .encoder import encode
 from .bitset import Bitset
 
 from typing import List
@@ -124,15 +123,6 @@ class PAM:
         elif self._sequence in XCAS9PAM and not right:  # xcas9 pam
             self._cas_system = XCAS9
 
-    def encode(self, loggers: CrisprmeLoggers) -> None:
-        try:  # encode in bit fwd and rev pam sequence
-            self._sequence_bits = encode(self._sequence, loggers)
-            self._sequence_rc_bits = encode(self._sequence_rc, loggers)
-        except ValueError:
-            self._loggers.errorlog.log_exception(
-                "PAM bit encoding failed", os.EX_DATAERR
-            )
-
     @property
     def pam(self) -> str:
         return self._sequence
@@ -144,26 +134,6 @@ class PAM:
     @property
     def cas_system(self) -> int:
         return self._cas_system
-
-    @property
-    def bits(self) -> List[Bitset]:
-        if not hasattr(self, "_sequence_bits"):  # always trace these errors
-            self._loggers.errorlog.log_raise_exception(
-                f"Missing _sequence_bits attribute on {self.__class__.__name__}",
-                os.EX_DATAERR,
-                AttributeError,
-            )
-        return self._sequence_bits
-
-    @property
-    def bitsrc(self) -> List[Bitset]:
-        if not hasattr(self, "_sequence_rc_bits"):  # always trace these errors
-            self._loggers.errorlog.log_raise_exception(
-                f"Missing _sequence_rc_bits attribute on {self.__class__.__name__}",
-                os.EX_DATAERR,
-                AttributeError,
-            )
-        return self._sequence_rc_bits
 
 
 def read_pam(pamseq: str, loggers: CrisprmeLoggers) -> PAM:

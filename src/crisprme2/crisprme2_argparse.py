@@ -1,10 +1,4 @@
-"""Argument parsing and validation for the CRISPR-HAWK command-line interface.
-
-This module defines custom argument parsers and input argument handler classes for
-the CRISPR-HAWK tool, supporting search, VCF conversion, data preparation, and
-CRISPRitz configuration workflows. It ensures input consistency, provides helpful
-error messages, and exposes validated arguments as convenient properties.
-"""
+""" """
 
 from .utils import COMMAND, DNA, IUPAC
 from .crisprme2_version import __version__

@@ -104,7 +104,7 @@ def fetch_offtargets(
     for i in range(start_index, stop_index - guidepamlen + 1):
         if i % progress_interval == 0:
             print(f"Progress: {((i + 1) / total) * 100:.2f}%", end="\r")
-        candidate = sequence[i - PADDING: i + guidepamlen + PADDING]
+        candidate = sequence[i - PADDING : i + guidepamlen + PADDING]
         # candidate = sequence[i: i + guidepamlen]
         # recover pam sequence from offtarget on forward and reverse strands
         candidate_pam_fw = _retrieve_pam(candidate, right, len(pam))  # type: ignore

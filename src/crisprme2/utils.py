@@ -10,6 +10,7 @@ from colorama import Fore
 from itertools import permutations
 
 import sys
+import os
 
 # define static variables shared across software modules
 TOOLNAME = "CRISPRme2"  # tool name
@@ -80,6 +81,8 @@ IUPAC_ENCODER = {
     for perm in {"".join(p) for p in permutations(v)}
 }
 STRAND = [0, 1]  # strands directions: 0 -> 5'-3'; 1 -> 3'-5'
+# tbi index file extension
+TBI = "tbi"
 
 
 def print_verbosity(message: str, verbosity: int, verbosity_threshold: int) -> None:
@@ -116,3 +119,22 @@ def warning(message: str, verbosity: int) -> None:
 
 def reverse_complement(sequence: str) -> str:
     return "".join([RC[nt] for nt in sequence[::-1]])
+
+
+def find_tbi_index(fname: str) -> bool:
+    """Check if a Tabix index exists for the input VCF/BED file.
+
+    Checks if a Tabix index (.tbi) exists for the given VCF/BED file and is a
+    non-empty file.
+
+    Args:
+        fname: The path to the VCF/BED file.
+
+    Returns:
+        True if the index exists and is a non-empty file, False otherwise.
+    """
+    # avoid unexpected crashes due to file location
+    tbi_index = f"{os.path.abspath(fname)}.{TBI}"
+    if os.path.exists(tbi_index):  # index must be a non empty file
+        return os.path.isfile(tbi_index) and os.stat(tbi_index).st_size > 0
+    return False

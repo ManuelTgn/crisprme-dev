@@ -17,4 +17,4 @@ def complete_search(args: Crisprme2SearchInputArgs) -> None:
         args.guide, args.fasta_guide, args.bed_guide, pam, args.right, loggers
     )
     # assumes all guides share the same length
-    process_genome(args.fastas, pam, len(guides[0]), args.right, args.outdir, loggers)
+    # process_genome(args.fastas, pam, len(guides[0]), args.right, args.outdir, loggers)
