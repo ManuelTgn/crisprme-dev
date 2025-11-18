@@ -41,7 +41,6 @@ class Crisprme2PamError(Crisprme2Error):
     def __str__(self):
         return super().__str__()  # string representation for the exception
 
-
 class Crisprme2VCFError(Crisprme2Error):
     def __init__(self, value: str):
         # initialize exception object when raised
@@ -76,9 +75,33 @@ class Crisprme2VCFIndexError(Crisprme2VCFError):
 
     def __str__(self):
         return super().__str__()  # string representation for the exception
+    
+class Crisprme2SampleError(Crisprme2Error):
+    def __init__(self, value: str):
+        # initialize exception object when raised
+        super().__init__(value)  # error message or error related info
+
+    def __str__(self):
+        return super().__str__()  # string representation for the exception
+    
+class Crisprme2VariantRecordError(Crisprme2Error):
+    def __init__(self, value: str):
+        # initialize exception object when raised
+        super().__init__(value)  # error message or error related info
+
+    def __str__(self):
+        return super().__str__()  # string representation for the exception
 
 
 class Crisprme2IupacTableError(Crisprme2Error):
+    def __init__(self, value: str):
+        # initialize exception object when raised
+        super().__init__(value)  # error message or error related info
+
+    def __str__(self):
+        return super().__str__()  # string representation for the exception
+    
+class Crisprme2EnrichmentError(Crisprme2Error):
     def __init__(self, value: str):
         # initialize exception object when raised
         super().__init__(value)  # error message or error related info

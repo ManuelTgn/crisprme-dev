@@ -2,6 +2,8 @@
 
 from .utils import COMMAND, DNA, IUPAC
 from .crisprme2_version import __version__
+from .sequence import FASTAEXTENSIONS
+from .vcf import VCFEXTENSIONS
 
 from argparse import (
     SUPPRESS,
@@ -11,7 +13,7 @@ from argparse import (
     _MutuallyExclusiveGroup,
     Namespace,
 )
-from typing import Iterable, Optional, TypeVar, Tuple, Dict, NoReturn, List
+from typing import Iterable, Optional, TypeVar, Tuple, Dict, NoReturn, List, Set
 from colorama import Fore
 from glob import glob
 
@@ -163,7 +165,6 @@ class Crisprme2SearchInputArgs:
                 self._args.vcf, self._parser, f"Cannot find VCF folder {self._args.vcf}"
             )
         # input guide
-        guidefname, errmsg = "", ""
         if self._args.fasta_guide:
             _validate_file(
                 self._args.fasta_guide,
@@ -186,14 +187,14 @@ class Crisprme2SearchInputArgs:
         # retreive fasta files in input folder
         self._fastas = _retrieve_files(
             self._args.genome_dir,
-            ["fa", "fasta"],
+            FASTAEXTENSIONS,
             self._parser,
             f"No FASTA file found in {self._args.genome_dir}",
         )
         if self._args.vcf:  # retreive vcf files in input folder
             self._vcfs = _retrieve_files(
                 self._args.vcf,
-                ["vcf.gz"],
+                VCFEXTENSIONS,
                 self._parser,
                 f"No VCF file found in {self._args.vcf}",
             )
@@ -209,6 +210,10 @@ class Crisprme2SearchInputArgs:
     @property
     def fastas(self) -> List[str]:
         return self._fastas
+    
+    @property
+    def vcfs(self) -> List[str]:
+        return self._vcfs
 
     @property
     def guide(self) -> Optional[str]:
@@ -248,7 +253,7 @@ def _validate_file(fname: str, parser: Crisprme2ArgumentParser, errmsg: str) -> 
 
 
 def _retrieve_files(
-    dirname: str, extensions: List[str], parser: Crisprme2ArgumentParser, errmsg: str
+    dirname: str, extensions: Set[str], parser: Crisprme2ArgumentParser, errmsg: str
 ) -> List[str]:
     fnames = []  # retrieved files list
     for ext in extensions:  # check for each input extension
