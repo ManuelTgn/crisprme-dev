@@ -83,6 +83,8 @@ IUPAC_ENCODER = {
 STRAND = [0, 1]  # strands directions: 0 -> 5'-3'; 1 -> 3'-5'
 # tbi index file extension
 TBI = "tbi"
+# fai index file extension
+FAI = "fai"
 
 
 def print_verbosity(message: str, verbosity: int, verbosity_threshold: int) -> None:
@@ -137,4 +139,12 @@ def find_tbi_index(fname: str) -> bool:
     tbi_index = f"{os.path.abspath(fname)}.{TBI}"
     if os.path.exists(tbi_index):  # index must be a non empty file
         return os.path.isfile(tbi_index) and os.stat(tbi_index).st_size > 0
+    return False
+
+
+def find_fai_index(fname: str) -> bool:
+    # avoid unexpected crashes due to file location
+    fai_index = f"{os.path.abspath(fname)}.{FAI}"
+    if os.path.exists(fai_index):  # index must be a non empty file
+        return os.path.isfile(fai_index) and os.stat(fai_index).st_size > 0
     return False

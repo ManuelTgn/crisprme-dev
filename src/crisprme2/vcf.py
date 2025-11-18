@@ -29,41 +29,7 @@ class VCF:
         self._index = self._search_index()  # tbi index
         self._vcf_handle: Optional[TabixFile] = None
         self._is_open = False
-
-    def __repr__(self) -> str:
-        status = "open" if self._is_open else "closed"
-        return f"<{self.__class__.__name__} object; file={self._filepath}, status={status}>"
-
-    def __del__(self):
-        if self._is_open:
-            self.close()
-
-    def __enter__(self) -> None:
-        return self.open()
-
-    def __exit__(self) -> None:
-        self.close()
-
-    def _index_vcf(self, pytest: bool = False) -> str:
-        if self._index and not pytest:  # launch warning
-            warning("Tabix index already present, forcing update", 1)
-        try:  # create index in the same folder as the input vcf
-            tabix_index(str(self._filepath), preset="vcf", force=True)
-        except (OSError, Exception):
-            self._loggers.errorlog.log_exception(
-                f"Failed indexing for VCF: {self._filepath}", os.EX_DATAERR
-            )
-        assert find_tbi_index(str(self._filepath))  # now should be available
-        return f"{self._filepath}.{TBI}"
-
-    def _search_index(self) -> Path:
-        # look for index for the current vcf, if not found compute it
-        if find_tbi_index(str(self._filepath)):  # index found, store it
-            return Path(f"{self._filepath}.{TBI}")
-        # index not found -> compute it de novo and store it in the same folder
-        # as the input vcf
-        self._loggers.verboselog.debug(f"Tabix index not found for {self._filepath}")
-        return Path(self._index_vcf())
+        self._contig = None
 
     def _validate_file(self) -> None:
         if not self._filepath.exists():
@@ -86,17 +52,39 @@ class VCF:
                 Crisprme2VCFError,
             )
 
-    def open(self) -> None:
+    def _index_vcf(self, pytest: bool = False) -> str:
+        if self._index and not pytest:  # launch warning
+            warning("Tabix index already present, forcing update", 1)
+        try:  # create index in the same folder as the input vcf
+            tabix_index(str(self._filepath), preset="vcf", force=True)
+        except (OSError, Exception):
+            self._loggers.errorlog.log_exception(
+                f"Failed indexing for VCF: {self._filepath}", os.EX_DATAERR
+            )
+        assert find_tbi_index(str(self._filepath))  # now should be available
+        return f"{self._filepath}.{TBI}"
+
+    def _search_index(self) -> Path:
+        # look for index for the current vcf, if not found compute it
+        if find_tbi_index(str(self._filepath)):  # index found, store it
+            return Path(f"{self._filepath}.{TBI}")
+        # index not found -> compute it de novo and store it in the same folder
+        # as the input vcf
+        self._loggers.verboselog.debug(f"Tabix index not found for {self._filepath}")
+        return Path(self._index_vcf())
+    
+    def open(self) -> "VCF":
         if self._is_open:  # vcf already open
             self._loggers.errorlog.log_raise_exception(
                 f"VCF file {self._filepath} is already open",
                 os.EX_IOERR,
                 Crisprme2VCFError,
             )
-        self._loggers.verboselog.debug(f"Opening VCF file {self._filepath}")
+        self._loggers.verboselog.debug(f"Opening VCF file: {self._filepath}")
         try:  # open vcf, assumes that index is already available
             self._vcf_handle = TabixFile(str(self._filepath), index=str(self._index))
             self._is_open = True
+            self._contig = self._vcf_handle.contigs[0]  # contig name
         except (OSError, Exception) as e:
             self._loggers.errorlog.log_exception(
                 f"Failed to open VCF file {self._filepath}: {e}", os.EX_IOERR
@@ -104,23 +92,28 @@ class VCF:
         self._loggers.verboselog.debug(
             f"Successfully opened VCF file: {self._filepath}"
         )
-
+        return self
+    
     def close(self) -> None:
-        if self._vcf_handle is not None and self._is_open:
+        if self._vcf_handle is not None:
             self._vcf_handle.close()
             self._is_open = False
             self._loggers.verboselog.debug(f"Closed VCF file: {self._filepath}")
 
-    def get_samples(self) -> List[str]:
-        if not self._is_open or self._vcf_handle is None:
-            self._loggers.errorlog.log_raise_exception(
-                f"VCF file not open: {self._filepath}; cannot retrieve samples",
-                os.EX_IOERR,
-                Crisprme2VCFError,
-            )
-        assert self._vcf_handle is not None
-        return self._vcf_handle.header[-1].strip().split()[9:]
+    def __enter__(self) -> "VCF":
+        return self.open()
 
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        self.close()
+
+    @property
+    def contigs(self) -> List[str]:
+        return (
+            list(self._vcf_handle.contigs)
+            if (self._is_open and self._vcf_handle is not None)
+            else []
+        )
+    
     def fetch(
         self,
         contig: Optional[str] = None,
@@ -148,6 +141,16 @@ class VCF:
             )
         sys.exit(os.EX_IOERR)
 
+    def get_samples(self) -> List[str]:
+        if not self._is_open or self._vcf_handle is None:
+            self._loggers.errorlog.log_raise_exception(
+                f"VCF file not open: {self._filepath}; cannot retrieve samples",
+                os.EX_IOERR,
+                Crisprme2VCFError,
+            )
+        assert self._vcf_handle is not None
+        return self._vcf_handle.header[-1].strip().split()[9:]
+    
     def count_variants(
         self,
         contig: Optional[str] = None,
@@ -157,10 +160,16 @@ class VCF:
         print("hello")
         return sum(1 for _ in self.fetch(contig, start, end))
 
-    @property
-    def contigs(self) -> List[str]:
-        return (
-            list(self._vcf_handle.contigs)
-            if (self._is_open and self._vcf_handle is not None)
-            else []
-        )
+    def __contains__(self, contig: str) -> bool:
+        return contig in self.contigs if self._is_open else False
+
+
+    def __repr__(self) -> str:
+        status = "open" if self._is_open else "closed"
+        return f"<{self.__class__.__name__} object; contigs={self._contig}, status={status}>"
+
+    def __del__(self):
+        if self._is_open:
+            self.close()
+
+    

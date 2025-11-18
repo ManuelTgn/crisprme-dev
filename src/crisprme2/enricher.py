@@ -3,15 +3,17 @@
 from .crisprme2_error import Crisprme2EnrichmentError
 from .crisprme2_argparse import Crisprme2SearchInputArgs
 from .logger import CrisprmeLoggers
-from .vcf import VCFEXTENSIONS, VCF
+from .fasta import Fasta
+from .vcf import VCF
+
+from typing import List, Dict, Tuple, Optional
 
 
 
-from .sequence import PADDING, GenomeFasta, Sequence
+
 from .utils import DNA, IUPACTABLE
 from .pam import PAM
 
-from typing import List, Tuple, Set
 from glob import glob
 from time import time
 
@@ -167,15 +169,45 @@ import os
 # #     # assumes input guides share the same length
 # #     compute_offtargets(genome, pam, guidelen, right, outdir, loggers)
 
+def _adjust_contig_name(contig: str) -> str:
+    return contig if contig.startswith("chr") else f"chr{contig}"
 
-def create_vcfs(vcf_fnames: List[str], loggers: CrisprmeLoggers):
-    for vcf_fname in vcf_fnames:  # create a VCF object for each vcf
-        vcf = VCF(vcf_fname, loggers)
-        vcf.open()
-        print(vcf._filepath, vcf.count_variants())
-        vcf.close()
+
+def read_fasta_files(fasta_fnames: List[str], loggers: CrisprmeLoggers) -> Dict[str, Fasta]:
+    fasta_map = {}  # contig - fasta map
+    for fasta_fname in fasta_fnames:
+        with Fasta(fasta_fname,loggers) as fasta:
+            if fasta.nreferences != 1:  # fasta files must be chromosome-separated
+                loggers.errorlog.log_raise_exception(f"Fasta file {fasta_fname} contains multiple contig data", os.EX_DATAERR, Crisprme2EnrichmentError)
+            contig = _adjust_contig_name(fasta.references[0])  # assume one single contig
+            if contig in fasta_map:
+                loggers.errorlog.log_raise_exception(f"Multiple Fasta files with contig {contig}", os.EX_DATAERR, Crisprme2EnrichmentError)
+            fasta_map[contig] = fasta
+    return fasta_map
+
+
+def read_vcf_files(vcf_fnames: List[str], loggers: CrisprmeLoggers) -> Dict[str, VCF]:
+    vcf_map = {}
+    for vcf_fname in vcf_fnames:
+        with VCF(vcf_fname, loggers) as vcf:
+            if len(vcf.contigs) != 1:  # vcf files must be chromosome-separated
+                loggers.errorlog.log_raise_exception(f"VCF file {vcf_fname} contains multiple contig data", os.EX_DATAERR, Crisprme2EnrichmentError)
+            contig = _adjust_contig_name(vcf.contigs[0]) # assume one single contig
+            if contig in vcf_map:
+                loggers.errorlog.log_raise_exception(f"Multiple VCF files with contig {contig}", os.EX_DATAERR, Crisprme2EnrichmentError)
+            vcf_map[contig] = vcf
+    return vcf_map
+
+
+
+def create_fasta_vcf_map(fasta_fnames: List[str], vcf_fnames: List[str], loggers: CrisprmeLoggers) -> Dict[str, Tuple[Fasta, Optional[VCF]]]:
+    fasta_map = read_fasta_files(fasta_fnames, loggers)
+    vcf_map = read_vcf_files(vcf_fnames, loggers)
+    return {contig: (fasta_map[contig], vcf_map[contig]) if contig in vcf_map else (fasta_map[contig], None) for contig in fasta_map}
+    
 
 
 
 def enrich_genome(args: Crisprme2SearchInputArgs, loggers: CrisprmeLoggers):
-    create_vcfs(args.vcfs, loggers)
+    fasta_vcf_map = create_fasta_vcf_map(args.fastas, args.vcfs, loggers)
+    

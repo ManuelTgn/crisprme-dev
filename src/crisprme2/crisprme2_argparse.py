@@ -2,7 +2,7 @@
 
 from .utils import COMMAND, DNA, IUPAC
 from .crisprme2_version import __version__
-from .sequence import FASTAEXTENSIONS
+from .fasta import FASTAEXTENSIONS
 from .vcf import VCFEXTENSIONS
 
 from argparse import (

@@ -1,7 +1,7 @@
 """ """
 
 from .crisprme2_error import Crisprme2GuideError
-from .sequence import Sequence, GuideFasta
+from .sequence import Sequence
 from .logger import CrisprmeLoggers
 from .utils import reverse_complement
 from .pam import PAM
