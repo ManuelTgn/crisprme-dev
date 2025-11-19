@@ -17,6 +17,7 @@ from typing import Iterable, Optional, TypeVar, Tuple, Dict, NoReturn, List, Set
 from colorama import Fore
 from glob import glob
 
+import multiprocessing
 import sys
 import os
 
@@ -182,6 +183,8 @@ class Crisprme2SearchInputArgs:
         _validate_directory(
             parent_folder, self._parser, f"Cannot find parent folder {parent_folder}"
         )
+        # threads number
+        _validate_threads(self._args.threads, self._parser)
 
     def _initialize_args(self) -> None:
         # retreive fasta files in input folder
@@ -206,6 +209,8 @@ class Crisprme2SearchInputArgs:
         self._pam = _initialize_pam(self._args.pam, self._parser)
         # retrieve output folder
         self._outdir = _initialize_outputdir(self._args.outdir)
+        # retrieve number of threads
+        self._threads = _initialize_threads(self._args.threads)
 
     @property
     def fastas(self) -> List[str]:
@@ -238,6 +243,10 @@ class Crisprme2SearchInputArgs:
     @property
     def outdir(self) -> str:
         return self._outdir
+    
+    @property
+    def threads(self) -> int:
+        return self._threads
 
 
 def _validate_directory(
@@ -251,6 +260,14 @@ def _validate_file(fname: str, parser: Crisprme2ArgumentParser, errmsg: str) -> 
     if not os.path.exists(fname) or not os.path.isfile(fname):  # file exists?
         parser.error(errmsg)  # print error message to stderr
 
+def _validate_threads(threads, parser: Crisprme2ArgumentParser) -> None:
+    max_threads = multiprocessing.cpu_count()
+    if threads < 0 or threads > max_threads:
+        parser.error(
+            f"Forbidden number of threads provided ({threads}). Max number of "
+            f"available cores: {max_threads}"
+        )
+
 
 def _retrieve_files(
     dirname: str, extensions: Set[str], parser: Crisprme2ArgumentParser, errmsg: str
@@ -260,6 +277,7 @@ def _retrieve_files(
         fnames.extend(glob(os.path.join(dirname, f"*.{ext}")))
     if not fnames:  # no file found with extensions in folder
         parser.error(errmsg)  # throw error
+    fnames = [os.path.abspath(f) for f in fnames]  # avoid ambigous file locations
     return fnames
 
 
@@ -284,3 +302,11 @@ def _initialize_outputdir(outdir: str) -> str:
     if not os.path.exists(outdir) or not os.path.isdir(outdir):
         os.makedirs(outdir)
     return os.path.abspath(outdir)
+
+def _initialize_threads(threads: int) -> int:
+    max_threads = multiprocessing.cpu_count()
+    return max_threads if threads == 0 else threads
+
+
+
+    

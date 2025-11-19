@@ -80,7 +80,6 @@ class VCF:
                 os.EX_IOERR,
                 Crisprme2VCFError,
             )
-        self._loggers.verboselog.debug(f"Opening VCF file: {self._filepath}")
         try:  # open vcf, assumes that index is already available
             self._vcf_handle = TabixFile(str(self._filepath), index=str(self._index))
             self._is_open = True
@@ -89,16 +88,12 @@ class VCF:
             self._loggers.errorlog.log_exception(
                 f"Failed to open VCF file {self._filepath}: {e}", os.EX_IOERR
             )
-        self._loggers.verboselog.debug(
-            f"Successfully opened VCF file: {self._filepath}"
-        )
         return self
     
     def close(self) -> None:
         if self._vcf_handle is not None:
             self._vcf_handle.close()
             self._is_open = False
-            self._loggers.verboselog.debug(f"Closed VCF file: {self._filepath}")
 
     def __enter__(self) -> "VCF":
         return self.open()
@@ -131,7 +126,7 @@ class VCF:
             if contig is not None:
                 if start is not None or end is not None:
                     assert self._index  # region-based fetch requires index
-                return self._vcf_handle.fetch(contig, start, end)
+                return self._vcf_handle.fetch(self._contig, start, end)
             else:
                 return self._vcf_handle.fetch()
         except Exception as e:
@@ -159,6 +154,18 @@ class VCF:
     ) -> int:
         print("hello")
         return sum(1 for _ in self.fetch(contig, start, end))
+    
+    @property
+    def filepath(self) -> str:
+        return str(self._filepath)
+    
+    @property
+    def index(self) -> str:
+        return str(self._index)
+    
+    @property
+    def contig(self) -> Optional[str]:
+        return self._contig
 
     def __contains__(self, contig: str) -> bool:
         return contig in self.contigs if self._is_open else False

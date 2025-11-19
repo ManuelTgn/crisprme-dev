@@ -176,6 +176,15 @@ def create_search_parser(subparser: _SubParsersAction) -> _SubParsersAction:
         help="if set, guides occur downstream (right side) of the PAM "
         "(default: guides occur upstream (left side))",
     )
+    optional_group.add_argument(
+        "--threads",
+        type=int,
+        metavar="THREADS",
+        dest="threads",
+        nargs="?",
+        default=1,
+        help="number of threads. Use 0 for using all available cores (default: 1)",
+    )
     return parser_search
 
 

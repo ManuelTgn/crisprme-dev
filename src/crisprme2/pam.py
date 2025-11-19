@@ -7,7 +7,6 @@ their reverse complements for efficient sequence matching.
 
 from .logger import CrisprmeLoggers
 from .utils import reverse_complement
-from .bitset import Bitset
 
 from typing import List
 from time import time

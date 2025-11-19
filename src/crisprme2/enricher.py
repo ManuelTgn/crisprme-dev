@@ -7,6 +7,11 @@ from .fasta import Fasta
 from .vcf import VCF
 
 from typing import List, Dict, Tuple, Optional
+from concurrent.futures import Future
+from pysam import TabixFile
+
+import concurrent.futures
+import numpy as np
 
 
 
@@ -176,6 +181,7 @@ def _adjust_contig_name(contig: str) -> str:
 def read_fasta_files(fasta_fnames: List[str], loggers: CrisprmeLoggers) -> Dict[str, Fasta]:
     fasta_map = {}  # contig - fasta map
     for fasta_fname in fasta_fnames:
+        loggers.verboselog.debug(f"Create Fasta object: {fasta_fname}")
         with Fasta(fasta_fname,loggers) as fasta:
             if fasta.nreferences != 1:  # fasta files must be chromosome-separated
                 loggers.errorlog.log_raise_exception(f"Fasta file {fasta_fname} contains multiple contig data", os.EX_DATAERR, Crisprme2EnrichmentError)
@@ -183,12 +189,14 @@ def read_fasta_files(fasta_fnames: List[str], loggers: CrisprmeLoggers) -> Dict[
             if contig in fasta_map:
                 loggers.errorlog.log_raise_exception(f"Multiple Fasta files with contig {contig}", os.EX_DATAERR, Crisprme2EnrichmentError)
             fasta_map[contig] = fasta
+        loggers.verboselog.debug(f"Successfully created Fasta object: {fasta_fname}")
     return fasta_map
 
 
 def read_vcf_files(vcf_fnames: List[str], loggers: CrisprmeLoggers) -> Dict[str, VCF]:
     vcf_map = {}
     for vcf_fname in vcf_fnames:
+        loggers.verboselog.debug(f"Create VCF object: {vcf_fname}")
         with VCF(vcf_fname, loggers) as vcf:
             if len(vcf.contigs) != 1:  # vcf files must be chromosome-separated
                 loggers.errorlog.log_raise_exception(f"VCF file {vcf_fname} contains multiple contig data", os.EX_DATAERR, Crisprme2EnrichmentError)
@@ -196,6 +204,7 @@ def read_vcf_files(vcf_fnames: List[str], loggers: CrisprmeLoggers) -> Dict[str,
             if contig in vcf_map:
                 loggers.errorlog.log_raise_exception(f"Multiple VCF files with contig {contig}", os.EX_DATAERR, Crisprme2EnrichmentError)
             vcf_map[contig] = vcf
+        loggers.verboselog.debug(f"Successfully created VCF object: {vcf_fname}")
     return vcf_map
 
 
@@ -206,8 +215,78 @@ def create_fasta_vcf_map(fasta_fnames: List[str], vcf_fnames: List[str], loggers
     return {contig: (fasta_map[contig], vcf_map[contig]) if contig in vcf_map else (fasta_map[contig], None) for contig in fasta_map}
     
 
+def _split_ranges(length: int, threads: int, loggers: CrisprmeLoggers, overlap: int = 100) -> List[Tuple[int, int]]:
+    if length <= 0 or threads <= 0:  # should never happen
+        loggers.errorlog.log_raise_exception(f"Empty string or 0 threads used", os.EX_DATAERR, Crisprme2EnrichmentError)
+    # compute the base size of the non-overlapping portion of each chunk
+    # np.ceil ensures that the sum of the base sizes is at least the total string 
+    # length, guaranteeing full coverage
+    base_chunk_size = int(np.ceil(length / threads))
+    ranges: List[Tuple[int, int]] = []
+    for i in range(threads):
+        # calculate the non-overlapping start index for the current chunk
+        non_overlapping_start = i * base_chunk_size
+        # calculate the non-overlapping end index (exclusive)
+        non_overlapping_end = min((i + 1) * base_chunk_size, length)
+        # apply overlap to start and end indexes
+        start_index = max(0, non_overlapping_start - overlap)
+        end_index = min(length, non_overlapping_end + overlap)
+        # if the end index calculation results in a slice that is smaller than 
+        # the required overlap ensure the end index is at least the string length
+        # if it's the last chunk
+        if i == threads - 1:
+            end_index = length
+        if start_index < end_index:  # skip if start and end are the same
+            ranges.append((start_index, end_index))
+    return ranges
+
+def _collect_tasks(vcf: VCF, contig_length: int, threads: int, loggers: CrisprmeLoggers):
+    return [
+        (vcf, vcf.contig, start, stop, loggers)
+        for start, stop in _split_ranges(contig_length, threads, loggers, overlap=0)
+    ]  # collect tasks to perform in parallel (no overlap required)
+
+def _retrieve_variants_range(vcf: VCF, contig: Optional[str], start: Optional[int], stop: Optional[int], loggers: CrisprmeLoggers) -> int:
+    try:
+        with TabixFile(vcf.filepath, index=vcf.index) as tbx:
+            variants = [v for v in tbx.fetch(contig, start, stop)]
+            loggers.verboselog.debug(f"Retrieved {len(variants)} variants in {contig}:{start}-{stop}")
+            return len(variants)
+    except Exception as e:
+        loggers.errorlog.log_exception(f"Error retrieving variants in {contig}:{start}-{stop}: {e}", os.EX_DATAERR)
+    sys.exit(1)  # base case
+
+def _collect_results(futures: List[Future], loggers: CrisprmeLoggers) -> int:
+    results_all = []
+    for future in concurrent.futures.as_completed(futures):
+        try:
+            results_all.append(future.result())
+        except Exception as e:
+            loggers.errorlog.log_exception(f"Error in parallel variant retrieval task: {e}", os.EX_DATAERR)
+    return sum(results_all)
+
+def retrieve_variants_contig(vcf: VCF, contig_length: int, threads: int, loggers: CrisprmeLoggers) -> int:
+    tasks = _collect_tasks(vcf, contig_length, threads, loggers)  # collect tasks
+    with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
+        futures = [
+            executor.submit(_retrieve_variants_range, vcf, contig, start, stop, loggers)
+            for vcf, contig, start, stop, loggers in tasks
+        ]
+        return _collect_results(futures, loggers)
+
+
+def reconstruct_targets(fasta_vcf_map: Dict[str, Tuple[Fasta, Optional[VCF]]], threads: int, loggers: CrisprmeLoggers):
+    tasks = []  # tasks collector item
+    for contig, (fasta, vcf) in fasta_vcf_map.items():
+        with fasta as f:
+            if vcf is not None:
+                print(contig)
+                print(retrieve_variants_contig(vcf, f.length, threads, loggers))
+
 
 
 def enrich_genome(args: Crisprme2SearchInputArgs, loggers: CrisprmeLoggers):
     fasta_vcf_map = create_fasta_vcf_map(args.fastas, args.vcfs, loggers)
+    reconstruct_targets(fasta_vcf_map, args.threads, loggers)
+    
     

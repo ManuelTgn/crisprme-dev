@@ -59,14 +59,12 @@ class Fasta:
     def open(self) -> "Fasta":
         if self._is_open:
             self._loggers.errorlog.log_raise_exception(f"FASTA file {self._filepath} is already open", os.EX_DATAERR, Crisprme2FastaError)
-        self._loggers.verboselog.debug(f"Opening FASTA file: {self._filepath}")
         try:  # open fasta, assumes that index is already available
             self._fasta_handle = FastaFile(str(self._filepath))
             self._is_open = True
             self._contig = self.references[0]  # contig name
         except (OSError, Exception) as e:
             self._loggers.errorlog.log_exception(f"Failed to open FASTA file {self._filepath}: {str(e)}", os.EX_IOERR)
-        self._loggers.verboselog.debug(f"Successfully opened FASTA file: {self._filepath}")
         return self
         
     
@@ -74,7 +72,6 @@ class Fasta:
         if self._fasta_handle is not None:
             self._fasta_handle.close()
             self._is_open = False
-            self._loggers.verboselog.debug(f"Closed FASTA file: {self._filepath}")
     
     def __enter__(self) -> "Fasta":
         return self.open()
@@ -90,11 +87,11 @@ class Fasta:
         return list(self._fasta_handle.references)  # return contig names in fasta
     
     @property
-    def lengths(self) -> List[int]:
+    def length(self) -> int:
         if not self._is_open or self._fasta_handle is None:
             self._loggers.errorlog.log_raise_exception("FASTA file must be opened before accessing lengths", os.EX_DATAERR, Crisprme2FastaError)
         assert self._fasta_handle  # must not be none
-        return list(self._fasta_handle.lengths)  # return contig lengths in fasta
+        return self._fasta_handle.lengths[0]  # return contig lengths in fasta
     
     @property
     def nreferences(self) -> int:
