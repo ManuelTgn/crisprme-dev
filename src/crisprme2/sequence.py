@@ -52,7 +52,6 @@ class Sequence:
             return [RC[nt] for nt in self._sequence[::-1]]
         except (KeyError, Exception) as e:
             self._loggers.errorlog.log_raise_exception(f"Error computing reverse complement: {str(e)}", os.EX_DATAERR, Crisprme2SequenceError)
-        sys.exit(1)  # base case
     
     def calculate_statistics(self) -> SequenceStats:
         if self._stats is not None:

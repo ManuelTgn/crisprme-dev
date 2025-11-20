@@ -3,7 +3,9 @@
 from .crisprme2_error import Crisprme2EnrichmentError
 from .crisprme2_argparse import Crisprme2SearchInputArgs
 from .logger import CrisprmeLoggers
+from .variant import VariantRecord
 from .fasta import Fasta
+from .sample import Sample
 from .vcf import VCF
 
 from typing import List, Dict, Tuple, Optional
@@ -174,8 +176,6 @@ import os
 # #     # assumes input guides share the same length
 # #     compute_offtargets(genome, pam, guidelen, right, outdir, loggers)
 
-def _adjust_contig_name(contig: str) -> str:
-    return contig if contig.startswith("chr") else f"chr{contig}"
 
 
 def read_fasta_files(fasta_fnames: List[str], loggers: CrisprmeLoggers) -> Dict[str, Fasta]:
@@ -185,7 +185,7 @@ def read_fasta_files(fasta_fnames: List[str], loggers: CrisprmeLoggers) -> Dict[
         with Fasta(fasta_fname,loggers) as fasta:
             if fasta.nreferences != 1:  # fasta files must be chromosome-separated
                 loggers.errorlog.log_raise_exception(f"Fasta file {fasta_fname} contains multiple contig data", os.EX_DATAERR, Crisprme2EnrichmentError)
-            contig = _adjust_contig_name(fasta.references[0])  # assume one single contig
+            contig = fasta.contig # assume one single contig
             if contig in fasta_map:
                 loggers.errorlog.log_raise_exception(f"Multiple Fasta files with contig {contig}", os.EX_DATAERR, Crisprme2EnrichmentError)
             fasta_map[contig] = fasta
@@ -197,13 +197,11 @@ def read_vcf_files(vcf_fnames: List[str], loggers: CrisprmeLoggers) -> Dict[str,
     vcf_map = {}
     for vcf_fname in vcf_fnames:
         loggers.verboselog.debug(f"Create VCF object: {vcf_fname}")
-        with VCF(vcf_fname, loggers) as vcf:
-            if len(vcf.contigs) != 1:  # vcf files must be chromosome-separated
-                loggers.errorlog.log_raise_exception(f"VCF file {vcf_fname} contains multiple contig data", os.EX_DATAERR, Crisprme2EnrichmentError)
-            contig = _adjust_contig_name(vcf.contigs[0]) # assume one single contig
-            if contig in vcf_map:
-                loggers.errorlog.log_raise_exception(f"Multiple VCF files with contig {contig}", os.EX_DATAERR, Crisprme2EnrichmentError)
-            vcf_map[contig] = vcf
+        vcf = VCF(vcf_fname, loggers)  # create vcf object
+        contig = vcf.contig  # assume one single contig
+        if contig in vcf_map:
+            loggers.errorlog.log_raise_exception(f"Multiple VCF files with contig {contig}", os.EX_DATAERR, Crisprme2EnrichmentError)
+        vcf_map[contig] = vcf
         loggers.verboselog.debug(f"Successfully created VCF object: {vcf_fname}")
     return vcf_map
 
@@ -214,6 +212,19 @@ def create_fasta_vcf_map(fasta_fnames: List[str], vcf_fnames: List[str], loggers
     vcf_map = read_vcf_files(vcf_fnames, loggers)
     return {contig: (fasta_map[contig], vcf_map[contig]) if contig in vcf_map else (fasta_map[contig], None) for contig in fasta_map}
     
+
+def construct_samples_list(fasta_vcf_map: Dict[str, Tuple[Fasta, Optional[VCF]]], loggers: CrisprmeLoggers) -> List[Sample]:
+    vcf = None
+    for _, (_, vcf_) in fasta_vcf_map.items():
+        if vcf_ is not None:  # take first available vcf in dataset
+            vcf = vcf_
+            break
+    samples = [Sample("REF", loggers)]  # create reference "sample"
+    if vcf is not None:  # input vcf data
+        # assumption: all input VCFs share the same samples set
+        samples += [Sample(sample, loggers) for sample in vcf.get_samples()]
+    return samples
+
 
 def _split_ranges(length: int, threads: int, loggers: CrisprmeLoggers, overlap: int = 100) -> List[Tuple[int, int]]:
     if length <= 0 or threads <= 0:  # should never happen
@@ -246,15 +257,15 @@ def _collect_tasks(vcf: VCF, contig_length: int, threads: int, loggers: Crisprme
         for start, stop in _split_ranges(contig_length, threads, loggers, overlap=0)
     ]  # collect tasks to perform in parallel (no overlap required)
 
-def _retrieve_variants_range(vcf: VCF, contig: Optional[str], start: Optional[int], stop: Optional[int], loggers: CrisprmeLoggers) -> int:
+def _retrieve_variants_range(vcf: VCF, contig: Optional[str], start: Optional[int], stop: Optional[int], samples: List[Sample], loggers: CrisprmeLoggers) -> int:
     try:
         with TabixFile(vcf.filepath, index=vcf.index) as tbx:
-            variants = [v for v in tbx.fetch(contig, start, stop)]
+            # variants = [1 for v in tbx.fetch(contig, start, stop)]
+            variants = [VariantRecord(v, samples, vcf.phased, vcf.ploidy, loggers) for v in tbx.fetch(contig, start, stop)]
             loggers.verboselog.debug(f"Retrieved {len(variants)} variants in {contig}:{start}-{stop}")
             return len(variants)
     except Exception as e:
         loggers.errorlog.log_exception(f"Error retrieving variants in {contig}:{start}-{stop}: {e}", os.EX_DATAERR)
-    sys.exit(1)  # base case
 
 def _collect_results(futures: List[Future], loggers: CrisprmeLoggers) -> int:
     results_all = []
@@ -265,28 +276,32 @@ def _collect_results(futures: List[Future], loggers: CrisprmeLoggers) -> int:
             loggers.errorlog.log_exception(f"Error in parallel variant retrieval task: {e}", os.EX_DATAERR)
     return sum(results_all)
 
-def retrieve_variants_contig(vcf: VCF, contig_length: int, threads: int, loggers: CrisprmeLoggers) -> int:
+def retrieve_variants_contig(vcf: VCF, contig_length: int, samples: List[Sample], threads: int, loggers: CrisprmeLoggers) -> int:
     tasks = _collect_tasks(vcf, contig_length, threads, loggers)  # collect tasks
     with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
         futures = [
-            executor.submit(_retrieve_variants_range, vcf, contig, start, stop, loggers)
+            executor.submit(_retrieve_variants_range, vcf, contig, start, stop, samples, loggers)
             for vcf, contig, start, stop, loggers in tasks
         ]
         return _collect_results(futures, loggers)
 
 
-def reconstruct_targets(fasta_vcf_map: Dict[str, Tuple[Fasta, Optional[VCF]]], threads: int, loggers: CrisprmeLoggers):
+def reconstruct_targets(fasta_vcf_map: Dict[str, Tuple[Fasta, Optional[VCF]]], samples: List[Sample], threads: int, loggers: CrisprmeLoggers):
     tasks = []  # tasks collector item
     for contig, (fasta, vcf) in fasta_vcf_map.items():
         with fasta as f:
             if vcf is not None:
                 print(contig)
-                print(retrieve_variants_contig(vcf, f.length, threads, loggers))
+                variants = vcf.read(threads=threads)
+                print(len(variants))
+                
+
 
 
 
 def enrich_genome(args: Crisprme2SearchInputArgs, loggers: CrisprmeLoggers):
     fasta_vcf_map = create_fasta_vcf_map(args.fastas, args.vcfs, loggers)
-    reconstruct_targets(fasta_vcf_map, args.threads, loggers)
+    samples = construct_samples_list(fasta_vcf_map, loggers)
+    reconstruct_targets(fasta_vcf_map, samples, args.threads, loggers)
     
     

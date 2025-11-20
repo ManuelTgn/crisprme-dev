@@ -2,7 +2,7 @@
 
 from .utils import TOOLNAME, warning
 
-from typing import Optional, Dict
+from typing import Optional, Dict, NoReturn
 from logging.handlers import RotatingFileHandler
 from colorama import Fore, Style
 
@@ -127,7 +127,7 @@ class ErrorLogger(BaseLogger):
         )
         self._log_dir = log_dir
 
-    def log_exception(self, message: str, code: int, exc_info: bool = True) -> None:
+    def log_exception(self, message: str, code: int, exc_info: bool = True) -> NoReturn:
         _halt_message(self._log_dir)  # print execution halt message in terminal
         self.logger.error(message, exc_info=exc_info)
         sys.exit(code)  # halt execution
@@ -138,7 +138,7 @@ class ErrorLogger(BaseLogger):
         code: int,
         exception_type: type = Exception,
         exc_info: bool = True,
-    ) -> None:
+    ) -> NoReturn:
         try:  # force exception raise to capture it in log file
             raise exception_type(message)
         except exception_type:  # type: ignore
@@ -146,7 +146,7 @@ class ErrorLogger(BaseLogger):
 
     def log_error_with_context(
         self, message: str, code: int, context: Optional[Dict] = None
-    ) -> None:
+    ) -> NoReturn:
         if context:
             context_str = " | ".join([f"{k}={v}" for k, v in context.items()])
             fullmessage = f"{message} | Context: {context_str}"

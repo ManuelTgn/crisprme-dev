@@ -62,7 +62,6 @@ class Fasta:
         try:  # open fasta, assumes that index is already available
             self._fasta_handle = FastaFile(str(self._filepath))
             self._is_open = True
-            self._contig = self.references[0]  # contig name
         except (OSError, Exception) as e:
             self._loggers.errorlog.log_exception(f"Failed to open FASTA file {self._filepath}: {str(e)}", os.EX_IOERR)
         return self
@@ -80,11 +79,13 @@ class Fasta:
         self.close()
     
     @property
-    def references(self) -> List[str]:
+    def contig(self) -> str:
         if not self._is_open or self._fasta_handle is None:
             self._loggers.errorlog.log_raise_exception("FASTA file must be opened before accessing references", os.EX_DATAERR, Crisprme2FastaError)
         assert self._fasta_handle  # must not be none
-        return list(self._fasta_handle.references)  # return contig names in fasta
+        assert len(self._fasta_handle.references) == 1
+        contig = self._fasta_handle.references[0]  # return contig name in fasta
+        return contig if contig.startswith("chr") else f"chr{contig}"  
     
     @property
     def length(self) -> int:
@@ -96,7 +97,7 @@ class Fasta:
     @property
     def nreferences(self) -> int:
         # return the number of contigs in input fasta
-        return len(self.references) if self._is_open else 0
+        return len(self._fasta_handle.references) if self._is_open and self._fasta_handle is not None else 0
     
     
     def fetch(self, reference: str, start: Optional[int] = None, end: Optional[int] = None) -> Sequence:
@@ -116,10 +117,9 @@ class Fasta:
             self._loggers.errorlog.log_raise_exception(f"Reference '{reference}' not found in FASTA file", os.EX_DATAERR, Crisprme2FastaError)
         except Exception as e:
             self._loggers.errorlog.log_exception(f"Error fetching sequence: {str(e)}", os.EX_DATAERR)
-        sys.exit(1)  # base case
 
     def __contains__(self, reference: str) -> bool:
-        return reference in self.references if self._is_open else False
+        return reference in self._fasta_handle.references if self._is_open and self._fasta_handle else False
     
     def __repr__(self) -> str:
         status = "open" if self._is_open else "closed"

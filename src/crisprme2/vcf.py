@@ -4,17 +4,18 @@ from .crisprme2_error import (
     Crisprme2VCFError,
     Crisprme2VCFFileNotFoundError,
     Crisprme2VCFFormatError,
-    Crisprme2VCFIndexError,
 )
 from .logger import CrisprmeLoggers
+from .variant import VariantRecord
 from .utils import find_tbi_index, warning, TBI
 
-from typing import Optional, Iterator, List, Dict, Any
+from typing import Optional, List
 from pysam import TabixFile, TabixIterator, tabix_index
 from pathlib import Path
 
-import sys
+import cyvcf2
 import os
+
 
 # vcf extensions
 VCFEXTENSIONS = {"vcf", "vcf.gz", "bcf", "bcf.gz"}
@@ -27,11 +28,10 @@ class VCF:
         self._filepath = Path(filepath)  # vcf filename
         self._validate_file()  # validate vcf file structure
         self._index = self._search_index()  # tbi index
-        self._vcf_handle: Optional[TabixFile] = None
-        self._is_open = False
-        self._contig = None
+        self._assess_phasing()  # assess if VCF is phased
 
     def _validate_file(self) -> None:
+        # check file existence and extension
         if not self._filepath.exists():
             self._loggers.errorlog.log_raise_exception(
                 f"VCF file not found: {self._filepath}",
@@ -44,13 +44,18 @@ class VCF:
                 os.EX_DATAERR,
                 Crisprme2VCFFileNotFoundError,
             )
-        # check file extension
         if not any(str(self._filepath).endswith(ext) for ext in VCFEXTENSIONS):
             self._loggers.errorlog.log_raise_exception(
                 f"File {self._filepath} does not have a standard VCF extension",
                 os.EX_DATAERR,
-                Crisprme2VCFError,
+                Crisprme2VCFFormatError,
             )
+        # check number of contigs and genotyping availability in VCF
+        vcf_ = cyvcf2.VCF(str(self._filepath))
+        if len(vcf_.seqnames) > 1:
+            self._loggers.errorlog.log_raise_exception(f"Multiple contigs in {self._filepath}", os.EX_DATAERR, Crisprme2VCFFormatError)
+        if not vcf_.contains("GT"):
+            self._loggers.errorlog.log_raise_exception(f"Missing genotype (GT) field in {self._filepath}", os.EX_DATAERR, Crisprme2VCFFormatError)
 
     def _index_vcf(self, pytest: bool = False) -> str:
         if self._index and not pytest:  # launch warning
@@ -73,88 +78,28 @@ class VCF:
         self._loggers.verboselog.debug(f"Tabix index not found for {self._filepath}")
         return Path(self._index_vcf())
     
-    def open(self) -> "VCF":
-        if self._is_open:  # vcf already open
-            self._loggers.errorlog.log_raise_exception(
-                f"VCF file {self._filepath} is already open",
-                os.EX_IOERR,
-                Crisprme2VCFError,
-            )
-        try:  # open vcf, assumes that index is already available
-            self._vcf_handle = TabixFile(str(self._filepath), index=str(self._index))
-            self._is_open = True
-            self._contig = self._vcf_handle.contigs[0]  # contig name
-        except (OSError, Exception) as e:
-            self._loggers.errorlog.log_exception(
-                f"Failed to open VCF file {self._filepath}: {e}", os.EX_IOERR
-            )
-        return self
-    
-    def close(self) -> None:
-        if self._vcf_handle is not None:
-            self._vcf_handle.close()
-            self._is_open = False
+    def _assess_phasing(self) -> None:
+        variant = None
+        for v in cyvcf2.VCF(self._filepath):
+            variant = v
+            break
+        assert variant is not None
+        self._phasing = all(phase for phase in variant.gt_phases)
 
-    def __enter__(self) -> "VCF":
-        return self.open()
-
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        self.close()
+    def read(self, threads: int = 1):
+        vcf = cyvcf2.VCF(str(self._filepath), threads=threads)  # open vcf 
+        print("hello")
+        return [v for v in vcf]
+        # return [VariantRecord(v, self._loggers) for v in vcf]
 
     @property
-    def contigs(self) -> List[str]:
-        return (
-            list(self._vcf_handle.contigs)
-            if (self._is_open and self._vcf_handle is not None)
-            else []
-        )
+    def contig(self) -> str:
+        c = cyvcf2.VCF(str(self._filepath)).seqnames[0]
+        return c if c.startswith("chr") else f"chr{c}"
     
-    def fetch(
-        self,
-        contig: Optional[str] = None,
-        start: Optional[int] = None,
-        end: Optional[int] = None,
-    ) -> TabixIterator:
-        if not self._is_open or self._vcf_handle is None:
-            self._loggers.errorlog.log_raise_exception(
-                "VCF file must be opened before fetching variants",
-                os.EX_IOERR,
-                Crisprme2VCFError,
-            )
-        assert self._vcf_handle is not None
-        try:  # fetch variants in range
-            if contig is not None:
-                if start is not None or end is not None:
-                    assert self._index  # region-based fetch requires index
-                return self._vcf_handle.fetch(self._contig, start, end)
-            else:
-                return self._vcf_handle.fetch()
-        except Exception as e:
-            self._loggers.errorlog.log_exception(
-                f"Error fetching variants from {self._filepath}: {str(e)}",
-                os.EX_DATAERR,
-            )
-        sys.exit(os.EX_IOERR)
-
     def get_samples(self) -> List[str]:
-        if not self._is_open or self._vcf_handle is None:
-            self._loggers.errorlog.log_raise_exception(
-                f"VCF file not open: {self._filepath}; cannot retrieve samples",
-                os.EX_IOERR,
-                Crisprme2VCFError,
-            )
-        assert self._vcf_handle is not None
-        return self._vcf_handle.header[-1].strip().split()[9:]
-    
-    def count_variants(
-        self,
-        contig: Optional[str] = None,
-        start: Optional[int] = None,
-        end: Optional[int] = None,
-    ) -> int:
-        print("hello")
-        return sum(1 for _ in self.fetch(contig, start, end))
-    
+        return cyvcf2.VCF(str(self._filepath)).samples
+        
     @property
     def filepath(self) -> str:
         return str(self._filepath)
@@ -162,21 +107,7 @@ class VCF:
     @property
     def index(self) -> str:
         return str(self._index)
-    
-    @property
-    def contig(self) -> Optional[str]:
-        return self._contig
-
-    def __contains__(self, contig: str) -> bool:
-        return contig in self.contigs if self._is_open else False
-
 
     def __repr__(self) -> str:
-        status = "open" if self._is_open else "closed"
-        return f"<{self.__class__.__name__} object; contigs={self._contig}, status={status}>"
-
-    def __del__(self):
-        if self._is_open:
-            self.close()
-
+        return f"<{self.__class__.__name__} object; contigs={self.contig}>"
     

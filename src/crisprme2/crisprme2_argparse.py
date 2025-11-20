@@ -218,7 +218,9 @@ class Crisprme2SearchInputArgs:
     
     @property
     def vcfs(self) -> List[str]:
-        return self._vcfs
+        if hasattr(self, "_vcfs"):
+            return self._vcfs
+        return []
 
     @property
     def guide(self) -> Optional[str]:
