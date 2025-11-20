@@ -29,6 +29,7 @@ class VCF:
         self._validate_file()  # validate vcf file structure
         self._index = self._search_index()  # tbi index
         self._assess_phasing()  # assess if VCF is phased
+        self._contig: str = cyvcf2.VCF(str(self._filepath)).seqnames[0]  # contig name
 
     def _validate_file(self) -> None:
         # check file existence and extension
@@ -58,7 +59,7 @@ class VCF:
             self._loggers.errorlog.log_raise_exception(f"Missing genotype (GT) field in {self._filepath}", os.EX_DATAERR, Crisprme2VCFFormatError)
 
     def _index_vcf(self, pytest: bool = False) -> str:
-        if self._index and not pytest:  # launch warning
+        if not pytest:  # launch warning
             warning("Tabix index already present, forcing update", 1)
         try:  # create index in the same folder as the input vcf
             tabix_index(str(self._filepath), preset="vcf", force=True)
@@ -86,16 +87,16 @@ class VCF:
         assert variant is not None
         self._phasing = all(phase for phase in variant.gt_phases)
 
-    def read(self, threads: int = 1):
-        vcf = cyvcf2.VCF(str(self._filepath), threads=threads)  # open vcf 
-        print("hello")
-        return [v for v in vcf]
-        # return [VariantRecord(v, self._loggers) for v in vcf]
+    def read(self, start: Optional[int], stop: Optional[int], threads: int = 1) -> List[VariantRecord]:
+        reader = cyvcf2.VCF(str(self._filepath), lazy=True, threads=threads)  # open vcf 
+        if start is not None and stop is not None:
+            region = f"{self._contig}:{start}-{stop}"
+            return [VariantRecord(v, self._loggers) for v in reader(region)]
+        return [VariantRecord(v, self._loggers) for v in reader]
 
     @property
     def contig(self) -> str:
-        c = cyvcf2.VCF(str(self._filepath)).seqnames[0]
-        return c if c.startswith("chr") else f"chr{c}"
+        return self._contig if self._contig.startswith("chr") else f"chr{self._contig}"
     
     def get_samples(self) -> List[str]:
         return cyvcf2.VCF(str(self._filepath)).samples

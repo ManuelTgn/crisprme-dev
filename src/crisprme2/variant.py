@@ -20,55 +20,37 @@ class VariantRecord:
 
     def __init__(self, variant: Variant, loggers: CrisprmeLoggers) -> None:
         self._loggers = loggers  # store loggers
-        self._read_variant_info(variant)  # read vcf line 
-
-    def _read_variant_info(self, variant: Variant) -> None:
-        self._contig = variant.CHROM
-        self._position = variant.POS
-        self._ref = variant.REF
-        self._alt = variant.ALT
-        self._filters = variant.FILTERS
-        self._allelesnum = len(self._alt)
-        self._vid = self._assign_id()
-        self._af = variant.aaf
-        self._ploidy = variant.ploidy
-        self._genotypes = variant.genotypes
-        self._num_called = variant.num_called
-        self._num_hom_ref = variant.num_hom_ref
-        self._vtype = variant.var_type
+        self._variant = variant  # read vcf line 
+        self._allelesnum = len(self.alt)
+        self._vtype = self._assign_variant_type()  # compute variant types
+        self._vid = self._assign_id()  # compute variant ids        
 
 
     def __repr__(self) -> str:
-        altalleles = ",".join(self._alt)
+        altalleles = ",".join(self.alt)
         return (
-            f'<{self.__class__.__name__} object; variant="{self._contig} {self._position} '
-            f'{self._ref} {altalleles}">'
+            f'<{self.__class__.__name__} object; variant="{self.contig} {self.position} '
+            f'{self.ref} {altalleles}">'
         )
 
     def __str__(self) -> str:
-        altalleles = ",".join(self._alt)
-        return f"{self._contig}\t{self._position}\t{self._ref}\t{altalleles}"
+        altalleles = ",".join(self.alt)
+        return f"{self.contig}\t{self.position}\t{self.ref}\t{altalleles}"
 
     def __eq__(self, vrecord: object) -> bool:
         if not isinstance(vrecord, VariantRecord):
             return NotImplemented
-        if not hasattr(vrecord, "_chrom"):  # always trace this error
-            self._loggers.errorlog.log_raise_exception(f"Comparison between {self.__class__.__name__} object failed", os.EX_DATAERR, Crisprme2VariantRecordError)
-        if not hasattr(vrecord, "_position"):  # always trace this error
-            self._loggers.errorlog.log_raise_exception(f"Comparison between {self.__class__.__name__} object failed", os.EX_DATAERR, Crisprme2VariantRecordError)
-        if not hasattr(vrecord, "_ref"):  # always trace this error
-            self._loggers.errorlog.log_raise_exception(f"Comparison between {self.__class__.__name__} object failed", os.EX_DATAERR, Crisprme2VariantRecordError)
-        if not hasattr(vrecord, "_alt"):  # always trace this error
+        if not hasattr(vrecord, "_variant"):  
             self._loggers.errorlog.log_raise_exception(f"Comparison between {self.__class__.__name__} object failed", os.EX_DATAERR, Crisprme2VariantRecordError)
         return (
-            self._contig == vrecord.contig
-            and self._position == vrecord.position
-            and self._ref == vrecord.ref
-            and self._alt == vrecord.alt
+            self._variant.CHROM == vrecord.contig
+            and self._variant.POS == vrecord.position
+            and self._variant.REF == vrecord.ref
+            and self._variant.ALT == vrecord.alt
         )
 
     def __lt__(self, vrecord: "VariantRecord") -> bool:
-        return self._position < vrecord.position
+        return self._variant.POS < vrecord.position
 
     def __gt__(self, vrecord: "VariantRecord") -> bool:
         """Compare two VariantRecord objects based on position.
@@ -83,7 +65,7 @@ class VariantRecord:
             True if the current object's position is greater than the other object's
             position, False otherwise.
         """
-        return self._position > vrecord.position
+        return self._variant.POS > vrecord.position
 
     def __hash__(self) -> int:
         """Return a hash value for the variant record.
@@ -95,41 +77,45 @@ class VariantRecord:
         Returns:
             The hash value of the variant record.
         """
-        return hash((self._contig, self._position, self._ref, tuple(self._alt)))
+        return hash((self._variant.CHROM, self._variant.POS, self._variant.REF, tuple(self._variant.ALT)))
 
 
     def _assign_id(self) -> List[str]:
         if self._allelesnum == 1:
             # variant id not available, construct the id using chrom, position, ref,
             # and alt (e.g. chrx-100-A/G)
-            return [_compute_id(self._contig, self._position, self._ref, self._alt[0])]
+            return [_compute_id(self._variant.CHROM, self._variant.POS, self._variant.REF, self._variant.ALT[0])]
         # if multiallelic site compute the id for each alternative allele
         # avoid potential confusion due to alternative alleles at same position
         # labeled with the same id
         return [
-            _compute_id(self._contig, self._position, self._ref, altallele)
-            for altallele in self._alt
+            _compute_id(self._variant.CHROM, self._variant.POS, self._variant.REF, altallele)
+            for altallele in self._variant.ALT
         ]
+    
+    def _assign_variant_type(self) -> List[str]:
+        return [VTYPES[0] if len(self.ref) == len(altallele) else VTYPES[1] for altallele in self.alt]
+
             
     @property
     def contig(self) -> str:
-        return self._contig
+        return self._variant.CHROM
     
     @property
     def position(self) -> int:
-        return self._position
+        return self._variant.POS
     
     @property
     def ref(self) -> str:
-        return self._ref
+        return self._variant.REF
 
     @property
     def alt(self) -> List[str]:
-        return self._alt
+        return self._variant.ALT
     
     @property
     def filters(self) -> List[str]:
-        return self._filters
+        return self._variant.FILTERS
     
     @property
     def id(self) -> List[str]:
@@ -137,23 +123,23 @@ class VariantRecord:
     
     @property
     def af(self) -> List[float]:
-        return self._af
+        return self._variant.aaf
 
     @property
     def ploidy(self) -> int:
-        return self._ploidy
+        return self._variant.ploidy
 
     @property
     def genotypes(self) -> List[List[int]]:
-        return self._genotypes
+        return self._variant.genotypes
 
     @property
     def num_called(self) -> int:
-        return self._num_called
+        return self._variant.num_called
 
     @property
     def num_hom_ref(self) -> int:
-        return self._num_hom_ref
+        return self._variant.num_hom_ref
     
     @property
     def vtype(self) -> List[str]:

@@ -15,7 +15,7 @@ from pysam import TabixFile
 import concurrent.futures
 import numpy as np
 
-
+import cyvcf2
 
 
 from .utils import DNA, IUPACTABLE
@@ -292,8 +292,18 @@ def reconstruct_targets(fasta_vcf_map: Dict[str, Tuple[Fasta, Optional[VCF]]], s
         with fasta as f:
             if vcf is not None:
                 print(contig)
-                variants = vcf.read(threads=threads)
-                print(len(variants))
+                start_time1 = time()
+                # t1 = threads // 2
+                # t2 = threads - t1
+                ranges = _split_ranges(fasta.length, threads, loggers, 500)
+                for start, stop in ranges:
+                    start_time2 = time()
+                    variants = vcf.read(start=start, stop=stop, threads=1) 
+                    # reader =  cyvcf2.VCF(vcf.filepath, mode="r", threads=1, lazy=True)
+                    # variants = [v for v in reader]
+                    # del reader
+                    print(len(variants), f"region: {contig}:{start}-{stop}\ttime: {time() - start_time2:.2f}s")
+                print(f"contig: {contig}\ttotal time: {time() - start_time1:.2f}s")
                 
 
 
