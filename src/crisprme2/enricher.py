@@ -8,6 +8,8 @@ from .fasta import Fasta
 from .sample import Sample
 from .vcf import VCF
 
+from .sequence_parser import extract_targets_parallel
+
 from typing import List, Dict, Tuple, Optional
 from concurrent.futures import Future
 from pysam import TabixFile
@@ -290,20 +292,26 @@ def reconstruct_targets(fasta_vcf_map: Dict[str, Tuple[Fasta, Optional[VCF]]], s
     tasks = []  # tasks collector item
     for contig, (fasta, vcf) in fasta_vcf_map.items():
         with fasta as f:
-            if vcf is not None:
-                print(contig)
-                start_time1 = time()
-                # t1 = threads // 2
-                # t2 = threads - t1
-                ranges = _split_ranges(fasta.length, threads, loggers, 500)
-                for start, stop in ranges:
-                    start_time2 = time()
-                    variants = vcf.read(start=start, stop=stop, threads=1) 
-                    # reader =  cyvcf2.VCF(vcf.filepath, mode="r", threads=1, lazy=True)
-                    # variants = [v for v in reader]
-                    # del reader
-                    print(len(variants), f"region: {contig}:{start}-{stop}\ttime: {time() - start_time2:.2f}s")
-                print(f"contig: {contig}\ttotal time: {time() - start_time1:.2f}s")
+            print(contig, f.length)
+            start = time()
+            targets = extract_targets_parallel(f.fetch(contig).sequence, 23, threads)
+            print(f"targets: {len(set(targets))}\ttime: {time() - start:.2f}s")
+            # if vcf is not None:
+            #     print(contig)
+            #     start_time1 = time()
+            #     # t1 = threads // 2
+            #     # t2 = threads - t1
+            #     ranges = _split_ranges(fasta.length, threads, loggers, 500)
+            #     for start, stop in ranges:
+            #         start_time2 = time()
+            #         variants = vcf.read(start=start, stop=stop, threads=1) 
+            #         # reader =  cyvcf2.VCF(vcf.filepath, mode="r", threads=1, lazy=True)
+            #         # variants = [v for v in reader]
+            #         # del reader
+            #         print(len(variants), f"region: {contig}:{start}-{stop}\ttime: {time() - start_time2:.2f}s")
+            #     print(f"contig: {contig}\ttotal time: {time() - start_time1:.2f}s")
+
+    
                 
 
 

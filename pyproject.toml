@@ -3,7 +3,7 @@
 # =============================================================================
 
 [build-system]
-requires = ["setuptools>=45", "wheel"]
+requires = ["setuptools>=61", "wheel", "setuptools-rust>=1.1.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -22,13 +22,10 @@ keywords = ["CRISPR", "off-targets", "haplotype", "variant", "bioinformatics"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: AGPL-3 License",
+    "License :: OSI Approved :: GNU Affero General Public License v3",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
     "Topic :: Scientific/Engineering :: Bio-Informatics",
 ]
 requires-python = ">=3.8"

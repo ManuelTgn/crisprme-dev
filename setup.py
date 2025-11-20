@@ -1,4 +1,5 @@
 from setuptools import setup, find_packages
+from setuptools_rust import RustExtension, Binding
 
 # Read README for long description
 with open("README.md", "r", encoding="utf-8") as fh:
@@ -15,8 +16,10 @@ setup(
     version="0.1.0",
     author="Manuel Tognon",
     author_email="manu.tognon@gmail.com",
-    description="CRISPRme2: High-performance and scalable tool for variant- and"
-    "haplotype-aware genome-wide off-target assessment in CRISPR-Cas systems",
+    description=(
+        "CRISPRme2: High-performance and scalable tool for variant- and "
+        "haplotype-aware genome-wide off-target assessment in CRISPR-Cas systems"
+    ),
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/ManuelTgn/CRISPRme2",
@@ -43,4 +46,13 @@ setup(
     },
     include_package_data=True,
     zip_safe=False,
+    # ===== Rust extension =====
+    rust_extensions=[
+        RustExtension(
+            "crisprme2.sequence_parser",  # Python module path
+            "rust/Cargo.toml",            # path to your Rust crate
+            binding=Binding.PyO3,
+            debug=False,
+        ),
+    ],
 )
