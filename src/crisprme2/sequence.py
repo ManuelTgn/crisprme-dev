@@ -1,10 +1,10 @@
 """ """
 
-from .crisprme2_error import Crisprme2SequenceError
+from .crisprme2_error import Crisprme2SequenceError, Crisprme2ContigSequenceError
 from .logger import CrisprmeLoggers
 from .utils import RC
 
-from typing import Optional, Union, List
+from typing import Optional, Union, List, Generator
 
 import sys
 import os
@@ -30,22 +30,19 @@ class Sequence:
     def __init__(self, sequence: str, loggers: CrisprmeLoggers):
         self._loggers = loggers  # store loggers
         self._sequence = list(sequence)  # store sequence as list of str
+        self._length = len(self._sequence)
         self._stats: Optional[SequenceStats] = None  # basic sequence stats
 
     def __len__(self) -> int:
-        return len(self._sequence)
+        return self._length
     
     def __str__(self) -> str:
         return "".join(self._sequence)
-        
-    @property
-    def sequence(self) -> str:
-        return "".join(self._sequence)
     
-    def subsequence(self, start: int, end: int) -> List[str]:
+    def subsequence(self, start: int, end: int) -> str:
         if start < 0 or end > len(self) or start >= end:
             self._loggers.errorlog.log_raise_exception(f"Invalid coordinates: start={start}, end={end}, length={len(self)}", os.EX_DATAERR, Crisprme2SequenceError)
-        return self._sequence[start:end]
+        return "".join(self._sequence[start:end])
     
     def reverse_complement(self) -> List[str]:
         try:
@@ -60,7 +57,45 @@ class Sequence:
         self._stats = SequenceStats(length=len(self), n_count=n_count)
         return self._stats
         
+    @property
+    def sequence(self) -> str:
+        return "".join(self._sequence)
     
+
+class ContigSequence(Sequence):
+    
+    def __init__(self, sequence: str, contig: str, start: int, stop: int, loggers: CrisprmeLoggers) -> None:
+        super().__init__(sequence, loggers)
+        self._contig = contig  # store sequence contig name
+        self._start = start  # start sequence start position
+        self._stop = stop  # store sequence stop position
+
+    def chunk(self, size: int, overlap: int):
+        if overlap >= size:
+            self._loggers.errorlog.log_raise_exception(f"Overlap size ({overlap}) must be less than the chunk size ({size})", os.EX_DATAERR, Crisprme2ContigSequenceError)
+        if size >= self._length:  # handle short contigs
+            size = self._length
+        step = size - overlap  # e.g., size=100 and overlap=10, step is 90
+        for i in range(0, self._length, step):
+            start, stop = i, i + size
+            if stop >= self._length:
+                stop = self._length
+            yield ContigSequence(self.subsequence(start, stop), self._contig, start, stop, self._loggers)
+
+
+    @property
+    def contig(self) -> str:
+        return self._contig
+    
+    @property
+    def start(self) -> int:
+        return self._start
+    
+    @property
+    def stop(self) -> int:
+        return self._stop
+    
+
 
 
 

@@ -4,6 +4,7 @@ from .crisprme2_error import Crisprme2EnrichmentError
 from .crisprme2_argparse import Crisprme2SearchInputArgs
 from .logger import CrisprmeLoggers
 from .variant import VariantRecord
+from .sequence import ContigSequence
 from .fasta import Fasta
 from .sample import Sample
 from .vcf import VCF
@@ -28,6 +29,10 @@ from time import time
 
 import sys
 import os
+
+# contig chunk size and overlap
+CHUNKSIZE = 10000000
+CHUNKOVERLAP = 500
 
 
 # def read_genome(fasta_fnames: List[str], loggers: CrisprmeLoggers) -> List[GenomeFasta]:
@@ -228,64 +233,83 @@ def construct_samples_list(fasta_vcf_map: Dict[str, Tuple[Fasta, Optional[VCF]]]
     return samples
 
 
-def _split_ranges(length: int, threads: int, loggers: CrisprmeLoggers, overlap: int = 100) -> List[Tuple[int, int]]:
-    if length <= 0 or threads <= 0:  # should never happen
-        loggers.errorlog.log_raise_exception(f"Empty string or 0 threads used", os.EX_DATAERR, Crisprme2EnrichmentError)
-    # compute the base size of the non-overlapping portion of each chunk
-    # np.ceil ensures that the sum of the base sizes is at least the total string 
-    # length, guaranteeing full coverage
-    base_chunk_size = int(np.ceil(length / threads))
-    ranges: List[Tuple[int, int]] = []
-    for i in range(threads):
-        # calculate the non-overlapping start index for the current chunk
-        non_overlapping_start = i * base_chunk_size
-        # calculate the non-overlapping end index (exclusive)
-        non_overlapping_end = min((i + 1) * base_chunk_size, length)
-        # apply overlap to start and end indexes
-        start_index = max(0, non_overlapping_start - overlap)
-        end_index = min(length, non_overlapping_end + overlap)
-        # if the end index calculation results in a slice that is smaller than 
-        # the required overlap ensure the end index is at least the string length
-        # if it's the last chunk
-        if i == threads - 1:
-            end_index = length
-        if start_index < end_index:  # skip if start and end are the same
-            ranges.append((start_index, end_index))
-    return ranges
+# def _split_ranges(length: int, threads: int, loggers: CrisprmeLoggers, overlap: int = 100) -> List[Tuple[int, int]]:
+#     if length <= 0 or threads <= 0:  # should never happen
+#         loggers.errorlog.log_raise_exception(f"Empty string or 0 threads used", os.EX_DATAERR, Crisprme2EnrichmentError)
+#     # compute the base size of the non-overlapping portion of each chunk
+#     # np.ceil ensures that the sum of the base sizes is at least the total string 
+#     # length, guaranteeing full coverage
+#     base_chunk_size = int(np.ceil(length / threads))
+#     ranges: List[Tuple[int, int]] = []
+#     for i in range(threads):
+#         # calculate the non-overlapping start index for the current chunk
+#         non_overlapping_start = i * base_chunk_size
+#         # calculate the non-overlapping end index (exclusive)
+#         non_overlapping_end = min((i + 1) * base_chunk_size, length)
+#         # apply overlap to start and end indexes
+#         start_index = max(0, non_overlapping_start - overlap)
+#         end_index = min(length, non_overlapping_end + overlap)
+#         # if the end index calculation results in a slice that is smaller than 
+#         # the required overlap ensure the end index is at least the string length
+#         # if it's the last chunk
+#         if i == threads - 1:
+#             end_index = length
+#         if start_index < end_index:  # skip if start and end are the same
+#             ranges.append((start_index, end_index))
+#     return ranges
 
-def _collect_tasks(vcf: VCF, contig_length: int, threads: int, loggers: CrisprmeLoggers):
-    return [
-        (vcf, vcf.contig, start, stop, loggers)
-        for start, stop in _split_ranges(contig_length, threads, loggers, overlap=0)
-    ]  # collect tasks to perform in parallel (no overlap required)
+# def _collect_tasks(vcf: VCF, contig_length: int, threads: int, loggers: CrisprmeLoggers):
+#     return [
+#         (vcf, vcf.contig, start, stop, loggers)
+#         for start, stop in _split_ranges(contig_length, threads, loggers, overlap=0)
+#     ]  # collect tasks to perform in parallel (no overlap required)
 
-def _retrieve_variants_range(vcf: VCF, contig: Optional[str], start: Optional[int], stop: Optional[int], samples: List[Sample], loggers: CrisprmeLoggers) -> int:
-    try:
-        with TabixFile(vcf.filepath, index=vcf.index) as tbx:
-            # variants = [1 for v in tbx.fetch(contig, start, stop)]
-            variants = [VariantRecord(v, samples, vcf.phased, vcf.ploidy, loggers) for v in tbx.fetch(contig, start, stop)]
-            loggers.verboselog.debug(f"Retrieved {len(variants)} variants in {contig}:{start}-{stop}")
-            return len(variants)
-    except Exception as e:
-        loggers.errorlog.log_exception(f"Error retrieving variants in {contig}:{start}-{stop}: {e}", os.EX_DATAERR)
+# def _retrieve_variants_range(vcf: VCF, contig: Optional[str], start: Optional[int], stop: Optional[int], samples: List[Sample], loggers: CrisprmeLoggers) -> int:
+#     try:
+#         with TabixFile(vcf.filepath, index=vcf.index) as tbx:
+#             # variants = [1 for v in tbx.fetch(contig, start, stop)]
+#             variants = [VariantRecord(v, samples, vcf.phased, vcf.ploidy, loggers) for v in tbx.fetch(contig, start, stop)]
+#             loggers.verboselog.debug(f"Retrieved {len(variants)} variants in {contig}:{start}-{stop}")
+#             return len(variants)
+#     except Exception as e:
+#         loggers.errorlog.log_exception(f"Error retrieving variants in {contig}:{start}-{stop}: {e}", os.EX_DATAERR)
 
-def _collect_results(futures: List[Future], loggers: CrisprmeLoggers) -> int:
-    results_all = []
-    for future in concurrent.futures.as_completed(futures):
-        try:
-            results_all.append(future.result())
-        except Exception as e:
-            loggers.errorlog.log_exception(f"Error in parallel variant retrieval task: {e}", os.EX_DATAERR)
-    return sum(results_all)
+# def _collect_results(futures: List[Future], loggers: CrisprmeLoggers) -> int:
+#     results_all = []
+#     for future in concurrent.futures.as_completed(futures):
+#         try:
+#             results_all.append(future.result())
+#         except Exception as e:
+#             loggers.errorlog.log_exception(f"Error in parallel variant retrieval task: {e}", os.EX_DATAERR)
+#     return sum(results_all)
 
-def retrieve_variants_contig(vcf: VCF, contig_length: int, samples: List[Sample], threads: int, loggers: CrisprmeLoggers) -> int:
-    tasks = _collect_tasks(vcf, contig_length, threads, loggers)  # collect tasks
-    with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
-        futures = [
-            executor.submit(_retrieve_variants_range, vcf, contig, start, stop, samples, loggers)
-            for vcf, contig, start, stop, loggers in tasks
-        ]
-        return _collect_results(futures, loggers)
+# def retrieve_variants_contig(vcf: VCF, contig_length: int, samples: List[Sample], threads: int, loggers: CrisprmeLoggers) -> int:
+#     tasks = _collect_tasks(vcf, contig_length, threads, loggers)  # collect tasks
+#     with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
+#         futures = [
+#             executor.submit(_retrieve_variants_range, vcf, contig, start, stop, samples, loggers)
+#             for vcf, contig, start, stop, loggers in tasks
+#         ]
+#         return _collect_results(futures, loggers)
+
+
+
+def chunk_contig_sequence(contig_sequence: ContigSequence, threads: int):
+    contig_chunks = [c for c in contig_sequence.chunk(CHUNKSIZE, 0)]
+    targets = []
+    tot = len(contig_chunks)
+    start_time = time()
+    for i, contig_chunk in enumerate(contig_chunks):
+        
+        targets.extend(extract_targets_parallel(contig_chunk.sequence, 23, threads))
+        print(f"Progress: {(((i + 1) / tot) * 100):.2f}%%", end="\r")
+    print()
+    print(f"targets: {len(targets)}")
+    print(f"elapsed time {time() - start_time:.2f}s")
+    print()
+
+
+
 
 
 def reconstruct_targets(fasta_vcf_map: Dict[str, Tuple[Fasta, Optional[VCF]]], samples: List[Sample], threads: int, loggers: CrisprmeLoggers):
@@ -293,9 +317,8 @@ def reconstruct_targets(fasta_vcf_map: Dict[str, Tuple[Fasta, Optional[VCF]]], s
     for contig, (fasta, vcf) in fasta_vcf_map.items():
         with fasta as f:
             print(contig, f.length)
-            start = time()
-            targets = extract_targets_parallel(f.fetch(contig).sequence, 23, threads)
-            print(f"targets: {len(set(targets))}\ttime: {time() - start:.2f}s")
+
+            chunk_contig_sequence(f.fetch(contig), threads)
             # if vcf is not None:
             #     print(contig)
             #     start_time1 = time()

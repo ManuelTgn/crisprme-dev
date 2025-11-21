@@ -2,10 +2,11 @@
 
 from .crisprme2_error import Crisprme2FastaError, Crisprme2FastaFileNotFoundError, Crisprme2SequenceError
 from .utils import FAI, warning, find_fai_index
-from .sequence import Sequence
+from .sequence import ContigSequence
 from .logger import CrisprmeLoggers
 
 from typing import Optional, List
+from pysam.utils import SamtoolsError
 from pysam import FastaFile, faidx
 from pathlib import Path
 
@@ -24,7 +25,7 @@ class Fasta:
         self._index = self._search_index()  # fai index
         self._fasta_handle: Optional[FastaFile] = None
         self._is_open = False  
-        self._contig = None      
+        self._init_contig_length()  # initialize contig name and length
     
     def _validate_file(self) -> None:
         if not self._filepath.exists():
@@ -56,6 +57,17 @@ class Fasta:
         self._loggers.verboselog.debug(f"FASTA index not found for {self._filepath}")
         return Path(self._index_fasta())
     
+    def _init_contig_length(self) -> None:
+        self.open()  # manually open fasta file
+        assert self._fasta_handle  # should be open
+        self._ncontigs = len(self._fasta_handle.references)
+        if self._ncontigs != 1:
+            self._loggers.errorlog.log_raise_exception(f"Multiple contigs found in {self._filepath}", os.EX_DATAERR, Crisprme2FastaError)
+        # we're 100% sure that there is only one contig in this fasta 
+        self._contig = self._fasta_handle.references[0]
+        self._length = self._fasta_handle.lengths[0]
+        self.close()  # manually close fasta file
+
     def open(self) -> "Fasta":
         if self._is_open:
             self._loggers.errorlog.log_raise_exception(f"FASTA file {self._filepath} is already open", os.EX_DATAERR, Crisprme2FastaError)
@@ -78,39 +90,18 @@ class Fasta:
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         self.close()
     
-    @property
-    def contig(self) -> str:
-        if not self._is_open or self._fasta_handle is None:
-            self._loggers.errorlog.log_raise_exception("FASTA file must be opened before accessing references", os.EX_DATAERR, Crisprme2FastaError)
-        assert self._fasta_handle  # must not be none
-        assert len(self._fasta_handle.references) == 1
-        contig = self._fasta_handle.references[0]  # return contig name in fasta
-        return contig if contig.startswith("chr") else f"chr{contig}"  
     
-    @property
-    def length(self) -> int:
-        if not self._is_open or self._fasta_handle is None:
-            self._loggers.errorlog.log_raise_exception("FASTA file must be opened before accessing lengths", os.EX_DATAERR, Crisprme2FastaError)
-        assert self._fasta_handle  # must not be none
-        return self._fasta_handle.lengths[0]  # return contig lengths in fasta
-    
-    @property
-    def nreferences(self) -> int:
-        # return the number of contigs in input fasta
-        return len(self._fasta_handle.references) if self._is_open and self._fasta_handle is not None else 0
-    
-    
-    def fetch(self, reference: str, start: Optional[int] = None, end: Optional[int] = None) -> Sequence:
+    def fetch(self, reference: str, start: Optional[int] = None, end: Optional[int] = None) -> ContigSequence:
         if not self._is_open or self._fasta_handle is None:
             self._loggers.errorlog.log_raise_exception("FASTA file must be opened before fetching", os.EX_DATAERR, Crisprme2FastaError)
         assert self._fasta_handle  # must not be none
         try:
             if start is None and end is None:  # access string by contig name
-                return Sequence(self._fasta_handle.fetch(reference), self._loggers)
+                return ContigSequence(self._fasta_handle.fetch(reference), self._contig, 0, self._length, self._loggers)
             elif start is not None and end is not None:
                 if start < 0 or end < start:
                     self._loggers.errorlog.log_raise_exception(f"Invalid coordinates: start={start}, end={end}", os.EX_DATAERR, Crisprme2SequenceError)
-                return Sequence(self._fasta_handle.fetch(reference, start, end), self._loggers)
+                return ContigSequence(self._fasta_handle.fetch(reference, start, end), self._contig, start, end, self._loggers)
             else:
                 self._loggers.errorlog.log_raise_exception("Both start and end must be specified or both None", os.EX_DATAERR, Crisprme2SequenceError)
         except KeyError:
@@ -128,5 +119,37 @@ class Fasta:
     def __del__(self):
         if self._is_open:
             self.close()
+
+    @property
+    def contig(self) -> str:
+        return self._contig if self._contig.startswith("chr") else f"chr{self._contig}"  
+    
+    @property
+    def length(self) -> int:
+        return self._length  # return contig lengths in fasta
+    
+    @property
+    def nreferences(self) -> int:
+        return self._ncontigs  # return the number of contigs in input fasta
+    
+
+class GuideFasta(Fasta):
+
+    def __init__(self, filepath: str, loggers: CrisprmeLoggers) -> None:
+        super().__init__(filepath, loggers)
+
+    def _read_guides(self) -> None:
+        f = FastaFile(str(self._filepath), filepath_index=str(self._index))
+        gnames = f.references  # retrieve guides seqnames (fasta headers)
+        try:  # extract guide sequence
+            self._guides = list({f.fetch(gname) for gname in gnames})  
+        except (SamtoolsError, Exception):
+            self._loggers.errorlog.log_exception(
+                f"Failed parsing guides from {self._filepath}", os.EX_DATAERR
+            )
+
+    @property
+    def guides(self) -> List[str]:
+        return self._guides
 
 
