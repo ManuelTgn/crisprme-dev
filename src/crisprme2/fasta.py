@@ -14,7 +14,6 @@ from pysam.utils import SamtoolsError
 from pysam import FastaFile, faidx
 from pathlib import Path
 
-import sys
 import os
 
 # fasta file extensions
@@ -117,6 +116,11 @@ class Fasta:
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         self.close()
+
+    def read(self):
+        with open(self._filepath, mode="rb") as fin:
+            fin.readline()  # consume header buffer
+            return bytearray(fin.read())
 
     def fetch(
         self, reference: str, start: Optional[int] = None, end: Optional[int] = None

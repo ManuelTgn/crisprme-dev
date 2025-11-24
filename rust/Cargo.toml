@@ -1,17 +1,55 @@
+# [package]
+# name = "sequence_parser"
+# version = "0.1.0"
+# edition = "2021"
+
+# [lib]
+# name = "sequence_parser"
+# crate-type = ["cdylib"]
+
+# [dependencies]
+# pyo3 = { version = "0.20", features = ["extension-module"] }
+# rayon = "1.8"
+
+# [profile.release]
+# opt-level = 3
+# lto = true
+# codegen-units = 1
+
 [package]
-name = "sequence_parser"
+name = "target_candidates_parser"
 version = "0.1.0"
 edition = "2021"
+authors = ["Manuel Tognon"]
+description = "High-performance parallel k-mer extractor with IUPAC pattern matching (Rust + Python bindings)"
+license = "MIT"
 
 [lib]
-name = "sequence_parser"
+name = "target_candidates_parser"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.20", features = ["extension-module"] }
+pyo3 = { version = "0.20", features = ["extension-module", "abi3-py38"] }
 rayon = "1.8"
 
+# If you later add SIMD-accelerated IUPAC matching:
+# packed_simd_2 = "0.3"  # or std::simd when stabilized
+
+[build-dependencies]
+# Required if you want to use pyo3-build-config (optional):
+pyo3-build-config = "0.20"
+
 [profile.release]
-opt-level = 3
-lto = true
-codegen-units = 1
+opt-level = 3            # highest optimization
+lto = "thin"             # thin LTO improves build speed while keeping high perf
+codegen-units = 1        # increases performance by enabling cross-file optimizations
+panic = "abort"          # reduce binary size + optimize runtime
+strip = true             # remove debug symbols in final wheel
+
+[profile.dev]
+opt-level = 0            # leave dev mode fast to compile
+
+[features]
+# Optional SIMD support
+# simd = ["packed_simd_2"]
+default = []

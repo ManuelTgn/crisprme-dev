@@ -147,6 +147,14 @@ def create_search_parser(subparser: _SubParsersAction) -> _SubParsersAction:
         "used with --guide or --sequence",
     )
     required_group.add_argument(
+        "--mm",
+        type=int,
+        metavar="MISMATCHES",
+        dest="mm",
+        required=True,
+        help="maximum number of mismatches allowed between the guide and off-targets",
+    )
+    required_group.add_argument(
         "-o",
         "--outdir",
         type=str,
@@ -167,6 +175,24 @@ def create_search_parser(subparser: _SubParsersAction) -> _SubParsersAction:
         default="",
         help="optional folder storing VCF files to consider in the off-targets search. "
         "(default: no variant-aware analysis)",
+    )
+    optional_group.add_argument(
+        "--bdna",
+        type=int,
+        dest="bdna",
+        metavar="NUM-BULGE-DNA",
+        required=False,
+        default=0,
+        help="maximum number of DNA bulges allowed in the search (default: 0)",
+    )
+    optional_group.add_argument(
+        "--brna",
+        type=int,
+        dest="brna",
+        metavar="NUM-BULGE-RNA",
+        required=False,
+        default=0,
+        help="maximum number of RNA bulges allowed in the search (default: 0)",
     )
     optional_group.add_argument(
         "--right",

@@ -8,8 +8,9 @@ from .sequence import ContigSequence
 from .fasta import Fasta
 from .sample import Sample
 from .vcf import VCF
+from .pam import PAM
 
-from .sequence_parser import extract_targets_parallel
+from .target_candidates_parser import find_target_candidates
 
 from typing import List, Dict, Tuple, Optional
 from concurrent.futures import Future
@@ -22,16 +23,15 @@ import cyvcf2
 
 
 from .utils import DNA, IUPACTABLE
-from .pam import PAM
+
 
 from glob import glob
 from time import time
 
-import sys
 import os
 
 # contig chunk size and overlap
-CHUNKSIZE = 10000000
+CHUNKSIZE = 10_000_000
 CHUNKOVERLAP = 500
 
 
@@ -316,50 +316,78 @@ def construct_samples_list(
 #         return _collect_results(futures, loggers)
 
 
-def chunk_contig_sequence(contig_sequence: ContigSequence, threads: int):
-    contig_chunks = [c for c in contig_sequence.chunk(CHUNKSIZE, 0)]
-    targets = []
-    tot = len(contig_chunks)
-    start_time = time()
-    for i, contig_chunk in enumerate(contig_chunks):
+# def chunk_contig_sequence(contig_sequence: ContigSequence, threads: int):
+#     contig_chunks = [c for c in contig_sequence.chunk(CHUNKSIZE, 0)]
+#     targets = []
+#     tot = len(contig_chunks)
+#     start_time = time()
+#     for i, contig_chunk in enumerate(contig_chunks):
 
-        targets.extend(extract_targets_parallel(contig_chunk.sequence, 23, threads))
-        print(f"Progress: {(((i + 1) / tot) * 100):.2f}%%", end="\r")
-    print()
-    print(f"targets: {len(targets)}")
-    print(f"elapsed time {time() - start_time:.2f}s")
-    print()
+#         targets.extend(extract_targets_parallel(contig_chunk.sequence, 23, threads))
+#         print(f"Progress: {(((i + 1) / tot) * 100):.2f}%%", end="\r")
+#     print()
+#     print(f"targets: {len(targets)}")
+#     print(f"elapsed time {time() - start_time:.2f}s")
+#     print()
 
 
-def reconstruct_targets(
-    fasta_vcf_map: Dict[str, Tuple[Fasta, Optional[VCF]]],
-    samples: List[Sample],
-    threads: int,
-    loggers: CrisprmeLoggers,
-):
-    tasks = []  # tasks collector item
+# def reconstruct_targets(
+#     fasta_vcf_map: Dict[str, Tuple[Fasta, Optional[VCF]]],
+#     samples: List[Sample],
+#     threads: int,
+#     loggers: CrisprmeLoggers,
+# ):
+#     tasks = []  # tasks collector item
+#     for contig, (fasta, vcf) in fasta_vcf_map.items():
+#         with fasta as f:
+#             print(contig, f.length)
+
+#             chunk_contig_sequence(f.fetch(contig), threads)
+#             # if vcf is not None:
+#             #     print(contig)
+#             #     start_time1 = time()
+#             #     # t1 = threads // 2
+#             #     # t2 = threads - t1
+#             #     ranges = _split_ranges(fasta.length, threads, loggers, 500)
+#             #     for start, stop in ranges:
+#             #         start_time2 = time()
+#             #         variants = vcf.read(start=start, stop=stop, threads=1)
+#             #         # reader =  cyvcf2.VCF(vcf.filepath, mode="r", threads=1, lazy=True)
+#             #         # variants = [v for v in reader]
+#             #         # del reader
+#             #         print(len(variants), f"region: {contig}:{start}-{stop}\ttime: {time() - start_time2:.2f}s")
+#             #     print(f"contig: {contig}\ttotal time: {time() - start_time1:.2f}s")
+
+
+# def enrich_genome(args: Crisprme2SearchInputArgs, loggers: CrisprmeLoggers):
+#     fasta_vcf_map = create_fasta_vcf_map(args.fastas, args.vcfs, loggers)
+#     samples = construct_samples_list(fasta_vcf_map, loggers)
+#     reconstruct_targets(fasta_vcf_map, samples, args.threads, loggers)
+
+def _chunk_contig_sequence(contig_sequence: ContigSequence) -> List[ContigSequence]:
+    # chunk each contig in 10Mb chunks
+    return [c for c in contig_sequence.chunk(CHUNKSIZE, CHUNKOVERLAP)]
+
+def _find_target_candidates(contig_sequence: ContigSequence, contig: str, pam_seq: str, guidelen: int, right: bool, threads: int):
+    guidepamlen = guidelen + len(pam_seq)
+    return find_target_candidates(contig_sequence.sequence, contig, pam_seq, guidepamlen, right, threads)
+
+def retrieve_targets(fasta_vcf_map: Dict[str, Tuple[Fasta, Optional[VCF]]], pam: PAM, guidelen: int, right: bool, threads: int):
     for contig, (fasta, vcf) in fasta_vcf_map.items():
         with fasta as f:
-            print(contig, f.length)
-
-            chunk_contig_sequence(f.fetch(contig), threads)
-            # if vcf is not None:
-            #     print(contig)
-            #     start_time1 = time()
-            #     # t1 = threads // 2
-            #     # t2 = threads - t1
-            #     ranges = _split_ranges(fasta.length, threads, loggers, 500)
-            #     for start, stop in ranges:
-            #         start_time2 = time()
-            #         variants = vcf.read(start=start, stop=stop, threads=1)
-            #         # reader =  cyvcf2.VCF(vcf.filepath, mode="r", threads=1, lazy=True)
-            #         # variants = [v for v in reader]
-            #         # del reader
-            #         print(len(variants), f"region: {contig}:{start}-{stop}\ttime: {time() - start_time2:.2f}s")
-            #     print(f"contig: {contig}\ttotal time: {time() - start_time1:.2f}s")
+            # split contig sequence in 10 Mb long chunks
+            contig_chunks = _chunk_contig_sequence(f.fetch(contig))
+            print(f"{contig}\tlength: {f.length}")
+            x = []
+            for c in contig_chunks:
+                x.extend(_find_target_candidates(c, contig, pam.pam, guidelen, right, threads))
+            print(f"targets:{len(x)}")
+            for t in x:
+                print(t.contig, t.position, t.orientation, t.target)
+            break
 
 
-def enrich_genome(args: Crisprme2SearchInputArgs, loggers: CrisprmeLoggers):
+def retrieve_target_candidates(args: Crisprme2SearchInputArgs, pam: PAM, guidelen: int, loggers: CrisprmeLoggers):
+    # map each contig fasta to its variant data
     fasta_vcf_map = create_fasta_vcf_map(args.fastas, args.vcfs, loggers)
-    samples = construct_samples_list(fasta_vcf_map, loggers)
-    reconstruct_targets(fasta_vcf_map, samples, args.threads, loggers)
+    retrieve_targets(fasta_vcf_map, pam, guidelen, args.right, args.threads)

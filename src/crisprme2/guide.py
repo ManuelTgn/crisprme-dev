@@ -1,5 +1,6 @@
 """ """
 
+from .crisprme2_argparse import Crisprme2SearchInputArgs
 from .crisprme2_error import Crisprme2GuideError
 from .sequence import Sequence
 from .logger import CrisprmeLoggers
@@ -93,6 +94,13 @@ class GuidesList:
 
     def __init__(self, guides: List[Guide], loggers: CrisprmeLoggers) -> None:
         self._loggers = loggers  # store loggers
+        if any(len(guides[0]) != len(g) for g in guides):
+            self._loggers.errorlog.log_raise_exception(
+                "Found input guides with different length, provide only guides "
+                "sharing the same length", 
+                os.EX_DATAERR, 
+                Crisprme2GuideError,
+            )
         self._guides = guides  # guides list
 
     def __repr__(self) -> str:
@@ -180,19 +188,14 @@ def _read_guides_fasta(fasta_guides: str, loggers: CrisprmeLoggers) -> GuidesLis
     return GuidesList(guides, loggers)
 
 
-def read_guides(
-    guide: Optional[str],
-    fasta_guides: Optional[str],
-    bed_guides: Optional[str],
-    loggers: CrisprmeLoggers,
-) -> GuidesList:
+def read_guides(args: Crisprme2SearchInputArgs, loggers: CrisprmeLoggers) -> GuidesList:
     # only one option is allowed
-    assert sum(bool(e) for e in [guide, fasta_guides, bed_guides]) == 1
-    if guide:  # --guide option (single guide)
-        return _read_guide(guide, loggers)
-    elif fasta_guides:  # extract guide sequence
-        return _read_guides_fasta(fasta_guides, loggers)
-    elif bed_guides:  # --coordinates option (guides extracted via bed)
+    assert sum(bool(e) for e in [args.guide, args.fasta_guide, args.bed_guide]) == 1
+    if args.guide:  # --guide option (single guide)
+        return _read_guide(args.guide, loggers)
+    elif args.fasta_guide:  # extract guide sequence
+        return _read_guides_fasta(args.fasta_guide, loggers)
+    elif args.bed_guide:  # --coordinates option (guides extracted via bed)
         pass
     loggers.errorlog.log_raise_exception(
         "Invalid input: no guide input option selected. None of the following "
