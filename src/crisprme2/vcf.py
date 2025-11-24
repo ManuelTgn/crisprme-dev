@@ -54,9 +54,17 @@ class VCF:
         # check number of contigs and genotyping availability in VCF
         vcf_ = cyvcf2.VCF(str(self._filepath))
         if len(vcf_.seqnames) > 1:
-            self._loggers.errorlog.log_raise_exception(f"Multiple contigs in {self._filepath}", os.EX_DATAERR, Crisprme2VCFFormatError)
+            self._loggers.errorlog.log_raise_exception(
+                f"Multiple contigs in {self._filepath}",
+                os.EX_DATAERR,
+                Crisprme2VCFFormatError,
+            )
         if not vcf_.contains("GT"):
-            self._loggers.errorlog.log_raise_exception(f"Missing genotype (GT) field in {self._filepath}", os.EX_DATAERR, Crisprme2VCFFormatError)
+            self._loggers.errorlog.log_raise_exception(
+                f"Missing genotype (GT) field in {self._filepath}",
+                os.EX_DATAERR,
+                Crisprme2VCFFormatError,
+            )
 
     def _index_vcf(self, pytest: bool = False) -> str:
         if not pytest:  # launch warning
@@ -78,7 +86,7 @@ class VCF:
         # as the input vcf
         self._loggers.verboselog.debug(f"Tabix index not found for {self._filepath}")
         return Path(self._index_vcf())
-    
+
     def _assess_phasing(self) -> None:
         variant = None
         for v in cyvcf2.VCF(self._filepath):
@@ -87,8 +95,10 @@ class VCF:
         assert variant is not None
         self._phasing = all(phase for phase in variant.gt_phases)
 
-    def read(self, start: Optional[int], stop: Optional[int], threads: int = 1) -> List[VariantRecord]:
-        reader = cyvcf2.VCF(str(self._filepath), lazy=True, threads=threads)  # open vcf 
+    def read(
+        self, start: Optional[int], stop: Optional[int], threads: int = 1
+    ) -> List[VariantRecord]:
+        reader = cyvcf2.VCF(str(self._filepath), lazy=True, threads=threads)  # open vcf
         if start is not None and stop is not None:
             region = f"{self._contig}:{start}-{stop}"
             return [VariantRecord(v, self._loggers) for v in reader(region)]
@@ -97,18 +107,17 @@ class VCF:
     @property
     def contig(self) -> str:
         return self._contig if self._contig.startswith("chr") else f"chr{self._contig}"
-    
+
     def get_samples(self) -> List[str]:
         return cyvcf2.VCF(str(self._filepath)).samples
-        
+
     @property
     def filepath(self) -> str:
         return str(self._filepath)
-    
+
     @property
     def index(self) -> str:
         return str(self._index)
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__} object; contigs={self.contig}>"
-    

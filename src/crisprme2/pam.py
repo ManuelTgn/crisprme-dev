@@ -5,7 +5,9 @@ This module defines the PAM class, which validates, and stores PAM sequences and
 their reverse complements for efficient sequence matching.
 """
 
+from .crisprme2_error import Crisprme2PamError
 from .logger import CrisprmeLoggers
+from .encoder import BitSequence
 from .utils import reverse_complement
 
 from typing import List
@@ -48,9 +50,8 @@ class PAM:
         self._loggers = loggers  # store loggers
         self._sequence = pamseq.upper()  # store pam sequence
         self._reverse_complement()  # store pam reverse complement
-        self._assess_cas_system(
-            right
-        )  # assess cas system (choose appropriate analysis)
+        self._assess_cas_system(right)  # assess cas system
+        self._encode()  # encode pam in bits (one byte per nt)
 
     def __len__(self) -> int:
         """Returns the length of the PAM sequence.
@@ -99,16 +100,7 @@ class PAM:
             str: The PAM sequence.
         """
         return f"{self._sequence}"
-
-    def _reverse_complement(self) -> None:
-        assert hasattr(self, "_sequence")  # required
-        try:  # reverse complement is used to find off-targets on 3'-5'
-            self._sequence_rc = reverse_complement(self._sequence)
-        except (KeyError, Exception):
-            self._loggers.errorlog.log_exception(
-                f"Failed reverse complement on PAM {self._sequence}", os.EX_DATAERR
-            )
-
+    
     def _assess_cas_system(self, right: bool) -> None:
         self._cas_system = -1  # unknown cas system pam
         if self._sequence in CASXPAM:  # casx system pam
@@ -122,13 +114,46 @@ class PAM:
         elif self._sequence in XCAS9PAM and not right:  # xcas9 pam
             self._cas_system = XCAS9
 
+    def _reverse_complement(self) -> None:
+        assert hasattr(self, "_sequence")  # required
+        try:  # reverse complement is used to find off-targets on 3'-5'
+            self._sequence_rc = reverse_complement(self._sequence)
+        except (KeyError, Exception):
+            self._loggers.errorlog.log_exception(
+                f"Failed reverse complement on PAM {self._sequence}", os.EX_DATAERR
+            )
+
+    def _encode(self) -> None:
+        # encode forward and reverse pam
+        assert hasattr(self, "_sequence") and hasattr(self, "_sequence_rc")
+        self._bitsequence = BitSequence(self._sequence, self._loggers)
+        self._bitsequence_rc = BitSequence(self._sequence_rc, self._loggers)
+    
+    def decode(self, strand: int) -> str:
+        if strand not in [0, 1]:  # unknown strand
+            self._loggers.errorlog.log_raise_exception(
+                "Only 0 (forward) and 1 (reverse) are values allowed for "
+                f"strandness, got {strand}", 
+                os.EX_DATAERR, 
+                Crisprme2PamError,
+            )
+        return self._bitsequence.decode() if strand == 0 else self._bitsequence_rc.decode()
+
     @property
     def pam(self) -> str:
         return self._sequence
+    
+    @property
+    def pamb(self) -> bytearray:
+        return self._bitsequence.data
 
     @property
     def rc(self) -> str:
         return self._sequence_rc
+    
+    @property
+    def rcb(self) -> bytearray:
+        return self._bitsequence_rc.data
 
     @property
     def cas_system(self) -> int:

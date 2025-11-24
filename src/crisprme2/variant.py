@@ -16,15 +16,15 @@ import os
 # variants types
 VTYPES = ["snv", "indel"]
 
+
 class VariantRecord:
 
     def __init__(self, variant: Variant, loggers: CrisprmeLoggers) -> None:
         self._loggers = loggers  # store loggers
-        self._variant = variant  # read vcf line 
+        self._variant = variant  # read vcf line
         self._allelesnum = len(self.alt)
         self._vtype = self._assign_variant_type()  # compute variant types
-        self._vid = self._assign_id()  # compute variant ids        
-
+        self._vid = self._assign_id()  # compute variant ids
 
     def __repr__(self) -> str:
         altalleles = ",".join(self.alt)
@@ -40,8 +40,12 @@ class VariantRecord:
     def __eq__(self, vrecord: object) -> bool:
         if not isinstance(vrecord, VariantRecord):
             return NotImplemented
-        if not hasattr(vrecord, "_variant"):  
-            self._loggers.errorlog.log_raise_exception(f"Comparison between {self.__class__.__name__} object failed", os.EX_DATAERR, Crisprme2VariantRecordError)
+        if not hasattr(vrecord, "_variant"):
+            self._loggers.errorlog.log_raise_exception(
+                f"Comparison between {self.__class__.__name__} object failed",
+                os.EX_DATAERR,
+                Crisprme2VariantRecordError,
+            )
         return (
             self._variant.CHROM == vrecord.contig
             and self._variant.POS == vrecord.position
@@ -77,34 +81,51 @@ class VariantRecord:
         Returns:
             The hash value of the variant record.
         """
-        return hash((self._variant.CHROM, self._variant.POS, self._variant.REF, tuple(self._variant.ALT)))
-
+        return hash(
+            (
+                self._variant.CHROM,
+                self._variant.POS,
+                self._variant.REF,
+                tuple(self._variant.ALT),
+            )
+        )
 
     def _assign_id(self) -> List[str]:
         if self._allelesnum == 1:
             # variant id not available, construct the id using chrom, position, ref,
             # and alt (e.g. chrx-100-A/G)
-            return [_compute_id(self._variant.CHROM, self._variant.POS, self._variant.REF, self._variant.ALT[0])]
+            return [
+                _compute_id(
+                    self._variant.CHROM,
+                    self._variant.POS,
+                    self._variant.REF,
+                    self._variant.ALT[0],
+                )
+            ]
         # if multiallelic site compute the id for each alternative allele
         # avoid potential confusion due to alternative alleles at same position
         # labeled with the same id
         return [
-            _compute_id(self._variant.CHROM, self._variant.POS, self._variant.REF, altallele)
+            _compute_id(
+                self._variant.CHROM, self._variant.POS, self._variant.REF, altallele
+            )
             for altallele in self._variant.ALT
         ]
-    
-    def _assign_variant_type(self) -> List[str]:
-        return [VTYPES[0] if len(self.ref) == len(altallele) else VTYPES[1] for altallele in self.alt]
 
-            
+    def _assign_variant_type(self) -> List[str]:
+        return [
+            VTYPES[0] if len(self.ref) == len(altallele) else VTYPES[1]
+            for altallele in self.alt
+        ]
+
     @property
     def contig(self) -> str:
         return self._variant.CHROM
-    
+
     @property
     def position(self) -> int:
         return self._variant.POS
-    
+
     @property
     def ref(self) -> str:
         return self._variant.REF
@@ -112,15 +133,15 @@ class VariantRecord:
     @property
     def alt(self) -> List[str]:
         return self._variant.ALT
-    
+
     @property
     def filters(self) -> List[str]:
         return self._variant.FILTERS
-    
+
     @property
     def id(self) -> List[str]:
         return self._vid
-    
+
     @property
     def af(self) -> List[float]:
         return self._variant.aaf
@@ -140,11 +161,10 @@ class VariantRecord:
     @property
     def num_hom_ref(self) -> int:
         return self._variant.num_hom_ref
-    
+
     @property
     def vtype(self) -> List[str]:
         return self._vtype
-    
 
 
 #     def _copy(self, i: int) -> "VariantRecord":
@@ -329,9 +349,6 @@ def _compute_id(chrom: str, pos: int, ref: str, alt: str) -> str:
 #     return ref_new, alt_new, pos_new
 
 
-
-
-
 # def _parse_genotype_unphased(
 #     gt_alleles: List[str],
 #     sample: str,
@@ -367,7 +384,6 @@ def _compute_id(chrom: str, pos: int, ref: str, alt: str) -> str:
 #             if gt2 not in ["0", "."]:  # 0/1
 #                 sampleshap[int(gt2) - 1][0].add(sample)
 #     return sampleshap
-
 
 
 def _split_vcfline(vcfline: str, loggers: CrisprmeLoggers) -> List[str]:

@@ -215,7 +215,7 @@ class Crisprme2SearchInputArgs:
     @property
     def fastas(self) -> List[str]:
         return self._fastas
-    
+
     @property
     def vcfs(self) -> List[str]:
         if hasattr(self, "_vcfs"):
@@ -245,7 +245,7 @@ class Crisprme2SearchInputArgs:
     @property
     def outdir(self) -> str:
         return self._outdir
-    
+
     @property
     def threads(self) -> int:
         return self._threads
@@ -261,6 +261,7 @@ def _validate_directory(
 def _validate_file(fname: str, parser: Crisprme2ArgumentParser, errmsg: str) -> None:
     if not os.path.exists(fname) or not os.path.isfile(fname):  # file exists?
         parser.error(errmsg)  # print error message to stderr
+
 
 def _validate_threads(threads, parser: Crisprme2ArgumentParser) -> None:
     max_threads = multiprocessing.cpu_count()
@@ -305,10 +306,7 @@ def _initialize_outputdir(outdir: str) -> str:
         os.makedirs(outdir)
     return os.path.abspath(outdir)
 
+
 def _initialize_threads(threads: int) -> int:
     max_threads = multiprocessing.cpu_count()
     return max_threads if threads == 0 else threads
-
-
-
-    

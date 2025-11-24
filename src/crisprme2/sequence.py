@@ -19,14 +19,14 @@ class SequenceStats:
     @property
     def length(self) -> int:
         return self._length
-    
+
     @property
     def n_count(self) -> int:
         return self._n_count
 
 
 class Sequence:
-    
+
     def __init__(self, sequence: str, loggers: CrisprmeLoggers):
         self._loggers = loggers  # store loggers
         self._sequence = list(sequence)  # store sequence as list of str
@@ -35,36 +35,51 @@ class Sequence:
 
     def __len__(self) -> int:
         return self._length
-    
+
     def __str__(self) -> str:
         return "".join(self._sequence)
-    
+
     def subsequence(self, start: int, end: int) -> str:
         if start < 0 or end > len(self) or start >= end:
-            self._loggers.errorlog.log_raise_exception(f"Invalid coordinates: start={start}, end={end}, length={len(self)}", os.EX_DATAERR, Crisprme2SequenceError)
+            self._loggers.errorlog.log_raise_exception(
+                f"Invalid coordinates: start={start}, end={end}, length={len(self)}",
+                os.EX_DATAERR,
+                Crisprme2SequenceError,
+            )
         return "".join(self._sequence[start:end])
-    
+
     def reverse_complement(self) -> List[str]:
         try:
             return [RC[nt] for nt in self._sequence[::-1]]
         except (KeyError, Exception) as e:
-            self._loggers.errorlog.log_raise_exception(f"Error computing reverse complement: {str(e)}", os.EX_DATAERR, Crisprme2SequenceError)
-    
+            self._loggers.errorlog.log_raise_exception(
+                f"Error computing reverse complement: {str(e)}",
+                os.EX_DATAERR,
+                Crisprme2SequenceError,
+            )
+
     def calculate_statistics(self) -> SequenceStats:
         if self._stats is not None:
             return self._stats
-        n_count = sum(1 for nt in self._sequence if nt.upper() == "N")    
+        n_count = sum(1 for nt in self._sequence if nt.upper() == "N")
         self._stats = SequenceStats(length=len(self), n_count=n_count)
         return self._stats
-        
+
     @property
     def sequence(self) -> str:
         return "".join(self._sequence)
-    
+
 
 class ContigSequence(Sequence):
-    
-    def __init__(self, sequence: str, contig: str, start: int, stop: int, loggers: CrisprmeLoggers) -> None:
+
+    def __init__(
+        self,
+        sequence: str,
+        contig: str,
+        start: int,
+        stop: int,
+        loggers: CrisprmeLoggers,
+    ) -> None:
         super().__init__(sequence, loggers)
         self._contig = contig  # store sequence contig name
         self._start = start  # start sequence start position
@@ -72,7 +87,11 @@ class ContigSequence(Sequence):
 
     def chunk(self, size: int, overlap: int):
         if overlap >= size:
-            self._loggers.errorlog.log_raise_exception(f"Overlap size ({overlap}) must be less than the chunk size ({size})", os.EX_DATAERR, Crisprme2ContigSequenceError)
+            self._loggers.errorlog.log_raise_exception(
+                f"Overlap size ({overlap}) must be less than the chunk size ({size})",
+                os.EX_DATAERR,
+                Crisprme2ContigSequenceError,
+            )
         if size >= self._length:  # handle short contigs
             size = self._length
         step = size - overlap  # e.g., size=100 and overlap=10, step is 90
@@ -80,26 +99,21 @@ class ContigSequence(Sequence):
             start, stop = i, i + size
             if stop >= self._length:
                 stop = self._length
-            yield ContigSequence(self.subsequence(start, stop), self._contig, start, stop, self._loggers)
-
+            yield ContigSequence(
+                self.subsequence(start, stop), self._contig, start, stop, self._loggers
+            )
 
     @property
     def contig(self) -> str:
         return self._contig
-    
+
     @property
     def start(self) -> int:
         return self._start
-    
+
     @property
     def stop(self) -> int:
         return self._stop
-    
-
-
-
-
-
 
 
 # from .crisprme2_error import Crisprme2FastaError
@@ -338,4 +352,3 @@ class ContigSequence(Sequence):
 #     @property
 #     def guides(self) -> List[Sequence]:
 #         return self._guides
-
