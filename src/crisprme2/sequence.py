@@ -92,15 +92,33 @@ class ContigSequence(Sequence):
                 os.EX_DATAERR,
                 Crisprme2ContigSequenceError,
             )
-        if size >= self._length:  # handle short contigs
-            size = self._length
-        step = size - overlap  # e.g., size=100 and overlap=10, step is 90
-        for i in range(0, self._length, step):
-            start, stop = i, i + size
-            if stop >= self._length:
-                stop = self._length
+
+        if size >= self._length:  # small contig
             yield ContigSequence(
-                self.subsequence(start, stop), self._contig, start, stop, self._loggers
+                self.subsequence(0, self._length),
+                self._contig,
+                0,
+                self._length,
+                self._loggers,
+            )
+            return
+
+        step = size - overlap  # ← FIX: move forward by size−overlap
+
+        for i in range(0, self._length, step):
+            start = i
+            stop = i + size
+
+            # clip to contig boundaries
+            if stop > self._length:
+                stop = self._length
+
+            yield ContigSequence(
+                self.subsequence(start, stop), 
+                self._contig, 
+                start, 
+                stop, 
+                self._loggers
             )
 
     def encode(self) -> bytearray:

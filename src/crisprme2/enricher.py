@@ -368,26 +368,27 @@ def _chunk_contig_sequence(contig_sequence: ContigSequence) -> List[ContigSequen
     # chunk each contig in 10Mb chunks
     return [c for c in contig_sequence.chunk(CHUNKSIZE, CHUNKOVERLAP)]
 
-def _find_target_candidates(contig_sequence: ContigSequence, contig: str, pam_seq: str, guidelen: int, right: bool, threads: int):
-    guidepamlen = guidelen + len(pam_seq)
-    return find_target_candidates(contig_sequence.sequence, contig, pam_seq, guidepamlen, right, threads)
+def _find_target_candidates(contig_sequence: ContigSequence, contig: str, pam_seq: str, guidelen: int, offset: int, right: bool, threads: int):
+    # use offset to account for bulges in alignments
+    guidepamlen = guidelen + len(pam_seq) + offset  
+    return find_target_candidates(contig_sequence.sequence.upper(), contig, pam_seq, guidepamlen, right, threads)
 
-def retrieve_targets(fasta_vcf_map: Dict[str, Tuple[Fasta, Optional[VCF]]], pam: PAM, guidelen: int, right: bool, threads: int):
+def retrieve_targets(fasta_vcf_map: Dict[str, Tuple[Fasta, Optional[VCF]]], pam: PAM, guidelen: int, offset: int, right: bool, threads: int):
     for contig, (fasta, vcf) in fasta_vcf_map.items():
         with fasta as f:
             # split contig sequence in 10 Mb long chunks
             contig_chunks = _chunk_contig_sequence(f.fetch(contig))
-            print(f"{contig}\tlength: {f.length}")
+            print(f"{contig}\tlength: {f.length}, chunks length: {sum(len(c) for c in contig_chunks)}")
             x = []
             for c in contig_chunks:
-                x.extend(_find_target_candidates(c, contig, pam.pam, guidelen, right, threads))
-            print(f"targets:{len(x)}")
-            for t in x:
-                print(t.contig, t.position, t.orientation, t.target)
-            break
+                print(f"start = {c.start}, stop = {c.stop}, length = {c._length}\texpected k-mers: {(c._length - 23 + 1) * 2}")
+                x = _find_target_candidates(c, contig, pam.pam, guidelen, offset, right, threads)
+                print(f"targets found: {len(x)}")
+            # for t in x:
+            #     print(t.contig, t.position, t.orientation, t.target)
 
 
-def retrieve_target_candidates(args: Crisprme2SearchInputArgs, pam: PAM, guidelen: int, loggers: CrisprmeLoggers):
+def retrieve_target_candidates(args: Crisprme2SearchInputArgs, pam: PAM, guidelen: int, offset: int, loggers: CrisprmeLoggers):
     # map each contig fasta to its variant data
     fasta_vcf_map = create_fasta_vcf_map(args.fastas, args.vcfs, loggers)
-    retrieve_targets(fasta_vcf_map, pam, guidelen, args.right, args.threads)
+    retrieve_targets(fasta_vcf_map, pam, guidelen, offset, args.right, args.threads)

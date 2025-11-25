@@ -22,7 +22,7 @@ def complete_search(args: Crisprme2SearchInputArgs) -> None:
     # initialize guides and pam objects
     guides, pam = _init_pam_guide(args, loggers)
     # enrich genome with input variants, and retrieve target candidates
-    retrieve_target_candidates(args, pam, len(guides[0]), loggers)
+    retrieve_target_candidates(args, pam, len(guides[0]), max(args.bdna, args.brna), loggers)
 
 
 

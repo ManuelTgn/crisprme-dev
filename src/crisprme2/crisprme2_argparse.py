@@ -211,6 +211,11 @@ class Crisprme2SearchInputArgs:
         self._outdir = _initialize_outputdir(self._args.outdir)
         # retrieve number of threads
         self._threads = _initialize_threads(self._args.threads)
+        # initialize number of mismatches
+        self._mm = _initialize_mm(self._args.mm, self._parser)
+        # initialize number of DNA/RNA bulges
+        self._bdna = _initialize_bdna(self._args.bdna, self._parser)
+        self._brna = _initialize_brna(self._args.brna, self._parser)
 
     @property
     def fastas(self) -> List[str]:
@@ -237,6 +242,18 @@ class Crisprme2SearchInputArgs:
     @property
     def pam(self) -> str:
         return self._args.pam
+    
+    @property
+    def mm(self) -> int:
+        return self._mm
+    
+    @property
+    def bdna(self) -> int:
+        return self._bdna
+    
+    @property
+    def brna(self) -> int:
+        return self._brna
 
     @property
     def right(self) -> bool:
@@ -310,3 +327,18 @@ def _initialize_outputdir(outdir: str) -> str:
 def _initialize_threads(threads: int) -> int:
     max_threads = multiprocessing.cpu_count()
     return max_threads if threads == 0 else threads
+
+def _initialize_mm(mm: int, parser: Crisprme2ArgumentParser) -> int:
+    if mm < 0:
+        parser.error(f"Invalid number of mismatches selected ({mm})")
+    return mm
+
+def _initialize_bdna(bdna: int, parser: Crisprme2ArgumentParser) -> int:
+    if bdna < 0:
+        parser.error(f"Invalid number of DNA bulges selected ({bdna})")
+    return bdna
+
+def _initialize_brna(brna: int, parser: Crisprme2ArgumentParser) -> int:
+    if brna < 0:
+        parser.error(f"Invalid number of RNA bulges selected ({brna})")
+    return brna
