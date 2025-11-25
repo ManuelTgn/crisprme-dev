@@ -56,13 +56,16 @@ pub fn scan_targets(
                         if global_pos >= orig_start && global_pos < orig_end {
                             // retrieve target (bytes)
                             let target = &seq[i..i + k];
+                            if target.contains(&b'N') {
+                                continue;
+                            }
                             // PAM match on forward strand
                             if matches_pattern(get_pam_slice(target, plen, k, right), &pat) {
                                 chunk_targets.push(Target::new(contig, global_pos, true, std::str::from_utf8(target).unwrap()));
                             }
                             // PAM match on reverse strand
                             if matches_pattern(get_pam_slice(target, plen, k, !right), &rev) {
-                                chunk_targets.push(Target::new(contig, global_pos, false, std::str::from_utf8(target).unwrap()))
+                                chunk_targets.push(Target::new(contig, global_pos, false, std::str::from_utf8(target).unwrap()));
                             }
                         }
                     }
@@ -74,43 +77,6 @@ pub fn scan_targets(
     });
 
     return targets;
-
-    // pool.install(|| {
-    //     // Calculate chunk size (ceiling division)
-    //     let chunk_size = (slen + threads - 1) / threads;
-
-        
-    //     // parallel scan
-    //     (0..=slen.saturating_sub(k))
-    //         .into_par_iter()
-    //         .filter_map(|i| {
-    //             let target = &seq[i..i + k];
-
-    //             //PAM at end or neginning of target depending on 'right'
-    //             let pam_slice = if right {
-    //                 &target[0..plen]
-    //             } else {
-    //                 &target[k - plen..k]
-    //             };
-    //             if matches_pattern(pam_slice, &pat) {
-    //                 return Some(Target::new(contig, i, true, std::str::from_utf8(target).unwrap()));
-    //             }
-
-    //             //reverse complement
-    //             let pam_slice = if right {
-    //                 &target[k - plen..k]
-    //             } else {
-    //                 &target[0..plen]
-    //             };
-    //             if matches_pattern(pam_slice, &rev) {
-    //                 return Some(Target::new(contig, i, false, std::str::from_utf8(target).unwrap()));
-    //             }
-
-    //             None
-
-    //     })
-    //     .collect()
-    // })
 }
 
 fn matches_pattern(seq: &[u8], pam: &[u8]) -> bool {
