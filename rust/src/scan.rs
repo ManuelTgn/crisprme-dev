@@ -1,6 +1,7 @@
 use crate::pam::ParsedPAM;
 use crate::iupac::{Iupac, matches_iupac};
 use crate::target::Target;
+use crate::hashing::HashedTargets;
 
 use std::sync::Arc;
 use rayon::prelude::*;
@@ -21,7 +22,8 @@ use std::result::Result;
 /// * `threads` - The number of threads to use for parallel processing.
 ///
 /// # Returns
-/// A `Vec<Target>` containing all found matches, including their position and orientation.
+/// A `HashedTargets` object containing all unique targets and their occurrences, 
+/// with grouping performed in Rust for maximum efficiency.
 ///
 /// # Panics
 /// Panics if the input sequence contains an unknown nucleotide character or if the Rayon 
@@ -33,7 +35,7 @@ pub fn scan_targets(
     k: usize, 
     right: bool, 
     threads: usize
-) -> Vec<Target> {
+) -> HashedTargets {
     // 1. Convert the entire sequence string into a single vector of IUPAC bitmasks
     let seq_bitmask: Result<Vec<u8>, String> = sequence.as_bytes()
         .iter()
@@ -80,8 +82,8 @@ pub fn scan_targets(
                 let extended_end = std::cmp::min(orig_end + (k - 1), slen);
 
                 // slice the bitmask data for the extended chunk
-                let chunk = &seq_bitmask[extended_start..extended_end];
-                let chunk_len = chunk.len();
+                let extended_chunk = &seq_bitmask[extended_start..extended_end];
+                let chunk_len = extended_chunk.len();
 
                 let mut chunk_targets = Vec::new();
                 if chunk_len >= k {
@@ -94,21 +96,21 @@ pub fn scan_targets(
                         if global_pos >= orig_start && global_pos < orig_end {
 
                             // retrieve the k-mer target sequence (bitmasks) from the extended chunk
-                            let target = &seq_bitmask[i..i + k];
+                            let target_bitmask = &extended_chunk[i..i + k];
 
                             // skip the target if it contains the 'N' (Any base) bitmask
-                            if target.iter().any(|&b| b == 0b1111) {
+                            if target_bitmask.iter().any(|&b| b == 0b1111) {
                                 continue;
                             }
 
                             // check for PAM match on the forward strand
-                            if matches_pattern(get_pam_slice(target, plen, k, right), &pat) {
-                                chunk_targets.push(Target::new(contig, global_pos, true, target.to_vec()));
+                            if matches_pattern(get_pam_slice(target_bitmask, plen, k, right), &pat) {
+                                chunk_targets.push(Target::new(contig, global_pos, true, target_bitmask.to_vec()));
                             }
 
                             // check for PAM match on the reverse strand
-                            if matches_pattern(get_pam_slice(target, plen, k, !right), &rev) {
-                                chunk_targets.push(Target::new(contig, global_pos, false, target.to_vec()));
+                            if matches_pattern(get_pam_slice(target_bitmask, plen, k, !right), &rev) {
+                                chunk_targets.push(Target::new(contig, global_pos, false, target_bitmask.to_vec()));
                             }
                         }
                     }
@@ -119,7 +121,9 @@ pub fn scan_targets(
             .collect()
     });
 
-    return targets;
+    // 5. Hash and group the results entirely in Rust for performance.
+    // This is the step that replaces the slow Python loop
+    hashing::hash_and_group_targets(targets)
 }
 
 // --------------------------------------------------------------------------------------------------

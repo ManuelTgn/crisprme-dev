@@ -3,7 +3,7 @@
 from .crisprme2_error import Crisprme2EnrichmentError
 from .crisprme2_argparse import Crisprme2SearchInputArgs
 from .logger import CrisprmeLoggers
-from .variant import VariantRecord
+from .target import Target
 from .sequence import ContigSequence
 from .fasta import Fasta
 from .sample import Sample
@@ -360,11 +360,6 @@ def construct_samples_list(
 #             #     print(f"contig: {contig}\ttotal time: {time() - start_time1:.2f}s")
 
 
-# def enrich_genome(args: Crisprme2SearchInputArgs, loggers: CrisprmeLoggers):
-#     fasta_vcf_map = create_fasta_vcf_map(args.fastas, args.vcfs, loggers)
-#     samples = construct_samples_list(fasta_vcf_map, loggers)
-#     reconstruct_targets(fasta_vcf_map, samples, args.threads, loggers)
-
 def _chunk_contig_sequence(contig_sequence: ContigSequence) -> List[ContigSequence]:
     # chunk each contig in 10Mb chunks
     return [c for c in contig_sequence.chunk(CHUNKSIZE, CHUNKOVERLAP)]
@@ -372,19 +367,30 @@ def _chunk_contig_sequence(contig_sequence: ContigSequence) -> List[ContigSequen
 def _find_target_candidates(contig_sequence: ContigSequence, contig: str, pam_seq: str, offset: int, right: bool, threads: int) -> List:
     return find_target_candidates(contig_sequence.sequence.upper(), contig, pam_seq, offset, right, threads)
 
-def retrieve_targets(fasta_vcf_map: Dict[str, Tuple[Fasta, Optional[VCF]]], pam: PAM, guidelen: int, offset: int, right: bool, threads: int):
+def _hash_targets(contig_targets: List, loggers: CrisprmeLoggers):
+    targets_hash: Dict[bytes, Target] = {}  # initialize targets hash
+    for target in contig_targets:
+        if target.target not in targets_hash:  # initialize current target object
+            targets_hash[target.target] = Target(loggers)  
+        # add current target to hash
+        targets_hash[target.target].add_target(target.contig, target.position, target.orientation)
+    return targets_hash
+
+def retrieve_targets(fasta_vcf_map: Dict[str, Tuple[Fasta, Optional[VCF]]], pam: PAM, guidelen: int, offset: int, right: bool, threads: int, loggers: CrisprmeLoggers):
     # use offset to account for bulges in alignments
     guidelen_offset = guidelen + len(pam) + offset
     for contig, (fasta, vcf) in fasta_vcf_map.items():
+        print(contig)
         with fasta as f:
             # split contig sequence in 10 Mb long chunks
             contig_chunks = _chunk_contig_sequence(f.fetch(contig))
+            start = time()
             contig_targets = flatten_list([_find_target_candidates(c, contig, pam.pam, guidelen_offset, right, threads) for c in contig_chunks])
-            for t in contig_targets:
-                print(t.contig, t.position, t.orientation, t.target)
+            print(f"{contig}: {time() - start:.2f}s")
+            # _ = _hash_targets(contig_targets, loggers).items()
 
 
 def retrieve_target_candidates(args: Crisprme2SearchInputArgs, pam: PAM, guidelen: int, offset: int, loggers: CrisprmeLoggers):
     # map each contig fasta to its variant data
     fasta_vcf_map = create_fasta_vcf_map(args.fastas, args.vcfs, loggers)
-    retrieve_targets(fasta_vcf_map, pam, guidelen, offset, args.right, args.threads)
+    retrieve_targets(fasta_vcf_map, pam, guidelen, offset, args.right, args.threads, loggers)
