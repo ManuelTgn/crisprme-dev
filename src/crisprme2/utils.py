@@ -6,6 +6,7 @@ manipulation, IUPAC matching, and model extraction. It also defines shared const
 and static variables used across the CRISPRme2 software.
 """
 
+from typing import List, Any
 from colorama import Fore
 from itertools import permutations
 
@@ -117,6 +118,19 @@ def warning(message: str, verbosity: int) -> None:
     if verbosity >= VERBOSITYLVL[1]:
         sys.stderr.write(f"{Fore.YELLOW}WARNING: {message}.{Fore.RESET}\n")
     return
+
+def flatten_list(lst: List[List[Any]]) -> List[Any]:
+    """Flatten a list of lists into a single list.
+
+    Combines all elements from nested lists into a single flat list.
+
+    Args:
+        lst (List[List[Any]]): The list of lists to flatten.
+
+    Returns:
+        List[Any]: The flattened list.
+    """
+    return [e for sublist in lst for e in sublist]
 
 
 def reverse_complement(sequence: str) -> str:

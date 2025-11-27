@@ -1,11 +1,31 @@
 use crate::pam::ParsedPAM;
-use crate::iupac::matches_iupac;
+use crate::iupac::{Iupac, matches_iupac};
 use crate::target::Target;
 
 use std::sync::Arc;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
+use std::result::Result; 
 
+/// Scans a sequence in parallel to find all candidate targets (k-mers) that match the PAM requirements.
+///
+/// The sequence is first converted to IUPAC bitmasks. The scanning is parallelized across
+/// multiple threads using Rayon, with chunks extended to prevent boundary-crossing k-mers from being missed.
+///
+/// # Arguments
+/// * `sequence` - The DNA/RNA sequence string to scan.
+/// * `contig` - The identifier of the sequence (e.g., "chr1").
+/// * `pam` - The parsed PAM structure containing the forward and reverse complement bitmasks.
+/// * `k` - The length of the target k-mer (protospacer length).
+/// * `right` - If `true`, the PAM is expected to be *right* of the k-mer in the scan window.
+/// * `threads` - The number of threads to use for parallel processing.
+///
+/// # Returns
+/// A `Vec<Target>` containing all found matches, including their position and orientation.
+///
+/// # Panics
+/// Panics if the input sequence contains an unknown nucleotide character or if the Rayon 
+/// thread pool cannot be built.
 pub fn scan_targets(
     sequence: &str, 
     contig: &str, 
@@ -14,82 +34,134 @@ pub fn scan_targets(
     right: bool, 
     threads: usize
 ) -> Vec<Target> {
+    // 1. Convert the entire sequence string into a single vector of IUPAC bitmasks
+    let seq_bitmask: Result<Vec<u8>, String> = sequence.as_bytes()
+        .iter()
+        .map(|&b| Iupac::from_ascii(b).map(|iupac| iupac.0))
+        .collect();
 
-    let seq = sequence.as_bytes();
-    let pat = Arc::new(pam.bytes.clone());
-    let rev = Arc::new(pam.revcomp.clone());
-    let slen = seq.len();
-    let plen = pat.len();
+    // Unwrap the result, panicking if there's an error (e.g., unknown nucleotide), 
+    // as the scanning cannot proceed with invalid input.
+    let seq_bitmask: Vec<u8> = seq_bitmask
+        .expect("Failed to process sequence: contains unknown nucleotide character.");
 
+    // 2. Prepare data for parallel access.
+    let pat = Arc::new(pam.bytes.clone());  // forward PAM pattern (Arc allows shared access)
+    let rev = Arc::new(pam.revcomp.clone());  // reverse complement PAM pattern
+    let slen = seq_bitmask.len();  // total sequence length (in masks)
+    let plen = pat.len();  // PAM pattern length (in masks)
+
+    // 3. Initialize the Rayon thread pool
     let pool = ThreadPoolBuilder::new()
         .num_threads(threads)
         .build()
         .expect("Failed to create Rayon thread pool");
 
+    // 4. Execute the parallel scanning logic
     let targets: Vec<Target> = pool.install(|| {
-        // Calculate chunk size (ceiling division)
+        // calculate chunk size (ceiling division)
         let chunk_size = (slen + threads - 1) / threads;
 
-        // Parallel iterate over chunk indices; produce Vec<Vec<(pos, String)>>
+        // parallel iterate over chunk indices; produce Vec<Vec<(pos, String)>>
         (0..threads)
             .into_par_iter()
             .filter_map(|chunk_idx| {
                 let orig_start = chunk_idx * chunk_size;
+                // if the chunk start is beyond the sequence length, there's nothing left to scan
                 if orig_start >= slen {
                     return None;
                 }
                 let orig_end = std::cmp::min(orig_start + chunk_size, slen);
 
-                // Extend chunk by size-1 to capture k-mers crossing boundary
+                // define the extended window for the current chunk
+                // the chunk must be extended by (k - 1) masks to ensure that the last
+                // k-mer *starting* within the original range can be fully constructed.
                 let extended_start = orig_start;
                 let extended_end = std::cmp::min(orig_end + (k - 1), slen);
 
-                // Slice bytes (safe because DNA/RNA are ASCII)
-                let chunk = &seq[extended_start..extended_end];
+                // slice the bitmask data for the extended chunk
+                let chunk = &seq_bitmask[extended_start..extended_end];
                 let chunk_len = chunk.len();
 
                 let mut chunk_targets = Vec::new();
                 if chunk_len >= k {
+                    // iterate over all possible k-mer start positions within the extended chunk
                     for i in 0..=(chunk_len - k) {
                         let global_pos = extended_start + i;
-                        // Emit only k-mers whose start is inside the original chunk (avoid duplicates)
+
+                        // check if the k-mer's start position falls within the thread's 
+                        // *original* boundaries to prevent duplicate results across threads.
                         if global_pos >= orig_start && global_pos < orig_end {
-                            // retrieve target (bytes)
-                            let target = &seq[i..i + k];
-                            if target.contains(&b'N') {
+
+                            // retrieve the k-mer target sequence (bitmasks) from the extended chunk
+                            let target = &seq_bitmask[i..i + k];
+
+                            // skip the target if it contains the 'N' (Any base) bitmask
+                            if target.iter().any(|&b| b == 0b1111) {
                                 continue;
                             }
-                            // PAM match on forward strand
+
+                            // check for PAM match on the forward strand
                             if matches_pattern(get_pam_slice(target, plen, k, right), &pat) {
-                                chunk_targets.push(Target::new(contig, global_pos, true, std::str::from_utf8(target).unwrap()));
+                                chunk_targets.push(Target::new(contig, global_pos, true, target.to_vec()));
                             }
-                            // PAM match on reverse strand
+
+                            // check for PAM match on the reverse strand
                             if matches_pattern(get_pam_slice(target, plen, k, !right), &rev) {
-                                chunk_targets.push(Target::new(contig, global_pos, false, std::str::from_utf8(target).unwrap()));
+                                chunk_targets.push(Target::new(contig, global_pos, false, target.to_vec()));
                             }
                         }
                     }
                 }
-                Some(chunk_targets)
+                Some(chunk_targets)  // return the vector of targets found in this chunk
             })
-            .flatten()
+            .flatten()  // flatten the Vec<Vec<Target>> into a single Vec<Target>
             .collect()
     });
 
     return targets;
 }
 
+// --------------------------------------------------------------------------------------------------
+
+/// Checks if a sequence bitmask slice matches a PAM pattern bitmask slice.
+///
+/// This uses the IUPAC matching logic (`matches_iupac`) to ensure every position 
+/// in the sequence slice overlaps with the required pattern bits.
+///
+/// # Arguments
+/// * `seq` - The sequence fragment bitmask slice (e.g., the PAM part of the k-mer window).
+/// * `pam` - The PAM pattern bitmask slice (forward or reverse complement).
+///
+/// # Returns
+/// * `true` if the sequence matches the pattern at all corresponding positions
 fn matches_pattern(seq: &[u8], pam: &[u8]) -> bool {
     seq.iter()
         .zip(pam.iter())
         .all(|(a, b)| matches_iupac(*a, *b))
 }
 
+// --------------------------------------------------------------------------------------------------
 
+/// Extracts the PAM-defining slice from the k-mer window based on its relative position.
+///
+/// # Arguments
+/// * `target` - The bitmask slice representing the k-mer *plus* the PAM window.
+/// * `plen` - The length of the PAM sequence.
+/// * `k` - The length of the target/protospacer (used to calculate the start position).
+/// * `right` - If `true`, the PAM is on the left (at the start of the slice); 
+///             if `false`, the PAM is on the right (at the end of the slice).
+///
+/// # Returns
+/// A slice (`&[u8]`) containing only the bitmasks for the PAM region.
 fn get_pam_slice(target: &[u8], plen: usize, k: usize, right: bool) -> &[u8] {
     if right {
+        // if the PAM is specified to be *right* of the k-mer, then we assume the current
+        // slice is structured as: [PAM_seq | K-mer]. The PAM is at the beginning.
         &target[0..plen]
     } else {
+        // if the PAM is specified to be *left* of the k-mer, then the slice is 
+        // structured as: [K-mer | PAM_seq]. The PAM is at the end.
         &target[k - plen..k]
     }
 }
