@@ -20,7 +20,6 @@ pub struct HashedTargets {
     pub targets: HashMap<Vec<u8>, Vec<(String, usize, bool)>>,
 }
 
-#[pymethods]
 impl HashedTargets {
     /// internal constructor to initialize the HashedTargets struct
     pub fn new() -> Self {

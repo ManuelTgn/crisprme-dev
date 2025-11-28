@@ -3,9 +3,10 @@ mod scan;
 mod pam; 
 mod iupac;
 mod target;
+mod hashing;
 
 use pyo3::prelude::*;
-use::pyo3::exceptions::PyValueError;
+use pyo3::exceptions::PyValueError;
 use pyo3::PyResult;
 
 /// Finds all potential target candidates (CRISPR gRNAs) within a given sequence.
@@ -37,17 +38,17 @@ pub fn find_target_candidates(
     k: usize, 
     right: bool,
     threads: usize,
-) -> PyResult<Vec<target::Target>> {
+) -> PyResult<hashing::HashedTargets> {
     // --- input validation ---
 
     if k == 0 {
-        return Err(pyo3::exceptions::PyValueError::new_err(
+        return Err(PyValueError::new_err(
             "Size must be greater than 0",
         ));
     }
     
     if threads == 0 {
-        return Err(pyo3::exceptions::PyValueError::new_err(
+        return Err(PyValueError::new_err(
             "threads must be greater than 0",
         ));
     }
@@ -55,13 +56,13 @@ pub fn find_target_candidates(
     let seq_len = sequence.len();
     
     if seq_len == 0 {
-        return Err(pyo3::exceptions::PyValueError::new_err(
+        return Err(PyValueError::new_err(
             "sequence cannot be empty",
         ));
     }
     
     if k > seq_len {
-        return Err(pyo3::exceptions::PyValueError::new_err(
+        return Err(PyValueError::new_err(
             format!("size ({}) cannot be greater than sequence length ({})", k, seq_len),
         ));
     }
@@ -71,7 +72,7 @@ pub fn find_target_candidates(
     // parse the PAM sequence string into a ParsedPAM struct (converting to bitmasks)
     // the .map_err converts the internal Rust String error into a Python PyValueError
     let pat = pam::ParsedPAM::new(pam_seq)
-        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid PAM sequence: {}", e)))?;
+        .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid PAM sequence: {}", e)))?;
 
     // -- execution ---
 

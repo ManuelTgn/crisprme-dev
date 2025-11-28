@@ -385,9 +385,9 @@ def retrieve_targets(fasta_vcf_map: Dict[str, Tuple[Fasta, Optional[VCF]]], pam:
             # split contig sequence in 10 Mb long chunks
             contig_chunks = _chunk_contig_sequence(f.fetch(contig))
             start = time()
-            contig_targets = flatten_list([_find_target_candidates(c, contig, pam.pam, guidelen_offset, right, threads) for c in contig_chunks])
+            contig_targets = [_find_target_candidates(c, contig, pam.pam, guidelen_offset, right, threads) for c in contig_chunks]
+            # contig_targets = flatten_list([_find_target_candidates(c, contig, pam.pam, guidelen_offset, right, threads) for c in contig_chunks])
             print(f"{contig}: {time() - start:.2f}s")
-            # _ = _hash_targets(contig_targets, loggers).items()
 
 
 def retrieve_target_candidates(args: Crisprme2SearchInputArgs, pam: PAM, guidelen: int, offset: int, loggers: CrisprmeLoggers):

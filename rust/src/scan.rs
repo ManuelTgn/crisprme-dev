@@ -1,3 +1,4 @@
+use crate::hashing;
 use crate::pam::ParsedPAM;
 use crate::iupac::{Iupac, matches_iupac};
 use crate::target::Target;
@@ -123,7 +124,17 @@ pub fn scan_targets(
 
     // 5. Hash and group the results entirely in Rust for performance.
     // This is the step that replaces the slow Python loop
+    // let hashed_targets = hashing::hash_and_group_targets(targets);
     hashing::hash_and_group_targets(targets)
+
+    // // --- PRINTING THE CONTENT ---
+    // // Use {:?} for debug formatting of the HashedTargets struct.
+    // println!("--- Hashed Targets Result (Contig: {}) ---", contig);
+    // println!("Total Unique Sequences: {}", hashed_targets.targets.len());
+    // println!("Content: {:?}", hashed_targets.targets);
+    // println!("----------------------------------------------------");
+
+    // hashed_targets
 }
 
 // --------------------------------------------------------------------------------------------------
