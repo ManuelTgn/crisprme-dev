@@ -243,6 +243,11 @@ struct ThreadMiner {
 		Step step = current();
 		decrement_state(step);
 
+		// Set mismatch bit at zero after a travel!
+		// Only the initial B step uses the bit, all other step types do not use it.
+		mem.mismatches = mem.mismatches & ~0b1;
+		mem.state.mism = __popc(mem.mismatches);
+
 		step = step.next();
 		increment_state(step);
 		replace(step);

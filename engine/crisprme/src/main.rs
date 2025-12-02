@@ -27,6 +27,7 @@ use crisprme_core::utils;
 
 // Use custom small allocator
 use mimalloc::MiMalloc;
+use ahash::AHashMap;
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
@@ -293,6 +294,119 @@ fn main() {
                     .expect("unable to create binary sequence file"),
             );
 
+            info!("reading dataset {} into memory", stem.to_string_lossy());
+
+            // NOTE: We assume an ASCII encoded file
+            let dataset: Vec<u8> = std::fs::read(input).expect("unable to read list file");
+            let lines: Vec<&[u8]> = dataset.split(|&b| b == b'\n').collect();
+
+            // Create the maximum chunk size for the number of threads
+            let parallelism = rayon::current_num_threads();
+            let chunk_size = (lines.len() + parallelism - 1) / parallelism;
+
+            // NOTE: This uses a faster hashing function
+            let mut result: AHashMap<&[u8], Vec<u32>> = AHashMap::new();
+
+            info!("aggregating across {} threads", parallelism);
+
+            let chunk_maps: Vec<(BTreeMap<_, _>, u32)> = lines.par_chunks(chunk_size)
+                .map(|chunk| {
+
+                    let mut result: BTreeMap<&[u8], Vec<u32>> = BTreeMap::new();
+                    let mut lines_count = 0;
+                    for line in chunk {
+                        if let Some(mid) = line.iter().position(|&b| b == b'\t') {
+                            lines_count += 1;
+
+                            let position = &line[..mid];
+                            let position = unsafe {
+                                std::str::from_utf8_unchecked(position)
+                                    .parse::<u32>().unwrap()
+                            };
+
+                            let sequence_bytes = &line[mid+1..];
+                            result.entry(sequence_bytes).or_default()
+                                .push(position);
+                        }
+                    }
+
+                    info!("completed partial aggregation");
+                    (result, lines_count)
+                })
+                .collect();
+            
+            info!("aggregating partials");
+
+            // Aggregate the map from each thread
+            // NOTE: Global allocation is done in a single thread to reduce memory usage
+            let (result, total_lines) = chunk_maps.into_iter()
+                .reduce(
+                    |(mut acc, lines), (chunk_map, chunk_lines)| {
+                        for (k, mut v) in chunk_map {
+                            acc.entry(k)
+                                .and_modify(|r| r.append(&mut v))
+                                .or_insert(v);
+                        }
+                        (acc, lines + chunk_lines)
+                    }
+                ).unwrap();
+
+            info!("found {} unique sequences compared to the initial {}", result.len(), total_lines);
+            info!("writing packed data");
+
+            let mut positions_count = 0;
+            let mut sequence_min_positions = usize::MAX;
+            let mut sequence_max_positions = usize::MIN;
+
+            // Write sequences and ids to file
+            let mut scratch: [Iupac; 128] = [Iupac::from_ascii(b'N'); 128];
+            for (seq, positions) in result.iter() {
+                
+                sequence_min_positions = sequence_min_positions.min(positions.len());
+                sequence_max_positions = sequence_max_positions.max(positions.len());
+
+                // Write ids: [len:u32][pos[]:[u32]]
+                let len = positions.len() as u32;
+                pos_writer.write_all(&len.to_le_bytes()).unwrap();
+                for pos in positions {
+                    pos_writer.write_all(&pos.to_le_bytes()).unwrap();
+                    positions_count += 1;
+                }
+
+                // Convert the seq from u8 to Iupac
+                for (i, c) in seq.iter().enumerate() {
+                    scratch[i] = Iupac::from_ascii(*c);
+                }
+
+                // Write sequences
+                // SAFETY: Iupac is repr(C) and is a u8
+                let bytes =
+                    unsafe { std::slice::from_raw_parts(scratch.as_ptr() as *const u8, *sequence_len) };
+
+                seq_writer.write_all(bytes).unwrap();
+            }
+
+            info!("{} written records", positions_count);
+            info!("max positions for a sequence: {}", sequence_max_positions);
+            info!("min positions for a sequence: {}", sequence_min_positions);
+            assert_eq!(positions_count, total_lines);
+
+            /*
+            let slice = &fasta[beg..end];
+            let mut iter = slice.windows(*sequence_len).step_by(*delta).enumerate();
+            let chunks: Vec<Vec<_>> = {
+                let mut output = Vec::new();
+                loop {
+                    let chunk: Vec<_> = iter.by_ref().take(1_000_000).collect();
+                    if chunk.is_empty() {
+                        break;
+                    }
+                    output.push(chunk);
+                }
+                output
+            };
+
+
             let mut sequences: BTreeMap<Vec<Iupac>, Vec<u32>> = BTreeMap::new();
             for line in reader.lines() {
                 let line = line.unwrap();
@@ -305,7 +419,7 @@ fn main() {
                     .collect();
 
                 assert_eq!(sequence.len(), *sequence_len);
-                println!("id: {}, sequence: {}", id, Sequence::new(&sequence));
+                //println!("id: {}, sequence: {}", id, Sequence::new(&sequence));
                 sequences.entry(sequence)
                     .or_insert_with(Vec::new)
                     .push(id);
@@ -330,7 +444,7 @@ fn main() {
             }
 
             info!("stored {} sequences", sequence_count);
-
+            */
         },
 
         Commands::Mine { input, output, guide, sequence_len, thresholds } => {

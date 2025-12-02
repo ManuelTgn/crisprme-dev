@@ -12,9 +12,11 @@
 #include <crisprme-core/src/bindings/miner.rs.h>
 
 #define DEBUG 0
+#define SHMEM 0
 
 #define BLOCK_COUNT 3000
-#define BLOCK_SIZE 128
+//#define BLOCK_SIZE 128
+#define BLOCK_SIZE 256
 //#define BLOCK_COUNT 1
 //#define BLOCK_SIZE 1
 #define WARP_SIZE 32
@@ -112,18 +114,33 @@ __global__ void warp_reg_stack(
   const u32 start_sidx = 0;
   //const u32 offset = 0;
 
+#if SHMEM
+  // Contains all required sequences for this block
+  // NOTE: For now use a maximum SLEN of 32, we need less
+  __shared__ u8 batch_shared[BLOCK_SIZE][32];
+#endif
+
   /// Process all sequences and starting offset
   for (u32 bseq = start_bseq; bseq < batch_size; bseq += gridDim.x * blockDim.x) {
 
+#if SHMEM
     // TODO: Load data to shared memory after the barrier
-    //__syncthreads();
+    for (u32 i = 0; i < SLEN; ++i) {
+	batch_shared[i][threadIdx.x] = batch[bseq * SLEN + i];
+    }
+    __syncthreads();
+#endif
 
     for (u32 offset = start_sidx; offset <= (SLEN - GLEN + GGAP); offset += 1) {
 
       // Initialize stack for this sequence if not already done
       if (miner.mem.len == 0) {
+#if SHMEM
+        u8 s = batch_shared[threadIdx.x][offset + 0];
+#else
         u8 s = batch[bseq * SLEN + offset + 0];
-        u8 g = GUIDE[0];
+#endif   
+	u8 g = GUIDE[0];
 
         miner.push(Step::initial(), !iupac_match(g, s));
       }
@@ -236,7 +253,11 @@ __global__ void warp_reg_stack(
 	  //assert(miner.mem.state.sidx + offset < SLEN);
 	  //assert(miner.mem.state.gidx < GLEN);
 
+#if SHMEM
+	  u8 s = batch_shared[threadIdx.x][miner.mem.state.sidx + offset]; 
+#else
 	  u8 s = batch[bseq * SLEN + miner.mem.state.sidx + offset];
+#endif
 	  u8 g = GUIDE[miner.mem.state.gidx];
 
 #if DEBUG
