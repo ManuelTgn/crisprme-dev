@@ -15,14 +15,22 @@ Tested with CUDA 12.6, should work with all versions, prefer CUDA 11+
 
 ### Run
 
-* To see all available commands run `cargo run --release -- help`
-* Run the example script `test-run-split.sh`
+* Build the engine using: `cargo b --release`
+* To see all available commands run: `./target/release/crisprme help`
+* Example mine:
+  ```
+  ./target/release/crisprme mine \
+    --tgap <target gaps>         \
+    --qgap <query gaps>          \
+    --mism <mismatches>          \
+    <dataset>                    \
+    <target sequence length>     \
+    <query string>               \
+    <output>
+  ```
 
-### Docker
+### Preprocessing
 
-* Pull the image `docker pull z1ko/crisprme:cuda12.6.3-ubuntu22.04`
-* Run the interactive container `docker run -it z1ko/crisprme:cuda12.6.3-ubuntu22.04`
-
-## License
-
-MIT license([LICENSE](LICENSE))
+The datasets must be firstly preprocess with the following commands:
+* If working with a FASTA file: `./target/release/crisprme preprocess <input file> <target sequence length> <delta between windows>`
+* If working with a list of ids and sequences: `./target/release/crisprme preprocess-list <input file> <target sequence length>`
