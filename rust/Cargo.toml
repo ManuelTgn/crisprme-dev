@@ -3,7 +3,6 @@ name = "target_candidates_parser"
 version = "0.1.0"
 edition = "2021"
 authors = ["Manuel Tognon"]
-description = "High-performance parallel k-mer extractor with IUPAC pattern matching (Rust + Python bindings)"
 license = "MIT"
 
 [lib]
@@ -13,23 +12,31 @@ crate-type = ["cdylib"]
 [dependencies]
 pyo3 = { version = "0.20", features = ["extension-module", "abi3-py38"] }
 rayon = "1.8"
+serde = { version = "1.0", features = ["derive"] }
+rmp-serde = "1.1"
+serde_bytes = "0.11"
+bincode = "1.3"
 
-# later add SIMD-accelerated IUPAC matching?
-# packed_simd_2 = "0.3"  # or std::simd when stabilized
+# Optional SIMD (consider enabling once stable)
+# packed_simd_2 = "0.3"
 
 [build-dependencies]
-# Required if you want to use pyo3-build-config (optional):
 pyo3-build-config = "0.20"
 
 [profile.release]
-opt-level = 3            # highest optimization
-lto = "thin"             # thin LTO improves build speed while keeping high perf
-codegen-units = 1        # increases performance by enabling cross-file optimizations
-panic = "abort"          # reduce binary size + optimize runtime
-strip = true             # remove debug symbols in final wheel
+opt-level = "z"          # or "3" if size is less important; "z" optimizes for size which can help cache performance
+lto = true               # full LTO maximizes cross-module optimization
+codegen-units = 1        # better runtime performance at the cost of slower compile
+panic = "abort"          # removes unwinding overhead
+strip = true             # removes debug symbols
+debug = false            # explicitly disable debug info
+overflow-checks = false  # skip integer overflow checks in release mode
+incremental = false      # disable incremental compilation for release
+rpath = false            # optional: prevents embedding rpath info
 
 [profile.dev]
-opt-level = 0            # leave dev mode fast to compile
+opt-level = 0            # fast compilation during development
+incremental = true       # incremental builds for faster rebuilds
 
 [features]
 # Optional SIMD support

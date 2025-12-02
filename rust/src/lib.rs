@@ -5,9 +5,14 @@ mod iupac;
 mod target;
 mod hashing;
 
+use std::collections::HashMap;
 use pyo3::prelude::*;
+use pyo3::types::{PyDict, PyList};
 use pyo3::exceptions::PyValueError;
-use pyo3::PyResult;
+use pyo3::{PyResult, PyObject};
+
+// Type alias for the complex value data, just for cleaner code
+type OccurrenceData = Vec<(String, usize, bool)>;
 
 /// Finds all potential target candidates (CRISPR gRNAs) within a given sequence.
 ///
@@ -32,13 +37,16 @@ use pyo3::PyResult;
 /// Returns a `PyValueError` if input constraints are violated (e.g., invalid sizes or PAM sequence).
 #[pyfunction]
 pub fn find_target_candidates(
+    py: Python,
     sequence: &str, 
     contig: &str, 
     pam_seq: &str, 
     k: usize, 
     right: bool,
+    path: &str,
     threads: usize,
-) -> PyResult<hashing::HashedTargets> {
+// ) -> PyResult<PyObject> {
+) -> PyResult<()> {
     // --- input validation ---
 
     if k == 0 {
@@ -76,8 +84,30 @@ pub fn find_target_candidates(
 
     // -- execution ---
 
-    // execute the core parallel scanning logic and return the results
-    Ok(scan::scan_targets(sequence, contig, &pat, k, right, threads))
+    // // execute the core parallel scanning logic and return the results
+    scan::scan_targets(sequence, contig, &pat, k, right, path, threads);
+
+    Ok(())
+    // let py_dict = PyDict::new(py);
+    
+    // // Iterate over the Rust HashMap
+    // for (vec_u8_key, occurrences) in targets_map.into_iter() {
+        
+    //     // Convert Vec<u8> (Rust) to Python bytes (immutable, hashable)
+    //     // .as_bytes() creates the Python bytes object from the Rust slice.
+    //     let py_key = vec_u8_key.as_slice().into_py(py);
+        
+    //     // Convert the OccurrenceData (Vec<...>) to a Python list of tuples
+    //     // PyO3 handles the Vec -> list and inner tuple conversion automatically here.
+    //     let py_value = occurrences.into_py(py);
+        
+    //     // Insert the key (bytes) and value (list) into the dictionary
+    //     // This is where the panic occurred previously, but now the key is guaranteed 'bytes'.
+    //     py_dict.set_item(py_key, py_value)?;
+    // }
+
+    // // Return the dictionary as a PyObject
+    // Ok(py_dict.into())
 }
 
 /// Defines the Python module structure and exposes Rust functions

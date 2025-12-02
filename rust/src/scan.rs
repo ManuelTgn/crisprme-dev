@@ -2,12 +2,15 @@ use crate::hashing;
 use crate::pam::ParsedPAM;
 use crate::iupac::{Iupac, matches_iupac};
 use crate::target::Target;
-use crate::hashing::HashedTargets;
 
 use std::sync::Arc;
+use std::collections::HashMap;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use std::result::Result; 
+
+// Type alias for the complex value data, just for cleaner code
+type OccurrenceData = Vec<(String, usize, bool)>;
 
 /// Scans a sequence in parallel to find all candidate targets (k-mers) that match the PAM requirements.
 ///
@@ -35,8 +38,10 @@ pub fn scan_targets(
     pam: &ParsedPAM, 
     k: usize, 
     right: bool, 
+    path: &str,
     threads: usize
-) -> HashedTargets {
+// ) -> HashMap<Vec<u8>, OccurrenceData> {
+) -> hashing::HashedTargets {
     // 1. Convert the entire sequence string into a single vector of IUPAC bitmasks
     let seq_bitmask: Result<Vec<u8>, String> = sequence.as_bytes()
         .iter()
@@ -124,17 +129,17 @@ pub fn scan_targets(
 
     // 5. Hash and group the results entirely in Rust for performance.
     // This is the step that replaces the slow Python loop
-    // let hashed_targets = hashing::hash_and_group_targets(targets);
-    hashing::hash_and_group_targets(targets)
+    let hashed_targets = hashing::hash_and_group_targets(targets);
+    // hashing::hash_and_group_targets(targets)
 
-    // // --- PRINTING THE CONTENT ---
-    // // Use {:?} for debug formatting of the HashedTargets struct.
-    // println!("--- Hashed Targets Result (Contig: {}) ---", contig);
-    // println!("Total Unique Sequences: {}", hashed_targets.targets.len());
-    // println!("Content: {:?}", hashed_targets.targets);
-    // println!("----------------------------------------------------");
+    // --- NEW: Save the HashedTargets to indexed binary files ---
+    hashed_targets.save_indexed_binary(path)
+        .expect("FATAL: Failed to save targets to indexed binary files.");
 
-    // hashed_targets
+    // Now return the structure to lib.rs (it's unused in lib.rs, but required for flow)
+    // NOTE: Returning HashedTargets just to keep the current structure; 
+    // lib.rs will simply discard it.
+    hashed_targets
 }
 
 // --------------------------------------------------------------------------------------------------

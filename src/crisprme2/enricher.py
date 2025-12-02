@@ -13,12 +13,14 @@ from .pam import PAM
 
 from .target_candidates_parser import find_target_candidates
 
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple, Optional, Any
 from concurrent.futures import Future
 from pysam import TabixFile
 
 import concurrent.futures
 import numpy as np
+
+import msgpack
 
 import cyvcf2
 
@@ -29,6 +31,7 @@ from .utils import DNA, IUPACTABLE
 from glob import glob
 from time import time
 
+import struct
 import os
 
 # contig chunk size and overlap
@@ -256,6 +259,41 @@ def construct_samples_list(
         samples += [Sample(sample, loggers) for sample in vcf.get_samples()]
     return samples
 
+class TargetSimpleReader:
+    """
+    Reads all target sequences sequentially from the line-delimited Targets.txt file,
+    ignoring the index file completely.
+    """
+    
+    def __init__(self, path_prefix: str):
+        # NOTE: Targets is expected to be a text file (.txt)
+        self.targets_file = f"{path_prefix}_Targets.bin"
+        
+        if not os.path.exists(self.targets_file):
+            raise FileNotFoundError(f"Required targets file not found: '{self.targets_file}'")
+
+    def read_all_targets(self) -> List[str]:
+        """
+        Reads all lines from the targets file and returns them as a list of strings,
+        stripping the trailing newline character from each.
+        """
+        print(f"Reading all sequences from {self.targets_file}...")
+        
+        targets = []
+        try:
+            # Open the file in read mode ('r') for text content
+            with open(self.targets_file, 'rb') as f:
+                # Iterate through the file line by line
+                for line in f:
+                    targets.append(line.strip()) # strip() removes leading/trailing whitespace, including '\n'
+            
+            return targets
+        
+        except IOError as e:
+            print(f"[Error] Failed to read targets file: {e}")
+            return []
+
+
 
 # def _split_ranges(length: int, threads: int, loggers: CrisprmeLoggers, overlap: int = 100) -> List[Tuple[int, int]]:
 #     if length <= 0 or threads <= 0:  # should never happen
@@ -364,8 +402,8 @@ def _chunk_contig_sequence(contig_sequence: ContigSequence) -> List[ContigSequen
     # chunk each contig in 10Mb chunks
     return [c for c in contig_sequence.chunk(CHUNKSIZE, CHUNKOVERLAP)]
 
-def _find_target_candidates(contig_sequence: ContigSequence, contig: str, pam_seq: str, offset: int, right: bool, threads: int) -> List:
-    return find_target_candidates(contig_sequence.sequence.upper(), contig, pam_seq, offset, right, threads)
+def _find_target_candidates(contig_sequence: ContigSequence, contig: str, pam_seq: str, offset: int, right: bool, outdir: str, threads: int):
+    return find_target_candidates(contig_sequence.sequence.upper(), contig, pam_seq, offset, right, outdir, threads)
 
 def _hash_targets(contig_targets: List, loggers: CrisprmeLoggers):
     targets_hash: Dict[bytes, Target] = {}  # initialize targets hash
@@ -376,7 +414,7 @@ def _hash_targets(contig_targets: List, loggers: CrisprmeLoggers):
         targets_hash[target.target].add_target(target.contig, target.position, target.orientation)
     return targets_hash
 
-def retrieve_targets(fasta_vcf_map: Dict[str, Tuple[Fasta, Optional[VCF]]], pam: PAM, guidelen: int, offset: int, right: bool, threads: int, loggers: CrisprmeLoggers):
+def retrieve_targets(fasta_vcf_map: Dict[str, Tuple[Fasta, Optional[VCF]]], pam: PAM, guidelen: int, offset: int, right: bool, threads: int, outdir: str, loggers: CrisprmeLoggers):
     # use offset to account for bulges in alignments
     guidelen_offset = guidelen + len(pam) + offset
     for contig, (fasta, vcf) in fasta_vcf_map.items():
@@ -384,13 +422,42 @@ def retrieve_targets(fasta_vcf_map: Dict[str, Tuple[Fasta, Optional[VCF]]], pam:
         with fasta as f:
             # split contig sequence in 10 Mb long chunks
             contig_chunks = _chunk_contig_sequence(f.fetch(contig))
+            hash_path = os.path.join(outdir, f"{contig}")
             start = time()
-            contig_targets = [_find_target_candidates(c, contig, pam.pam, guidelen_offset, right, threads) for c in contig_chunks]
+            contig_targets = _find_target_candidates(f.fetch(contig), contig, pam.pam, guidelen_offset, right, hash_path, threads)
+            # for c, e in contig_targets.items():
+            #     print(c, e)
+            # contig_targets = [_find_target_candidates(c, contig, pam.pam, guidelen_offset, right, threads) for c in contig_chunks]
             # contig_targets = flatten_list([_find_target_candidates(c, contig, pam.pam, guidelen_offset, right, threads) for c in contig_chunks])
             print(f"{contig}: {time() - start:.2f}s")
+            # reader = TargetSimpleReader(hash_path)
+        
+            # all_sequences = reader.read_all_targets()
+            
+            # if all_sequences:
+            #     print(f"\nSuccessfully read {len(all_sequences)} sequences.")
+            #     print("First 5 sequences:")
+            #     for i, seq in enumerate(all_sequences[:5]):
+            #         print(f"  [{i}]: {seq}")
+                
+            #     if len(all_sequences) > 5:
+            #         print("...")
+                
+            # else:
+            #     print("No sequences found in the targets file.")
+            # with open(hash_path, 'rb') as f: # Use 'rb' for reading binary
+            #     # Use raw=False to ensure binary keys (Vec<u8>) are loaded as Python bytes objects, 
+            #     # and not as strings (which is the default).
+            #     loaded_dict = msgpack.unpack(f, raw=False)
+            # print(f"File size (MsgPack): {os.path.getsize(hash_path) / (1024*1024):.2f} MB")
+            # print(f"Loaded dictionary type: {type(loaded_dict)}")
 
+            # # Check the key type: it should be bytes
+            # first_key = list(loaded_dict.keys())[0]
+            # print(f"First key type: {type(first_key)}")
+            # print(f"First key content: {first_key.hex()}")
 
 def retrieve_target_candidates(args: Crisprme2SearchInputArgs, pam: PAM, guidelen: int, offset: int, loggers: CrisprmeLoggers):
     # map each contig fasta to its variant data
     fasta_vcf_map = create_fasta_vcf_map(args.fastas, args.vcfs, loggers)
-    retrieve_targets(fasta_vcf_map, pam, guidelen, offset, args.right, args.threads, loggers)
+    retrieve_targets(fasta_vcf_map, pam, guidelen, offset, args.right, args.threads, args.outdir, loggers)
