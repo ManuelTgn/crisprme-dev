@@ -1,0 +1,15 @@
+[workspace]
+resolver = "2"
+members = ["crisprme", "crisprme-core"]
+
+[workspace.dependencies]
+mimalloc = "0.1.46"
+
+[profile.release]
+codegen-units = 1
+panic = "abort"
+lto = false
+
+# Only for profiling
+debug = false
+

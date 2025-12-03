@@ -1,0 +1,436 @@
+[2m2025-10-22T15:09:26.641573Z[0m [32m INFO[0m ThreadId(01) running pipeline: PipelineDescriptor {
+    sequence_len: 22,
+    sequence_batch_size: 1000000,
+    alignment_batch_size: 10000000,
+    sequence_file: "./data/ready/sequences_ref_chr1_NGG_positive/sequences.bin",
+    output_file: "mine_chr1_positive.bin",
+    thresholds: Thresholds {
+        qgap: 1,
+        tgap: 1,
+        mism: 4,
+    },
+    mutation_max: 100,
+    guide: Guide(
+        [
+            Iupac(
+                2,
+            ),
+            Iupac(
+                8,
+            ),
+            Iupac(
+                1,
+            ),
+            Iupac(
+                1,
+            ),
+            Iupac(
+                2,
+            ),
+            Iupac(
+                1,
+            ),
+            Iupac(
+                4,
+            ),
+            Iupac(
+                8,
+            ),
+            Iupac(
+                8,
+            ),
+            Iupac(
+                4,
+            ),
+            Iupac(
+                2,
+            ),
+            Iupac(
+                8,
+            ),
+            Iupac(
+                8,
+            ),
+            Iupac(
+                8,
+            ),
+            Iupac(
+                8,
+            ),
+            Iupac(
+                1,
+            ),
+            Iupac(
+                8,
+            ),
+            Iupac(
+                2,
+            ),
+            Iupac(
+                1,
+            ),
+            Iupac(
+                2,
+            ),
+        ],
+    ),
+}
+[2m2025-10-22T15:09:26.641742Z[0m [35mTRACE[0m ThreadId(01) allocated gpu buffer (26000000 elements)
+[2m2025-10-22T15:09:26.756605Z[0m [35mTRACE[0m ThreadId(01) allocated gpu buffer (26000000 elements)
+[2m2025-10-22T15:09:26.758938Z[0m [35mTRACE[0m ThreadId(01) allocated gpu buffer (26000000 elements)
+[2m2025-10-22T15:09:26.761290Z[0m [35mTRACE[0m ThreadId(01) allocated gpu buffer (26000000 elements)
+[2m2025-10-22T15:09:26.763593Z[0m [35mTRACE[0m ThreadId(01) allocated gpu buffer (26000000 elements)
+[2m2025-10-22T15:09:26.765844Z[0m [35mTRACE[0m ThreadId(01) allocated gpu buffer (26000000 elements)
+[2m2025-10-22T15:09:26.768201Z[0m [35mTRACE[0m ThreadId(01) allocated gpu buffer (26000000 elements)
+[2m2025-10-22T15:09:26.770455Z[0m [35mTRACE[0m ThreadId(01) allocated gpu buffer (26000000 elements)
+[2m2025-10-22T15:09:26.772754Z[0m [35mTRACE[0m ThreadId(01) allocated gpu buffer (26000000 elements)
+[2m2025-10-22T15:09:26.775086Z[0m [35mTRACE[0m ThreadId(01) allocated gpu buffer (26000000 elements)
+[2m2025-10-22T15:09:26.777421Z[0m [35mTRACE[0m ThreadId(01) allocated gpu buffer (26000000 elements)
+[2m2025-10-22T15:09:26.779811Z[0m [35mTRACE[0m ThreadId(01) allocated gpu buffer (26000000 elements)
+[2m2025-10-22T15:09:26.782192Z[0m [35mTRACE[0m ThreadId(01) allocated gpu buffer (240000000 elements)
+[2m2025-10-22T15:09:26.802613Z[0m [35mTRACE[0m ThreadId(01) allocated gpu buffer (240000000 elements)
+[2m2025-10-22T15:09:26.822510Z[0m [35mTRACE[0m ThreadId(01) allocated gpu buffer (240000000 elements)
+[2m2025-10-22T15:09:26.842617Z[0m [35mTRACE[0m ThreadId(01) allocated gpu buffer (240000000 elements)
+[2m2025-10-22T15:09:26.863385Z[0m [35mTRACE[0m ThreadId(01) allocated gpu buffer (240000000 elements)
+[2m2025-10-22T15:09:26.883652Z[0m [35mTRACE[0m ThreadId(01) allocated gpu buffer (240000000 elements)
+[2m2025-10-22T15:09:26.904437Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m: started!
+[2m2025-10-22T15:09:26.904522Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: receiving buffer from ring
+[2m2025-10-22T15:09:26.904556Z[0m [32m INFO[0m ThreadId(02) [1mth_reader[0m: started, BinarySequenceBatchReader {
+    sequence_len: 22,
+    sequence_count: 10523642,
+    batch_size: 1000000,
+    file: File {
+        fd: 38,
+        path: "/home/fziche/develop/crisprme/data/ready/sequences_ref_chr1_NGG_positive/sequences.bin",
+        read: true,
+        write: false,
+    },
+    cuda: false,
+}
+[2m2025-10-22T15:09:26.904597Z[0m [35mTRACE[0m ThreadId(02) [1mth_reader[0m:[1mring[0m: acquiring buffer from ring
+[2m2025-10-22T15:09:26.904811Z[0m [32m INFO[0m ThreadId(08) [1mth_writer[0m: started, AlignmentBatchWriter {
+    file: File {
+        fd: 37,
+        path: "/home/fziche/develop/crisprme/mine_chr1_positive.bin",
+        read: false,
+        write: true,
+    },
+    offset: 0,
+}
+[2m2025-10-22T15:09:26.904840Z[0m [35mTRACE[0m ThreadId(08) [1mth_writer[0m:[1mring[0m: receiving buffer from ring
+[2m2025-10-22T15:09:26.904957Z[0m [32m INFO[0m ThreadId(05) [1mth_writer[0m: started, AlignmentBatchWriter {
+    file: File {
+        fd: 37,
+        path: "/home/fziche/develop/crisprme/mine_chr1_positive.bin",
+        read: false,
+        write: true,
+    },
+    offset: 0,
+}
+[2m2025-10-22T15:09:26.904988Z[0m [35mTRACE[0m ThreadId(05) [1mth_writer[0m:[1mring[0m: receiving buffer from ring
+[2m2025-10-22T15:09:26.905039Z[0m [32m INFO[0m ThreadId(04) [1mth_writer[0m: started, AlignmentBatchWriter {
+    file: File {
+        fd: 37,
+        path: "/home/fziche/develop/crisprme/mine_chr1_positive.bin",
+        read: false,
+        write: true,
+    },
+    offset: 0,
+}
+[2m2025-10-22T15:09:26.905054Z[0m [35mTRACE[0m ThreadId(04) [1mth_writer[0m:[1mring[0m: receiving buffer from ring
+[2m2025-10-22T15:09:26.905085Z[0m [32m INFO[0m ThreadId(07) [1mth_writer[0m: started, AlignmentBatchWriter {
+    file: File {
+        fd: 37,
+        path: "/home/fziche/develop/crisprme/mine_chr1_positive.bin",
+        read: false,
+        write: true,
+    },
+    offset: 0,
+}
+[2m2025-10-22T15:09:26.905109Z[0m [35mTRACE[0m ThreadId(07) [1mth_writer[0m:[1mring[0m: receiving buffer from ring
+[2m2025-10-22T15:09:26.905107Z[0m [32m INFO[0m ThreadId(09) [1mth_writer[0m: started, AlignmentBatchWriter {
+    file: File {
+        fd: 37,
+        path: "/home/fziche/develop/crisprme/mine_chr1_positive.bin",
+        read: false,
+        write: true,
+    },
+    offset: 0,
+}
+[2m2025-10-22T15:09:26.905113Z[0m [35mTRACE[0m ThreadId(09) [1mth_writer[0m:[1mring[0m: receiving buffer from ring
+[2m2025-10-22T15:09:26.905145Z[0m [32m INFO[0m ThreadId(06) [1mth_writer[0m: started, AlignmentBatchWriter {
+    file: File {
+        fd: 37,
+        path: "/home/fziche/develop/crisprme/mine_chr1_positive.bin",
+        read: false,
+        write: true,
+    },
+    offset: 0,
+}
+[2m2025-10-22T15:09:26.905167Z[0m [35mTRACE[0m ThreadId(06) [1mth_writer[0m:[1mring[0m: receiving buffer from ring
+[2m2025-10-22T15:09:26.908971Z[0m [32m INFO[0m ThreadId(02) [1mth_reader[0m: loaded sequence batch #0 (1000000 seq) [4 ms]
+[2m2025-10-22T15:09:26.908977Z[0m [35mTRACE[0m ThreadId(02) [1mth_reader[0m:[1mring[0m: committing buffer to ring
+[2m2025-10-22T15:09:26.908981Z[0m [35mTRACE[0m ThreadId(02) [1mth_reader[0m:[1mring[0m: acquiring buffer from ring
+[2m2025-10-22T15:09:26.909012Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m: received batch #0 (1000000 seq)
+[2m2025-10-22T15:09:26.909039Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m: buffer with dirty CPU memory, synchronizing
+[2m2025-10-22T15:09:26.912945Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m:[1mcuda[0m: memcpy CPU -> GPU [3ms]
+[2m2025-10-22T15:09:26.913384Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m: pre_mine [0 ms]
+[2m2025-10-22T15:09:26.913391Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: acquiring buffer from ring
+[2m2025-10-22T15:09:26.913395Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m: mining batch of 1000000 sequences
+[2m2025-10-22T15:09:26.913436Z[0m [32m INFO[0m ThreadId(02) [1mth_reader[0m: loaded sequence batch #1 (1000000 seq) [4 ms]
+[2m2025-10-22T15:09:26.913442Z[0m [35mTRACE[0m ThreadId(02) [1mth_reader[0m:[1mring[0m: committing buffer to ring
+[2m2025-10-22T15:09:26.913444Z[0m [35mTRACE[0m ThreadId(02) [1mth_reader[0m:[1mring[0m: acquiring buffer from ring
+[2m2025-10-22T15:09:26.917565Z[0m [32m INFO[0m ThreadId(02) [1mth_reader[0m: loaded sequence batch #2 (1000000 seq) [4 ms]
+[2m2025-10-22T15:09:26.917577Z[0m [35mTRACE[0m ThreadId(02) [1mth_reader[0m:[1mring[0m: committing buffer to ring
+[2m2025-10-22T15:09:26.917578Z[0m [35mTRACE[0m ThreadId(02) [1mth_reader[0m:[1mring[0m: acquiring buffer from ring
+[2m2025-10-22T15:09:26.921591Z[0m [32m INFO[0m ThreadId(02) [1mth_reader[0m: loaded sequence batch #3 (1000000 seq) [4 ms]
+[2m2025-10-22T15:09:26.921595Z[0m [35mTRACE[0m ThreadId(02) [1mth_reader[0m:[1mring[0m: committing buffer to ring
+[2m2025-10-22T15:09:26.921596Z[0m [35mTRACE[0m ThreadId(02) [1mth_reader[0m:[1mring[0m: acquiring buffer from ring
+[2m2025-10-22T15:09:26.925604Z[0m [32m INFO[0m ThreadId(02) [1mth_reader[0m: loaded sequence batch #4 (1000000 seq) [4 ms]
+[2m2025-10-22T15:09:26.925608Z[0m [35mTRACE[0m ThreadId(02) [1mth_reader[0m:[1mring[0m: committing buffer to ring
+[2m2025-10-22T15:09:26.925609Z[0m [35mTRACE[0m ThreadId(02) [1mth_reader[0m:[1mring[0m: acquiring buffer from ring
+[2m2025-10-22T15:09:26.929601Z[0m [32m INFO[0m ThreadId(02) [1mth_reader[0m: loaded sequence batch #5 (1000000 seq) [3 ms]
+[2m2025-10-22T15:09:26.929605Z[0m [35mTRACE[0m ThreadId(02) [1mth_reader[0m:[1mring[0m: committing buffer to ring
+[2m2025-10-22T15:09:26.929607Z[0m [35mTRACE[0m ThreadId(02) [1mth_reader[0m:[1mring[0m: acquiring buffer from ring
+[2m2025-10-22T15:09:26.933620Z[0m [32m INFO[0m ThreadId(02) [1mth_reader[0m: loaded sequence batch #6 (1000000 seq) [4 ms]
+[2m2025-10-22T15:09:26.933624Z[0m [35mTRACE[0m ThreadId(02) [1mth_reader[0m:[1mring[0m: committing buffer to ring
+[2m2025-10-22T15:09:26.933626Z[0m [35mTRACE[0m ThreadId(02) [1mth_reader[0m:[1mring[0m: acquiring buffer from ring
+[2m2025-10-22T15:09:26.937676Z[0m [32m INFO[0m ThreadId(02) [1mth_reader[0m: loaded sequence batch #7 (1000000 seq) [4 ms]
+[2m2025-10-22T15:09:26.937680Z[0m [35mTRACE[0m ThreadId(02) [1mth_reader[0m:[1mring[0m: committing buffer to ring
+[2m2025-10-22T15:09:26.937681Z[0m [35mTRACE[0m ThreadId(02) [1mth_reader[0m:[1mring[0m: acquiring buffer from ring
+[2m2025-10-22T15:09:26.939537Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m: mined 1303 alignments (output batch 1) [26 ms]
+[2m2025-10-22T15:09:26.939549Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m: buffer with dirty GPU memory, synchronizing
+[2m2025-10-22T15:09:26.939562Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m:[1mcuda[0m: memcpy CPU <- GPU [0ms]
+[2m2025-10-22T15:09:26.939569Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: committing buffer to ring
+[2m2025-10-22T15:09:26.939574Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m: post_mine [0 ms]
+[2m2025-10-22T15:09:26.939575Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: finishing buffer to ring
+[2m2025-10-22T15:09:26.939577Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: receiving buffer from ring
+[2m2025-10-22T15:09:26.939579Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m: received batch #1 (1000000 seq)
+[2m2025-10-22T15:09:26.939580Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m: buffer with dirty CPU memory, synchronizing
+[2m2025-10-22T15:09:26.939625Z[0m [32m INFO[0m ThreadId(08) [1mth_writer[0m: wrote 1303 alignments to file [0 ms]
+[2m2025-10-22T15:09:26.939633Z[0m [35mTRACE[0m ThreadId(08) [1mth_writer[0m:[1mring[0m: finishing buffer to ring
+[2m2025-10-22T15:09:26.939636Z[0m [35mTRACE[0m ThreadId(08) [1mth_writer[0m:[1mring[0m: receiving buffer from ring
+[2m2025-10-22T15:09:26.941796Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m:[1mcuda[0m: memcpy CPU -> GPU [2ms]
+[2m2025-10-22T15:09:26.941921Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m: pre_mine [0 ms]
+[2m2025-10-22T15:09:26.941922Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: acquiring buffer from ring
+[2m2025-10-22T15:09:26.941923Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m: mining batch of 1000000 sequences
+[2m2025-10-22T15:09:26.941940Z[0m [32m INFO[0m ThreadId(02) [1mth_reader[0m: loaded sequence batch #8 (1000000 seq) [4 ms]
+[2m2025-10-22T15:09:26.941947Z[0m [35mTRACE[0m ThreadId(02) [1mth_reader[0m:[1mring[0m: committing buffer to ring
+[2m2025-10-22T15:09:26.941949Z[0m [35mTRACE[0m ThreadId(02) [1mth_reader[0m:[1mring[0m: acquiring buffer from ring
+[2m2025-10-22T15:09:26.945906Z[0m [32m INFO[0m ThreadId(02) [1mth_reader[0m: loaded sequence batch #9 (1000000 seq) [3 ms]
+[2m2025-10-22T15:09:26.945910Z[0m [35mTRACE[0m ThreadId(02) [1mth_reader[0m:[1mring[0m: committing buffer to ring
+[2m2025-10-22T15:09:26.945911Z[0m [35mTRACE[0m ThreadId(02) [1mth_reader[0m:[1mring[0m: acquiring buffer from ring
+[2m2025-10-22T15:09:26.948076Z[0m [32m INFO[0m ThreadId(02) [1mth_reader[0m: loaded sequence batch #10 (523642 seq) [2 ms]
+[2m2025-10-22T15:09:26.948079Z[0m [35mTRACE[0m ThreadId(02) [1mth_reader[0m:[1mring[0m: committing buffer to ring
+[2m2025-10-22T15:09:26.948080Z[0m [32m INFO[0m ThreadId(02) [1mth_reader[0m: closed
+[2m2025-10-22T15:09:26.966625Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m: mined 1936 alignments (output batch 1) [24 ms]
+[2m2025-10-22T15:09:26.966627Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m: buffer with dirty GPU memory, synchronizing
+[2m2025-10-22T15:09:26.966640Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m:[1mcuda[0m: memcpy CPU <- GPU [0ms]
+[2m2025-10-22T15:09:26.966647Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: committing buffer to ring
+[2m2025-10-22T15:09:26.966650Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m: post_mine [0 ms]
+[2m2025-10-22T15:09:26.966651Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: finishing buffer to ring
+[2m2025-10-22T15:09:26.966757Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: dropped gpu buffer
+[2m2025-10-22T15:09:26.966791Z[0m [32m INFO[0m ThreadId(05) [1mth_writer[0m: wrote 1936 alignments to file [0 ms]
+[2m2025-10-22T15:09:26.966798Z[0m [35mTRACE[0m ThreadId(05) [1mth_writer[0m:[1mring[0m: finishing buffer to ring
+[2m2025-10-22T15:09:26.966801Z[0m [35mTRACE[0m ThreadId(05) [1mth_writer[0m:[1mring[0m: receiving buffer from ring
+[2m2025-10-22T15:09:26.967232Z[0m [33m WARN[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: the producer was closed, no need for this buffer
+[2m2025-10-22T15:09:26.967236Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: receiving buffer from ring
+[2m2025-10-22T15:09:26.967237Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m: received batch #2 (1000000 seq)
+[2m2025-10-22T15:09:26.967238Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m: buffer with dirty CPU memory, synchronizing
+[2m2025-10-22T15:09:26.969397Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m:[1mcuda[0m: memcpy CPU -> GPU [2ms]
+[2m2025-10-22T15:09:26.969527Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m: pre_mine [0 ms]
+[2m2025-10-22T15:09:26.969528Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: acquiring buffer from ring
+[2m2025-10-22T15:09:26.969529Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m: mining batch of 1000000 sequences
+[2m2025-10-22T15:09:26.995117Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m: mined 1473 alignments (output batch 1) [25 ms]
+[2m2025-10-22T15:09:26.995119Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m: buffer with dirty GPU memory, synchronizing
+[2m2025-10-22T15:09:26.995131Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m:[1mcuda[0m: memcpy CPU <- GPU [0ms]
+[2m2025-10-22T15:09:26.995136Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: committing buffer to ring
+[2m2025-10-22T15:09:26.995139Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m: post_mine [0 ms]
+[2m2025-10-22T15:09:26.995143Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: finishing buffer to ring
+[2m2025-10-22T15:09:26.995213Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: dropped gpu buffer
+[2m2025-10-22T15:09:26.995213Z[0m [32m INFO[0m ThreadId(04) [1mth_writer[0m: wrote 1473 alignments to file [0 ms]
+[2m2025-10-22T15:09:26.995220Z[0m [35mTRACE[0m ThreadId(04) [1mth_writer[0m:[1mring[0m: finishing buffer to ring
+[2m2025-10-22T15:09:26.995222Z[0m [35mTRACE[0m ThreadId(04) [1mth_writer[0m:[1mring[0m: receiving buffer from ring
+[2m2025-10-22T15:09:26.995559Z[0m [33m WARN[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: the producer was closed, no need for this buffer
+[2m2025-10-22T15:09:26.995562Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: receiving buffer from ring
+[2m2025-10-22T15:09:26.995563Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m: received batch #3 (1000000 seq)
+[2m2025-10-22T15:09:26.995564Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m: buffer with dirty CPU memory, synchronizing
+[2m2025-10-22T15:09:26.997768Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m:[1mcuda[0m: memcpy CPU -> GPU [2ms]
+[2m2025-10-22T15:09:26.997897Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m: pre_mine [0 ms]
+[2m2025-10-22T15:09:26.997898Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: acquiring buffer from ring
+[2m2025-10-22T15:09:26.997900Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m: mining batch of 1000000 sequences
+[2m2025-10-22T15:09:27.024643Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m: mined 2120 alignments (output batch 1) [26 ms]
+[2m2025-10-22T15:09:27.024646Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m: buffer with dirty GPU memory, synchronizing
+[2m2025-10-22T15:09:27.024660Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m:[1mcuda[0m: memcpy CPU <- GPU [0ms]
+[2m2025-10-22T15:09:27.024667Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: committing buffer to ring
+[2m2025-10-22T15:09:27.024670Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m: post_mine [0 ms]
+[2m2025-10-22T15:09:27.024671Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: finishing buffer to ring
+[2m2025-10-22T15:09:27.024737Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: dropped gpu buffer
+[2m2025-10-22T15:09:27.024871Z[0m [32m INFO[0m ThreadId(07) [1mth_writer[0m: wrote 2120 alignments to file [0 ms]
+[2m2025-10-22T15:09:27.024878Z[0m [35mTRACE[0m ThreadId(07) [1mth_writer[0m:[1mring[0m: finishing buffer to ring
+[2m2025-10-22T15:09:27.024882Z[0m [35mTRACE[0m ThreadId(07) [1mth_writer[0m:[1mring[0m: receiving buffer from ring
+[2m2025-10-22T15:09:27.024998Z[0m [33m WARN[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: the producer was closed, no need for this buffer
+[2m2025-10-22T15:09:27.025000Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: receiving buffer from ring
+[2m2025-10-22T15:09:27.025002Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m: received batch #4 (1000000 seq)
+[2m2025-10-22T15:09:27.025003Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m: buffer with dirty CPU memory, synchronizing
+[2m2025-10-22T15:09:27.027336Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m:[1mcuda[0m: memcpy CPU -> GPU [2ms]
+[2m2025-10-22T15:09:27.027470Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m: pre_mine [0 ms]
+[2m2025-10-22T15:09:27.027471Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: acquiring buffer from ring
+[2m2025-10-22T15:09:27.027473Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m: mining batch of 1000000 sequences
+[2m2025-10-22T15:09:27.052571Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m: mined 6914 alignments (output batch 1) [25 ms]
+[2m2025-10-22T15:09:27.052576Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m: buffer with dirty GPU memory, synchronizing
+[2m2025-10-22T15:09:27.052606Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m:[1mcuda[0m: memcpy CPU <- GPU [0ms]
+[2m2025-10-22T15:09:27.052622Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: committing buffer to ring
+[2m2025-10-22T15:09:27.052625Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m: post_mine [0 ms]
+[2m2025-10-22T15:09:27.052626Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: finishing buffer to ring
+[2m2025-10-22T15:09:27.052698Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: dropped gpu buffer
+[2m2025-10-22T15:09:27.052770Z[0m [32m INFO[0m ThreadId(09) [1mth_writer[0m: wrote 6914 alignments to file [0 ms]
+[2m2025-10-22T15:09:27.052775Z[0m [35mTRACE[0m ThreadId(09) [1mth_writer[0m:[1mring[0m: finishing buffer to ring
+[2m2025-10-22T15:09:27.052777Z[0m [35mTRACE[0m ThreadId(09) [1mth_writer[0m:[1mring[0m: receiving buffer from ring
+[2m2025-10-22T15:09:27.053165Z[0m [33m WARN[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: the producer was closed, no need for this buffer
+[2m2025-10-22T15:09:27.053168Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: receiving buffer from ring
+[2m2025-10-22T15:09:27.053169Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m: received batch #5 (1000000 seq)
+[2m2025-10-22T15:09:27.053170Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m: buffer with dirty CPU memory, synchronizing
+[2m2025-10-22T15:09:27.055341Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m:[1mcuda[0m: memcpy CPU -> GPU [2ms]
+[2m2025-10-22T15:09:27.055467Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m: pre_mine [0 ms]
+[2m2025-10-22T15:09:27.055469Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: acquiring buffer from ring
+[2m2025-10-22T15:09:27.055470Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m: mining batch of 1000000 sequences
+[2m2025-10-22T15:09:27.080214Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m: mined 1786 alignments (output batch 1) [24 ms]
+[2m2025-10-22T15:09:27.080216Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m: buffer with dirty GPU memory, synchronizing
+[2m2025-10-22T15:09:27.080228Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m:[1mcuda[0m: memcpy CPU <- GPU [0ms]
+[2m2025-10-22T15:09:27.080233Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: committing buffer to ring
+[2m2025-10-22T15:09:27.080236Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m: post_mine [0 ms]
+[2m2025-10-22T15:09:27.080237Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: finishing buffer to ring
+[2m2025-10-22T15:09:27.080318Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: dropped gpu buffer
+[2m2025-10-22T15:09:27.080385Z[0m [32m INFO[0m ThreadId(06) [1mth_writer[0m: wrote 1786 alignments to file [0 ms]
+[2m2025-10-22T15:09:27.080392Z[0m [35mTRACE[0m ThreadId(06) [1mth_writer[0m:[1mring[0m: finishing buffer to ring
+[2m2025-10-22T15:09:27.080396Z[0m [35mTRACE[0m ThreadId(06) [1mth_writer[0m:[1mring[0m: receiving buffer from ring
+[2m2025-10-22T15:09:27.080671Z[0m [33m WARN[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: the producer was closed, no need for this buffer
+[2m2025-10-22T15:09:27.080674Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: receiving buffer from ring
+[2m2025-10-22T15:09:27.080675Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m: received batch #6 (1000000 seq)
+[2m2025-10-22T15:09:27.080676Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m: buffer with dirty CPU memory, synchronizing
+[2m2025-10-22T15:09:27.082925Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m:[1mcuda[0m: memcpy CPU -> GPU [2ms]
+[2m2025-10-22T15:09:27.083053Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m: pre_mine [0 ms]
+[2m2025-10-22T15:09:27.083054Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: acquiring buffer from ring
+[2m2025-10-22T15:09:27.083056Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m: mining batch of 1000000 sequences
+[2m2025-10-22T15:09:27.106211Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m: mined 1782 alignments (output batch 1) [23 ms]
+[2m2025-10-22T15:09:27.106213Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m: buffer with dirty GPU memory, synchronizing
+[2m2025-10-22T15:09:27.106225Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m:[1mcuda[0m: memcpy CPU <- GPU [0ms]
+[2m2025-10-22T15:09:27.106231Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: committing buffer to ring
+[2m2025-10-22T15:09:27.106234Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m: post_mine [0 ms]
+[2m2025-10-22T15:09:27.106235Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: finishing buffer to ring
+[2m2025-10-22T15:09:27.106271Z[0m [32m INFO[0m ThreadId(08) [1mth_writer[0m: wrote 1782 alignments to file [0 ms]
+[2m2025-10-22T15:09:27.106278Z[0m [35mTRACE[0m ThreadId(08) [1mth_writer[0m:[1mring[0m: finishing buffer to ring
+[2m2025-10-22T15:09:27.106282Z[0m [35mTRACE[0m ThreadId(08) [1mth_writer[0m:[1mring[0m: receiving buffer from ring
+[2m2025-10-22T15:09:27.106292Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: dropped gpu buffer
+[2m2025-10-22T15:09:27.106703Z[0m [33m WARN[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: the producer was closed, no need for this buffer
+[2m2025-10-22T15:09:27.106705Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: receiving buffer from ring
+[2m2025-10-22T15:09:27.106706Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m: received batch #7 (1000000 seq)
+[2m2025-10-22T15:09:27.106707Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m: buffer with dirty CPU memory, synchronizing
+[2m2025-10-22T15:09:27.108867Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m:[1mcuda[0m: memcpy CPU -> GPU [2ms]
+[2m2025-10-22T15:09:27.108996Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m: pre_mine [0 ms]
+[2m2025-10-22T15:09:27.108997Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: acquiring buffer from ring
+[2m2025-10-22T15:09:27.108999Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m: mining batch of 1000000 sequences
+[2m2025-10-22T15:09:27.134841Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m: mined 1355 alignments (output batch 1) [25 ms]
+[2m2025-10-22T15:09:27.134847Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m: buffer with dirty GPU memory, synchronizing
+[2m2025-10-22T15:09:27.134857Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m:[1mcuda[0m: memcpy CPU <- GPU [0ms]
+[2m2025-10-22T15:09:27.134863Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: committing buffer to ring
+[2m2025-10-22T15:09:27.134866Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m: post_mine [0 ms]
+[2m2025-10-22T15:09:27.134867Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: finishing buffer to ring
+[2m2025-10-22T15:09:27.134938Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: dropped gpu buffer
+[2m2025-10-22T15:09:27.135035Z[0m [32m INFO[0m ThreadId(05) [1mth_writer[0m: wrote 1355 alignments to file [0 ms]
+[2m2025-10-22T15:09:27.135043Z[0m [35mTRACE[0m ThreadId(05) [1mth_writer[0m:[1mring[0m: finishing buffer to ring
+[2m2025-10-22T15:09:27.135056Z[0m [35mTRACE[0m ThreadId(05) [1mth_writer[0m:[1mring[0m: receiving buffer from ring
+[2m2025-10-22T15:09:27.135199Z[0m [33m WARN[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: the producer was closed, no need for this buffer
+[2m2025-10-22T15:09:27.135205Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: receiving buffer from ring
+[2m2025-10-22T15:09:27.135206Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m: received batch #8 (1000000 seq)
+[2m2025-10-22T15:09:27.135207Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m: buffer with dirty CPU memory, synchronizing
+[2m2025-10-22T15:09:27.137484Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m:[1mcuda[0m: memcpy CPU -> GPU [2ms]
+[2m2025-10-22T15:09:27.137612Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m: pre_mine [0 ms]
+[2m2025-10-22T15:09:27.137613Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: acquiring buffer from ring
+[2m2025-10-22T15:09:27.137614Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m: mining batch of 1000000 sequences
+[2m2025-10-22T15:09:27.162461Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m: mined 2651 alignments (output batch 1) [24 ms]
+[2m2025-10-22T15:09:27.162462Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m: buffer with dirty GPU memory, synchronizing
+[2m2025-10-22T15:09:27.162477Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m:[1mcuda[0m: memcpy CPU <- GPU [0ms]
+[2m2025-10-22T15:09:27.162484Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: committing buffer to ring
+[2m2025-10-22T15:09:27.162487Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m: post_mine [0 ms]
+[2m2025-10-22T15:09:27.162488Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: finishing buffer to ring
+[2m2025-10-22T15:09:27.162544Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: dropped gpu buffer
+[2m2025-10-22T15:09:27.162562Z[0m [32m INFO[0m ThreadId(04) [1mth_writer[0m: wrote 2651 alignments to file [0 ms]
+[2m2025-10-22T15:09:27.162568Z[0m [35mTRACE[0m ThreadId(04) [1mth_writer[0m:[1mring[0m: finishing buffer to ring
+[2m2025-10-22T15:09:27.162570Z[0m [35mTRACE[0m ThreadId(04) [1mth_writer[0m:[1mring[0m: receiving buffer from ring
+[2m2025-10-22T15:09:27.162863Z[0m [33m WARN[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: the producer was closed, no need for this buffer
+[2m2025-10-22T15:09:27.162865Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: receiving buffer from ring
+[2m2025-10-22T15:09:27.162866Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m: received batch #9 (1000000 seq)
+[2m2025-10-22T15:09:27.162867Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m: buffer with dirty CPU memory, synchronizing
+[2m2025-10-22T15:09:27.165091Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m:[1mcuda[0m: memcpy CPU -> GPU [2ms]
+[2m2025-10-22T15:09:27.165220Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m: pre_mine [0 ms]
+[2m2025-10-22T15:09:27.165221Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: acquiring buffer from ring
+[2m2025-10-22T15:09:27.165222Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m: mining batch of 1000000 sequences
+[2m2025-10-22T15:09:27.190558Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m: mined 2018 alignments (output batch 1) [25 ms]
+[2m2025-10-22T15:09:27.190560Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m: buffer with dirty GPU memory, synchronizing
+[2m2025-10-22T15:09:27.190573Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m:[1mcuda[0m: memcpy CPU <- GPU [0ms]
+[2m2025-10-22T15:09:27.190579Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: committing buffer to ring
+[2m2025-10-22T15:09:27.190581Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m: post_mine [0 ms]
+[2m2025-10-22T15:09:27.190582Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: finishing buffer to ring
+[2m2025-10-22T15:09:27.190635Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: dropped gpu buffer
+[2m2025-10-22T15:09:27.190737Z[0m [32m INFO[0m ThreadId(07) [1mth_writer[0m: wrote 2018 alignments to file [0 ms]
+[2m2025-10-22T15:09:27.190744Z[0m [35mTRACE[0m ThreadId(07) [1mth_writer[0m:[1mring[0m: finishing buffer to ring
+[2m2025-10-22T15:09:27.190747Z[0m [35mTRACE[0m ThreadId(07) [1mth_writer[0m:[1mring[0m: receiving buffer from ring
+[2m2025-10-22T15:09:27.191074Z[0m [33m WARN[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: the producer was closed, no need for this buffer
+[2m2025-10-22T15:09:27.191077Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: receiving buffer from ring
+[2m2025-10-22T15:09:27.191078Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m: received batch #10 (523642 seq)
+[2m2025-10-22T15:09:27.191079Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m: buffer with dirty CPU memory, synchronizing
+[2m2025-10-22T15:09:27.193260Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m:[1mcuda[0m: memcpy CPU -> GPU [2ms]
+[2m2025-10-22T15:09:27.193390Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m: pre_mine [0 ms]
+[2m2025-10-22T15:09:27.193391Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: acquiring buffer from ring
+[2m2025-10-22T15:09:27.193392Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m: mining batch of 523642 sequences
+[2m2025-10-22T15:09:27.206698Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m: mined 1123 alignments (output batch 1) [13 ms]
+[2m2025-10-22T15:09:27.206699Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m: buffer with dirty GPU memory, synchronizing
+[2m2025-10-22T15:09:27.206708Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring_slot[0m:[1mcuda[0m: memcpy CPU <- GPU [0ms]
+[2m2025-10-22T15:09:27.206713Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: committing buffer to ring
+[2m2025-10-22T15:09:27.206715Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m: post_mine [0 ms]
+[2m2025-10-22T15:09:27.206716Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: finishing buffer to ring
+[2m2025-10-22T15:09:27.206734Z[0m [32m INFO[0m ThreadId(09) [1mth_writer[0m: wrote 1123 alignments to file [0 ms]
+[2m2025-10-22T15:09:27.206739Z[0m [35mTRACE[0m ThreadId(09) [1mth_writer[0m:[1mring[0m: finishing buffer to ring
+[2m2025-10-22T15:09:27.206741Z[0m [35mTRACE[0m ThreadId(09) [1mth_writer[0m:[1mring[0m: receiving buffer from ring
+[2m2025-10-22T15:09:27.206768Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: dropped gpu buffer
+[2m2025-10-22T15:09:27.207098Z[0m [33m WARN[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: the producer was closed, no need for this buffer
+[2m2025-10-22T15:09:27.207101Z[0m [35mTRACE[0m ThreadId(03) [1mth_miner_cuda[0m:[1mring[0m: receiving buffer from ring
+[2m2025-10-22T15:09:27.207103Z[0m [32m INFO[0m ThreadId(03) [1mth_miner_cuda[0m: closed, total mined: 24461
+[2m2025-10-22T15:09:27.207113Z[0m [32m INFO[0m ThreadId(04) [1mth_writer[0m: closed, total writes: 4124
+[2m2025-10-22T15:09:27.207223Z[0m [32m INFO[0m ThreadId(08) [1mth_writer[0m: closed, total writes: 3085
+[2m2025-10-22T15:09:27.207244Z[0m [32m INFO[0m ThreadId(06) [1mth_writer[0m: closed, total writes: 1786
+[2m2025-10-22T15:09:27.207255Z[0m [32m INFO[0m ThreadId(05) [1mth_writer[0m: closed, total writes: 3291
+[2m2025-10-22T15:09:27.207269Z[0m [32m INFO[0m ThreadId(09) [1mth_writer[0m: closed, total writes: 8037
+[2m2025-10-22T15:09:27.207282Z[0m [32m INFO[0m ThreadId(07) [1mth_writer[0m: closed, total writes: 4138
+[2m2025-10-22T15:09:27.207648Z[0m [35mTRACE[0m ThreadId(01) dropped gpu buffer
+[2m2025-10-22T15:09:27.208762Z[0m [35mTRACE[0m ThreadId(01) dropped gpu buffer
+[2m2025-10-22T15:09:27.209814Z[0m [35mTRACE[0m ThreadId(01) dropped gpu buffer
+[2m2025-10-22T15:09:27.210847Z[0m [35mTRACE[0m ThreadId(01) dropped gpu buffer
+[2m2025-10-22T15:09:27.212990Z[0m [35mTRACE[0m ThreadId(01) dropped gpu buffer
+[2m2025-10-22T15:09:27.214009Z[0m [35mTRACE[0m ThreadId(01) dropped gpu buffer
+[2m2025-10-22T15:09:27.216110Z[0m [35mTRACE[0m ThreadId(01) dropped gpu buffer
+[2m2025-10-22T15:09:27.217148Z[0m [35mTRACE[0m ThreadId(01) dropped gpu buffer
+	--157	22000000	6	10000000
+	++1303
+	--157	22000000	6	10000000
+	++1936
+	--157	22000000	6	10000000
+	++1473
+	--157	22000000	6	10000000
+	++2120
+	--157	22000000	6	10000000
+	++6914
+	--157	22000000	6	10000000
+	++1786
+	--157	22000000	6	10000000
+	++1782
+	--157	22000000	6	10000000
+	++1355
+	--157	22000000	6	10000000
+	++2651
+	--157	22000000	6	10000000
+	++2018
+	--82	11520124	6	10000000
+	++1123
