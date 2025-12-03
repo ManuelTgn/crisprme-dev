@@ -3,189 +3,24 @@
 from .crisprme2_error import Crisprme2EnrichmentError
 from .crisprme2_argparse import Crisprme2SearchInputArgs
 from .logger import CrisprmeLoggers
-from .target import Target
 from .sequence import ContigSequence
 from .fasta import Fasta
 from .sample import Sample
-from .utils import flatten_list
 from .vcf import VCF
 from .pam import PAM
 
-from .target_candidates_parser import find_target_candidates
+from .target_candidates_parser import (
+    find_target_candidates
+)  # defined in rust/src/lib.rs
 
-from typing import List, Dict, Tuple, Optional, Any
-from concurrent.futures import Future
-from pysam import TabixFile
-
-import concurrent.futures
-import numpy as np
-
-import msgpack
-
-import cyvcf2
-
-
-from .utils import DNA, IUPACTABLE
-
-
-from glob import glob
+from typing import List, Dict, Tuple, Optional
 from time import time
 
-import struct
 import os
 
 # contig chunk size and overlap
 CHUNKSIZE = 10_000_000
 CHUNKOVERLAP = 500
-
-
-# def read_genome(fasta_fnames: List[str], loggers: CrisprmeLoggers) -> List[GenomeFasta]:
-#     genome = []  # construct genome (list) using input fasta files
-#     for fasta_fname in fasta_fnames:
-#         loggers.verboselog.debug(f"Loading FASTA file: {fasta_fname}")
-#         try:
-#             genome.append(GenomeFasta(fasta_fname, loggers))
-#         except (Crisprme2FastaError, Exception):
-#             loggers.errorlog.log_exception(
-#                 f"Failed genome construction while loading {fasta_fname}", os.EX_DATAERR
-#             )
-#             sys.exit(os.EX_DATAERR)
-#     assert genome  # must not be empty
-#     return genome
-
-
-# def _match(
-#     bitset1: List[Bitset],
-#     bitset2: List[Bitset],
-#     position: int,
-#     loggers: CrisprmeLoggers,
-# ) -> bool:
-#     # bitwise matching operation for input bitsets
-#     # assumes the two bitsets have the same length
-#     try:
-#         return all((ntbit & bitset2[i]).to_bool() for i, ntbit in enumerate(bitset1))
-#     except (ValueError, IndexError, Exception):
-#         loggers.errorlog.log_raise_exception(
-#             f"PAM bitwise matching with offtarget candidatefailed at position {position}",
-#             os.EX_DATAERR,
-#             Crisprme2BitsetError,
-#         )
-#         sys.exit(os.EX_DATAERR)
-
-
-# def _match2(pam, offtargetpam):
-#     for i, nt in enumerate(pam):
-#         if offtargetpam[i] not in IUPACTABLE[nt]:
-#             return False
-#     return True
-
-
-# def filter_offtarget(offtarget_pam: List[str], pam_patterns: List[Set[str]]) -> bool:
-#     assert len(offtarget_pam) == len(pam_patterns)  # they must match
-#     for i, nt in enumerate(offtarget_pam):
-#         if nt not in pam_patterns[i]:  # not valid pam, skip target
-#             return False
-#     return True  # valid pam
-
-
-# def _compute_pam_patterns(
-#     pam: PAM, loggers: CrisprmeLoggers
-# ) -> Tuple[List[Set[str]], List[Set[str]]]:
-#     try:  # patterns used to filter targets based on input pam
-#         pam_patterns_fw = [set(IUPACTABLE[nt]) for nt in pam.pam]  # forward patterns
-#         pam_patterns_rc = [set(IUPACTABLE[nt]) for nt in pam.rc]  # reverse patterns
-#     except (KeyError, Exception):
-#         loggers.errorlog.log_exception(
-#             f"Failed computing matching patterns for PAM: {pam}", os.EX_DATAERR
-#         )
-#         sys.exit(os.EX_DATAERR)
-#     return pam_patterns_fw, pam_patterns_rc
-
-
-# def _retrieve_pam(offtarget: List[str], right: bool, pamlen: int) -> List[str]:
-#     return offtarget[:pamlen] if right else offtarget[-pamlen:]
-
-
-# def fetch_offtargets(
-#     # sequence: Sequence,
-#     sequence: List[str],
-#     pam: PAM,
-#     guidepamlen: int,
-#     right: bool,
-#     loggers: CrisprmeLoggers,
-# ) -> Tuple[List[str], List[str]]:
-#     offtargets_fw, offtargets_rc = (
-#         [],
-#         [],
-#     )  # iterate over sequence to fetch offtargets (with padding)
-#     start_index, stop_index = PADDING, len(sequence) - PADDING
-#     # total = sequence.stop_index - guidepamlen + 1 - sequence.start_index  # TODO: remove
-#     total = stop_index - guidepamlen + 1 - start_index  # TODO: remove
-#     progress_interval = max(1, total // 100)
-#     # compute matching patterns for pam
-#     pam_patterns_fw, pam_patterns_rc = _compute_pam_patterns(pam, loggers)
-#     # for i in range(sequence.start_index, sequence.stop_index - guidepamlen + 1):
-#     for i in range(start_index, stop_index - guidepamlen + 1):
-#         if i % progress_interval == 0:
-#             print(f"Progress: {((i + 1) / total) * 100:.2f}%", end="\r")
-#         candidate = sequence[i - PADDING : i + guidepamlen + PADDING]
-#         # candidate = sequence[i: i + guidepamlen]
-#         # recover pam sequence from offtarget on forward and reverse strands
-#         candidate_pam_fw = _retrieve_pam(candidate, right, len(pam))  # type: ignore
-#         candidate_pam_rc = _retrieve_pam(candidate, (not right), len(pam))  # type: ignore
-#         if filter_offtarget(candidate_pam_fw, pam_patterns_fw):  # check on fw
-#             # offtargets_fw.append(sequence.fetch(i, i + guidepamlen))
-#             offtargets_fw.append(candidate)
-#         if filter_offtarget(candidate_pam_rc, pam_patterns_rc):  # check on rev
-#             offtargets_fw.append(candidate)
-#             # offtargets_rc.append(sequence.fetch(i, i + guidepamlen))
-#     print()
-#     return offtargets_fw, offtargets_rc
-
-
-# def compute_offtargets(
-#     genome: List[GenomeFasta],
-#     pam: PAM,
-#     guidelen: int,
-#     right: bool,
-#     outdir: str,
-#     loggers: CrisprmeLoggers,
-# ):
-#     guidepamlen = len(pam) + guidelen  # compute guide + pam length
-#     for contig in genome:  # iterate over each genome contig
-#         loggers.verboselog.debug(
-#             f"Fetching off-target candidates from contig: {contig.contig}"
-#         )
-#         start = time()
-#         contig_seq = contig.read()  # read contig sequence
-#         offtargets = fetch_offtargets(contig_seq, pam, guidepamlen, right, loggers)
-#         loggers.verboselog.debug(
-#             f"Fetched {len(offtargets[0])} on 5'-3' and {len(offtargets[1])} on 3'-5' on contig {contig.contig}"
-#         )
-#         loggers.verboselog.debug(
-#             f"Off-target candidates fetched from contig {contig.contig} in {time() - start:.2f}s"
-#         )
-#         # # TODO: after check remove
-#         # with open(os.path.join(outdir, f"offtargets_fw_{contig.contig}.txt"), mode="w") as outfile:
-#         #     outfile.write("\n".join([ot[PADDING:PADDING+guidepamlen]for ot in offtargets[0]]))
-#         # with open(os.path.join(outdir, f"offtargets_rc_{contig.contig}.txt"), mode="w") as outfile:
-#         #     outfile.write("\n".join(ot[PADDING:PADDING+guidelen] for ot in offtargets[1]))
-
-
-# # def process_genome(
-# #     fasta_fnames: List[str],
-# #     pam: PAM,
-# #     guidelen: int,
-# #     right: bool,
-# #     outdir: str,
-# #     loggers: CrisprmeLoggers,
-# # ):
-# #     loggers.basiclog.info(
-# #         f"Reconstructing alternative genomes and retrieving off-targets"
-# #     )
-# #     genome = read_genome(fasta_fnames, loggers)  # load input genome data
-# #     # assumes input guides share the same length
-# #     compute_offtargets(genome, pam, guidelen, right, outdir, loggers)
 
 
 def read_fasta_files(
@@ -258,41 +93,6 @@ def construct_samples_list(
         # assumption: all input VCFs share the same samples set
         samples += [Sample(sample, loggers) for sample in vcf.get_samples()]
     return samples
-
-class TargetSimpleReader:
-    """
-    Reads all target sequences sequentially from the line-delimited Targets.txt file,
-    ignoring the index file completely.
-    """
-    
-    def __init__(self, path_prefix: str):
-        # NOTE: Targets is expected to be a text file (.txt)
-        self.targets_file = f"{path_prefix}_Targets.bin"
-        
-        if not os.path.exists(self.targets_file):
-            raise FileNotFoundError(f"Required targets file not found: '{self.targets_file}'")
-
-    def read_all_targets(self) -> List[str]:
-        """
-        Reads all lines from the targets file and returns them as a list of strings,
-        stripping the trailing newline character from each.
-        """
-        print(f"Reading all sequences from {self.targets_file}...")
-        
-        targets = []
-        try:
-            # Open the file in read mode ('r') for text content
-            with open(self.targets_file, 'rb') as f:
-                # Iterate through the file line by line
-                for line in f:
-                    targets.append(line.strip()) # strip() removes leading/trailing whitespace, including '\n'
-            
-            return targets
-        
-        except IOError as e:
-            print(f"[Error] Failed to read targets file: {e}")
-            return []
-
 
 
 # def _split_ranges(length: int, threads: int, loggers: CrisprmeLoggers, overlap: int = 100) -> List[Tuple[int, int]]:
@@ -402,60 +202,28 @@ def _chunk_contig_sequence(contig_sequence: ContigSequence) -> List[ContigSequen
     # chunk each contig in 10Mb chunks
     return [c for c in contig_sequence.chunk(CHUNKSIZE, CHUNKOVERLAP)]
 
-def _find_target_candidates(contig_sequence: ContigSequence, contig: str, pam_seq: str, offset: int, right: bool, outdir: str, threads: int):
-    return find_target_candidates(contig_sequence.sequence.upper(), contig, pam_seq, offset, right, outdir, threads)
+def _find_target_candidates(contig_sequence: str, contig: str, pam_seq: str, offset: int, right: bool, is_first_iteration: bool, index_path: str, threads: int):
+    find_target_candidates(contig_sequence, contig, pam_seq, offset, right, is_first_iteration, index_path, threads)
 
-def _hash_targets(contig_targets: List, loggers: CrisprmeLoggers):
-    targets_hash: Dict[bytes, Target] = {}  # initialize targets hash
-    for target in contig_targets:
-        if target.target not in targets_hash:  # initialize current target object
-            targets_hash[target.target] = Target(loggers)  
-        # add current target to hash
-        targets_hash[target.target].add_target(target.contig, target.position, target.orientation)
-    return targets_hash
+def _scan_sequence(contig_seq: ContigSequence, contig: str, pam_seq: str, offset: int, outdir: str, right: bool, threads: int, loggers: CrisprmeLoggers) -> None:
+    # split contig sequence in 10 Mb long chunks
+    contig_chunks = _chunk_contig_sequence(contig_seq)
+    index_path = os.path.join(outdir, f"{contig}")  # define targets index path
+    is_first_iteration = True  # first iteration (create indexes)
+    for chunk in contig_chunks:  # scan sequence to extract targets
+        _find_target_candidates(chunk.sequence.upper(), contig, pam_seq, offset, right, is_first_iteration, index_path, threads)
+        is_first_iteration = False  # append to index files
+
 
 def retrieve_targets(fasta_vcf_map: Dict[str, Tuple[Fasta, Optional[VCF]]], pam: PAM, guidelen: int, offset: int, right: bool, threads: int, outdir: str, loggers: CrisprmeLoggers):
     # use offset to account for bulges in alignments
     guidelen_offset = guidelen + len(pam) + offset
     for contig, (fasta, vcf) in fasta_vcf_map.items():
-        print(contig)
         with fasta as f:
-            # split contig sequence in 10 Mb long chunks
-            contig_chunks = _chunk_contig_sequence(f.fetch(contig))
-            hash_path = os.path.join(outdir, f"{contig}")
             start = time()
-            contig_targets = _find_target_candidates(f.fetch(contig), contig, pam.pam, guidelen_offset, right, hash_path, threads)
-            # for c, e in contig_targets.items():
-            #     print(c, e)
-            # contig_targets = [_find_target_candidates(c, contig, pam.pam, guidelen_offset, right, threads) for c in contig_chunks]
-            # contig_targets = flatten_list([_find_target_candidates(c, contig, pam.pam, guidelen_offset, right, threads) for c in contig_chunks])
-            print(f"{contig}: {time() - start:.2f}s")
-            # reader = TargetSimpleReader(hash_path)
-        
-            # all_sequences = reader.read_all_targets()
-            
-            # if all_sequences:
-            #     print(f"\nSuccessfully read {len(all_sequences)} sequences.")
-            #     print("First 5 sequences:")
-            #     for i, seq in enumerate(all_sequences[:5]):
-            #         print(f"  [{i}]: {seq}")
-                
-            #     if len(all_sequences) > 5:
-            #         print("...")
-                
-            # else:
-            #     print("No sequences found in the targets file.")
-            # with open(hash_path, 'rb') as f: # Use 'rb' for reading binary
-            #     # Use raw=False to ensure binary keys (Vec<u8>) are loaded as Python bytes objects, 
-            #     # and not as strings (which is the default).
-            #     loaded_dict = msgpack.unpack(f, raw=False)
-            # print(f"File size (MsgPack): {os.path.getsize(hash_path) / (1024*1024):.2f} MB")
-            # print(f"Loaded dictionary type: {type(loaded_dict)}")
-
-            # # Check the key type: it should be bytes
-            # first_key = list(loaded_dict.keys())[0]
-            # print(f"First key type: {type(first_key)}")
-            # print(f"First key content: {first_key.hex()}")
+            loggers.verboselog.debug(f"Scanning contig {contig} for targets (use {threads} threads)")
+            _scan_sequence(f.fetch(contig), contig, pam.pam, guidelen_offset, outdir, right, threads, loggers)
+            loggers.verboselog.debug(f"Scanning contig {contig} completed in {time() - start:.2f}s")
 
 def retrieve_target_candidates(args: Crisprme2SearchInputArgs, pam: PAM, guidelen: int, offset: int, loggers: CrisprmeLoggers):
     # map each contig fasta to its variant data

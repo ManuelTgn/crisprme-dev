@@ -1,10 +1,10 @@
 use std::collections::HashMap;
+use ahash::AHashMap;
 use pyo3::prelude::*;
-use std::fs::File;
-use std::io::{Write, BufWriter, Result as IOResult};
+use std::fs::OpenOptions;
+use std::io::{Write, BufWriter, Result as IOResult, Seek};
 use serde::Serialize;
 use rmp_serde;  // handle MessagePack
-use rmp_serde::encode::Error as RmpEncodeError;
 
 use crate::target::Target;  // raw output from scanner
 
@@ -62,7 +62,7 @@ impl HashedTargets {
 /// # Returns
 /// A fully constructed `HashedTargets` object containing the collapsed, unique targets
 pub fn hash_and_group_targets(raw_targets: Vec<Target>) -> HashedTargets {
-    let mut targets_map: HashMap<Vec<u8>, OccurrenceData> = HashMap::new();
+    let mut targets_map: AHashMap<Vec<u8>, OccurrenceData> = AHashMap::with_capacity(raw_targets.len());
 
     for target in raw_targets {
         // use HashMap's entry API for efficient lookup and insertion
@@ -76,63 +76,93 @@ pub fn hash_and_group_targets(raw_targets: Vec<Target>) -> HashedTargets {
         entry.push((target.contig, target.position, target.orientation));
     }
 
-    HashedTargets { targets: targets_map}
+    HashedTargets { targets: targets_map.into_iter().collect() }
 }
 
 impl HashedTargets {
-    /// Saves the target data into a three-file system, with sequences in a line-delimited text file.
+    /// Saves the target data into a three-file system, optimized for maximum write speed.
+    ///
+    /// This implementation uses zero-copy serialization (`bincode::serialize_into`) 
+    /// for both binary files, eliminating unnecessary heap allocations.
     ///
     /// # Files Generated:
-    /// 1. Targets.txt: Line-delimited target sequences (text format).
-    /// 2. Occurrences.bin: Densely packed serialized occurrence records.
-    /// 3. Index.bin: Fixed-width records pointing to the sequence and occurrence data.
+    /// 1. Targets.bin: Contiguous target sequences (raw binary bytes).
+    /// 2. Occurrences.bin: Densely packed serialized occurrence records (bincode).
+    /// 3. Index.bin: Fixed-width records pointing to the data (bincode).
     ///
     /// # Arguments
     /// * `path_prefix` - The base path for the files (e.g., "/data/scan_results").
-    pub fn save_indexed_binary(&self, path_prefix: &str) -> IOResult<()> {
-        let seq_path = format!("{}_Targets.bin", path_prefix); // CHANGED to .txt
-        let data_path = format!("{}_Occurrences.bin", path_prefix);
-        let index_path = format!("{}_Index.bin", path_prefix);
+    pub fn save_indexed_binary(&self, path_prefix: &str, is_first_chunk: bool) -> IOResult<()> {
+        let seq_path = format!("{}_targets.bin", path_prefix);
+        let data_path = format!("{}_occurrences.bin", path_prefix);
+        let index_path = format!("{}_index.bin", path_prefix);
+
+        // --- Determine Open options (Truncate vs. Append) ---
+        // Open or create the files, and set the cursor to the end for appending
+        let mut binding = OpenOptions::new();
+        let open_options = binding.create(true).write(true); 
+        
+        if is_first_chunk { 
+            // Truncate mode: Clear existing files and start fresh
+            open_options.truncate(true);
+        } else {
+            // Append mode: Keep existing content and continue writing from the end
+            open_options.append(true);
+        };
 
         // --- Writers for the three files ---
-        let seq_file = File::create(seq_path)?;
-        let data_file = File::create(data_path)?;
-        let index_file = File::create(index_path)?;
+        let seq_file = open_options.open(seq_path)?;
+        let data_file = open_options.open(data_path)?;
+        let index_file = open_options.open(index_path)?;
         
         let mut seq_writer = BufWriter::new(seq_file);
         let mut data_writer = BufWriter::new(data_file);
         let mut index_writer = BufWriter::new(index_file);
 
-        let mut current_seq_offset: u64 = 0;
-        let mut current_data_offset: u64 = 0;
+        // Initialize Offsets based on existing file size
+        // Read the current position (end of file) to determine the starting offset for this chunk.
+        let mut current_seq_offset: u64 = seq_writer.stream_position()?;
+        let mut current_data_offset: u64 = data_writer.stream_position()?;
+        // Index offset is implicitly tracked by consecutive fixed-width writes, 
+        // but reading the initial position is good practice.
+        let mut _current_index_offset: u64 = index_writer.stream_position()?; 
 
         // Iterate over the HashMap to populate all three files simultaneously
         for (sequence, occurrences) in self.targets.iter() {
-            // 1. Write Occurrence Data (Occurrences.bin)
-            let encoded_occurrences = bincode::serialize(occurrences)
+            let data_count = occurrences.len() as u32;  // count target occurrences
+
+            // 1. Write Occurrence Data (Occurrences.bin) - ZERO COPY
+            // The occurrence data offset is the current end of file position.
+            let data_offset = current_data_offset;
+
+            // Calculate size before writing to update the offset for the next record
+            let encoded_size = bincode::serialized_size(occurrences)
                 .map_err(|e| {
                     eprintln!("Error serializing occurrence data for sequence: {:?}", sequence);
                     std::io::Error::new(std::io::ErrorKind::Other, format!("Bincode serialization failed: {}", e))
                 })?;
             
-            data_writer.write_all(&encoded_occurrences)?;
-            
-            let data_count = occurrences.len() as u32;
+            // Write directly into the buffer (no intermediate Vec<u8> allocation) (Occurrences.bin)
+            bincode::serialize_into(&mut data_writer, occurrences)
+                .map_err(|e| {
+                    eprintln!("Error serializing occurrence data for sequence {:?}", sequence);
+                    std::io::Error::new(std::io::ErrorKind::Other, format!("Bincode serialization failed: {}", e))
+                })?;
 
-            // 2. Write Target Sequence (Targets.txt)
-            // Write sequence bytes
+            // Update data offset for the next record
+            current_data_offset += encoded_size;
+
+            // 2. Write Target Sequence (Targets.bin) - Zero-copy write
             seq_writer.write_all(sequence.as_slice())?;
-            // Write newline character (\n is 1 byte)
-            seq_writer.write_all(b"\n")?; 
-            
-            let total_seq_bytes_written = sequence.len() as u64 + 1; // +1 for the newline
-            let seq_len = sequence.len() as u8; // Original sequence length (assuming k-mer < 255)
 
-            // 3. Write Index Record (Index.bin)
+            let total_seq_bytes_written = sequence.len() as u64 + 1; // +1 for the newline
+            let seq_len = sequence.len() as u8; // Original sequence length (assuming target < 255)
+
+            // 3. Write Index Record (Index.bin) - Zero-copy
             let record = TargetIndexRecord {
                 seq_offset: current_seq_offset,
-                seq_len: seq_len, // NOTE: Python reader must read seq_len + 1 bytes to include the newline.
-                data_offset: current_data_offset,
+                seq_len: seq_len, 
+                data_offset: data_offset,
                 data_count: data_count,
             };
 
@@ -144,11 +174,10 @@ impl HashedTargets {
 
             // Update offsets for the next record
             current_seq_offset += total_seq_bytes_written; // CRITICAL: Update by total bytes written
-            current_data_offset += encoded_occurrences.len() as u64;
         }
 
         // --- CRITICAL FLUSHING STEPS ---
-        // Explicitly drop writers to force flushing.
+        // Explicitly drop writers to force flushing and closing files
         std::mem::drop(seq_writer);
         std::mem::drop(data_writer);
         std::mem::drop(index_writer);

@@ -55,9 +55,11 @@ class Fasta:
             )
 
     def _index_fasta(self, pytest: bool = False) -> str:
-        if self._index and not pytest:  # launch warning
-            warning("FASTA index already present, forcing update", 1)
+        if hasattr(self, "_index"):
+            if self._index and not pytest:  # launch warning
+                warning("FASTA index already present, forcing update", 1)
         try:  # create index in the same folder as the input fasta
+            self._loggers.verboselog.debug(f"Creating index for FASTA: {self._filepath}")
             faidx(str(self._filepath))
         except (OSError, Exception):
             self._loggers.errorlog.log_exception(

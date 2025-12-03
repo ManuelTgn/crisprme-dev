@@ -4,7 +4,6 @@ use crate::iupac::{Iupac, matches_iupac};
 use crate::target::Target;
 
 use std::sync::Arc;
-use std::collections::HashMap;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use std::result::Result; 
@@ -38,6 +37,7 @@ pub fn scan_targets(
     pam: &ParsedPAM, 
     k: usize, 
     right: bool, 
+    is_first_chunk: bool,
     path: &str,
     threads: usize
 // ) -> HashMap<Vec<u8>, OccurrenceData> {
@@ -54,12 +54,17 @@ pub fn scan_targets(
         .expect("Failed to process sequence: contains unknown nucleotide character.");
 
     // 2. Prepare data for parallel access.
-    let pat = Arc::new(pam.bytes.clone());  // forward PAM pattern (Arc allows shared access)
-    let rev = Arc::new(pam.revcomp.clone());  // reverse complement PAM pattern
+    // let pat = &pam.bytes;  // forward PAM pattern (Arc allows shared access)
+    let pat = Arc::new(pam.bytes.clone());
+    // let rev = &pam.revcomp;  // reverse complement PAM pattern
+    let rev = Arc::new(pam.revcomp.clone());
     let slen = seq_bitmask.len();  // total sequence length (in masks)
     let plen = pat.len();  // PAM pattern length (in masks)
 
-    // 3. Initialize the Rayon thread pool
+    // // Calculate the maximum possible starting position for a full window
+    // let max_start_pos = if slen >= k { slen - k + 1 } else { 0 };
+
+    // // 3. Initialize the Rayon thread pool
     let pool = ThreadPoolBuilder::new()
         .num_threads(threads)
         .build()
@@ -91,7 +96,7 @@ pub fn scan_targets(
                 let extended_chunk = &seq_bitmask[extended_start..extended_end];
                 let chunk_len = extended_chunk.len();
 
-                let mut chunk_targets = Vec::new();
+                let mut chunk_targets = Vec::with_capacity(slen / 1000);
                 if chunk_len >= k {
                     // iterate over all possible k-mer start positions within the extended chunk
                     for i in 0..=(chunk_len - k) {
@@ -102,20 +107,26 @@ pub fn scan_targets(
                         if global_pos >= orig_start && global_pos < orig_end {
 
                             // retrieve the k-mer target sequence (bitmasks) from the extended chunk
-                            let target_bitmask = &extended_chunk[i..i + k];
+                            let target_bitmask = unsafe { extended_chunk.get_unchecked(i..i + k) };
 
                             // skip the target if it contains the 'N' (Any base) bitmask
                             if target_bitmask.iter().any(|&b| b == 0b1111) {
                                 continue;
                             }
 
+                            let (pam_slice_fwd, pam_slice_rev) = if right {
+                                (&target_bitmask[0..plen], &target_bitmask[k - plen..k])
+                            } else {
+                                (&target_bitmask[k - plen..k], &target_bitmask[0..plen])
+                            };
+
                             // check for PAM match on the forward strand
-                            if matches_pattern(get_pam_slice(target_bitmask, plen, k, right), &pat) {
+                            if matches_pattern(pam_slice_fwd, &pat) {
                                 chunk_targets.push(Target::new(contig, global_pos, true, target_bitmask.to_vec()));
                             }
 
                             // check for PAM match on the reverse strand
-                            if matches_pattern(get_pam_slice(target_bitmask, plen, k, !right), &rev) {
+                            if matches_pattern(pam_slice_rev, &rev) {
                                 chunk_targets.push(Target::new(contig, global_pos, false, target_bitmask.to_vec()));
                             }
                         }
@@ -130,10 +141,9 @@ pub fn scan_targets(
     // 5. Hash and group the results entirely in Rust for performance.
     // This is the step that replaces the slow Python loop
     let hashed_targets = hashing::hash_and_group_targets(targets);
-    // hashing::hash_and_group_targets(targets)
 
     // --- NEW: Save the HashedTargets to indexed binary files ---
-    hashed_targets.save_indexed_binary(path)
+    hashed_targets.save_indexed_binary(path, is_first_chunk)
         .expect("FATAL: Failed to save targets to indexed binary files.");
 
     // Now return the structure to lib.rs (it's unused in lib.rs, but required for flow)
@@ -155,7 +165,14 @@ pub fn scan_targets(
 ///
 /// # Returns
 /// * `true` if the sequence matches the pattern at all corresponding positions
+#[inline(always)]
 fn matches_pattern(seq: &[u8], pam: &[u8]) -> bool {
+    // for i in 0..seq.len() {
+    //     if !matches_iupac(unsafe { *seq.get_unchecked(i) }, unsafe { *pam.get_unchecked(i) } ) {
+    //         return false;
+    //     }
+    // }
+    // true
     seq.iter()
         .zip(pam.iter())
         .all(|(a, b)| matches_iupac(*a, *b))

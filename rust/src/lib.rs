@@ -37,12 +37,13 @@ type OccurrenceData = Vec<(String, usize, bool)>;
 /// Returns a `PyValueError` if input constraints are violated (e.g., invalid sizes or PAM sequence).
 #[pyfunction]
 pub fn find_target_candidates(
-    py: Python,
+    _py: Python,
     sequence: &str, 
     contig: &str, 
     pam_seq: &str, 
     k: usize, 
     right: bool,
+    is_first_chunk: bool,
     path: &str,
     threads: usize,
 // ) -> PyResult<PyObject> {
@@ -85,7 +86,7 @@ pub fn find_target_candidates(
     // -- execution ---
 
     // // execute the core parallel scanning logic and return the results
-    scan::scan_targets(sequence, contig, &pat, k, right, path, threads);
+    scan::scan_targets(sequence, contig, &pat, k, right, is_first_chunk, path, threads);
 
     Ok(())
     // let py_dict = PyDict::new(py);
