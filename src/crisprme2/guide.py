@@ -70,12 +70,13 @@ class Guide(Sequence):
         if strand not in [0, 1]:  # unknown strand
             self._loggers.errorlog.log_raise_exception(
                 "Only 0 (forward) and 1 (reverse) are values allowed for "
-                f"strandness, got {strand}", 
-                os.EX_DATAERR, 
+                f"strandness, got {strand}",
+                os.EX_DATAERR,
                 Crisprme2GuideError,
             )
-        return self._bitsequence.decode() if strand == 0 else self._bitsequence_rc.decode()
-
+        return (
+            self._bitsequence.decode() if strand == 0 else self._bitsequence_rc.decode()
+        )
 
     @property
     def pamb(self) -> bytearray:
@@ -84,7 +85,7 @@ class Guide(Sequence):
     @property
     def rc(self) -> Sequence:
         return self._sequence_rc
-    
+
     @property
     def rcb(self) -> bytearray:
         return self._bitsequence_rc.data
@@ -97,8 +98,8 @@ class GuidesList:
         if any(len(guides[0]) != len(g) for g in guides):
             self._loggers.errorlog.log_raise_exception(
                 "Found input guides with different length, provide only guides "
-                "sharing the same length", 
-                os.EX_DATAERR, 
+                "sharing the same length",
+                os.EX_DATAERR,
                 Crisprme2GuideError,
             )
         self._guides = guides  # guides list

@@ -10,7 +10,7 @@ from .vcf import VCF
 from .pam import PAM
 
 from .target_candidates_parser import (
-    find_target_candidates
+    find_target_candidates,
 )  # defined in rust/src/lib.rs
 
 from typing import List, Dict, Tuple, Optional
@@ -202,30 +202,106 @@ def _chunk_contig_sequence(contig_sequence: ContigSequence) -> List[ContigSequen
     # chunk each contig in 10Mb chunks
     return [c for c in contig_sequence.chunk(CHUNKSIZE, CHUNKOVERLAP)]
 
-def _find_target_candidates(contig_sequence: str, contig: str, pam_seq: str, offset: int, right: bool, is_first_iteration: bool, index_path: str, threads: int):
-    find_target_candidates(contig_sequence, contig, pam_seq, offset, right, is_first_iteration, index_path, threads)
 
-def _scan_sequence(contig_seq: ContigSequence, contig: str, pam_seq: str, offset: int, outdir: str, right: bool, threads: int, loggers: CrisprmeLoggers) -> None:
+def _find_target_candidates(
+    contig_sequence: str,
+    contig: str,
+    pam_seq: str,
+    offset: int,
+    right: bool,
+    is_first_iteration: bool,
+    index_path: str,
+    threads: int,
+):
+    find_target_candidates(
+        contig_sequence,
+        contig,
+        pam_seq,
+        offset,
+        right,
+        is_first_iteration,
+        index_path,
+        threads,
+    )
+
+
+def _scan_sequence(
+    contig_seq: ContigSequence,
+    contig: str,
+    pam_seq: str,
+    offset: int,
+    outdir: str,
+    right: bool,
+    threads: int,
+    loggers: CrisprmeLoggers,
+) -> None:
     # split contig sequence in 10 Mb long chunks
     contig_chunks = _chunk_contig_sequence(contig_seq)
     index_path = os.path.join(outdir, f"{contig}")  # define targets index path
     is_first_iteration = True  # first iteration (create indexes)
     for chunk in contig_chunks:  # scan sequence to extract targets
-        _find_target_candidates(chunk.sequence.upper(), contig, pam_seq, offset, right, is_first_iteration, index_path, threads)
+        _find_target_candidates(
+            chunk.sequence.upper(),
+            contig,
+            pam_seq,
+            offset,
+            right,
+            is_first_iteration,
+            index_path,
+            threads,
+        )
         is_first_iteration = False  # append to index files
 
 
-def retrieve_targets(fasta_vcf_map: Dict[str, Tuple[Fasta, Optional[VCF]]], pam: PAM, guidelen: int, offset: int, right: bool, threads: int, outdir: str, loggers: CrisprmeLoggers):
+def retrieve_targets(
+    fasta_vcf_map: Dict[str, Tuple[Fasta, Optional[VCF]]],
+    pam: PAM,
+    guidelen: int,
+    offset: int,
+    right: bool,
+    threads: int,
+    outdir: str,
+    loggers: CrisprmeLoggers,
+):
     # use offset to account for bulges in alignments
     guidelen_offset = guidelen + len(pam) + offset
     for contig, (fasta, vcf) in fasta_vcf_map.items():
         with fasta as f:
             start = time()
-            loggers.verboselog.debug(f"Scanning contig {contig} for targets (use {threads} threads)")
-            _scan_sequence(f.fetch(contig), contig, pam.pam, guidelen_offset, outdir, right, threads, loggers)
-            loggers.verboselog.debug(f"Scanning contig {contig} completed in {time() - start:.2f}s")
+            loggers.verboselog.debug(
+                f"Scanning contig {contig} for targets (use {threads} threads)"
+            )
+            _scan_sequence(
+                f.fetch(contig),
+                contig,
+                pam.pam,
+                guidelen_offset,
+                outdir,
+                right,
+                threads,
+                loggers,
+            )
+            loggers.verboselog.debug(
+                f"Scanning contig {contig} completed in {time() - start:.2f}s"
+            )
 
-def retrieve_target_candidates(args: Crisprme2SearchInputArgs, pam: PAM, guidelen: int, offset: int, loggers: CrisprmeLoggers):
+
+def retrieve_target_candidates(
+    args: Crisprme2SearchInputArgs,
+    pam: PAM,
+    guidelen: int,
+    offset: int,
+    loggers: CrisprmeLoggers,
+):
     # map each contig fasta to its variant data
     fasta_vcf_map = create_fasta_vcf_map(args.fastas, args.vcfs, loggers)
-    retrieve_targets(fasta_vcf_map, pam, guidelen, offset, args.right, args.threads, args.outdir, loggers)
+    retrieve_targets(
+        fasta_vcf_map,
+        pam,
+        guidelen,
+        offset,
+        args.right,
+        args.threads,
+        args.outdir,
+        loggers,
+    )

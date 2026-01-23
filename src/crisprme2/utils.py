@@ -13,15 +13,25 @@ from itertools import permutations
 import sys
 import os
 
+# ==============================================================================
+#
+# STATIC VARIABLES
+#
+# ==============================================================================
+
 # define static variables shared across software modules
 TOOLNAME = "CRISPRme2"  # tool name
 COMMAND = "crisprme2"  # command line call
+
 # define verbosity levels
 VERBOSITYLVL = [0, 1, 2, 3]
+
 # dna alphabet
 DNA = ["A", "C", "G", "T", "N"]
+
 # complete iupac alphabet
 IUPAC = DNA + ["R", "Y", "S", "W", "K", "M", "B", "D", "H", "V"]
+
 # reverse complement dictionary
 RC = {
     "A": "T",
@@ -57,6 +67,7 @@ RC = {
     "s": "s",
     "w": "w",
 }
+
 # dictionary to encode nucleotides combinations as iupac characters
 IUPACTABLE = {
     "A": "A",
@@ -75,17 +86,31 @@ IUPACTABLE = {
     "D": "AGT",
     "N": "ACGT",
 }
+
 # dictionary to encode nucleotide strings as iupac characters
 IUPAC_ENCODER = {
     perm: k
     for k, v in IUPACTABLE.items()
     for perm in {"".join(p) for p in permutations(v)}
 }
-STRAND = [0, 1]  # strands directions: 0 -> 5'-3'; 1 -> 3'-5'
+
+# define strand directions: 0 -> 5'-3'; 1 -> 3'-5'
+STRAND = [0, 1]
+
 # tbi index file extension
 TBI = "tbi"
+
 # fai index file extension
 FAI = "fai"
+
+# off-targets length
+OFFTARGETLEN = 30
+
+# ==============================================================================
+#
+# UTILS MODULE FUNCTIONS
+#
+# ==============================================================================
 
 
 def print_verbosity(message: str, verbosity: int, verbosity_threshold: int) -> None:
@@ -118,6 +143,7 @@ def warning(message: str, verbosity: int) -> None:
     if verbosity >= VERBOSITYLVL[1]:
         sys.stderr.write(f"{Fore.YELLOW}WARNING: {message}.{Fore.RESET}\n")
     return
+
 
 def flatten_list(lst: List[List[Any]]) -> List[Any]:
     """Flatten a list of lists into a single list.

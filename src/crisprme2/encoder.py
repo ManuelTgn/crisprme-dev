@@ -52,13 +52,17 @@ class BitSequence:
             for i, nt in enumerate(sequence):
                 self._data[i] = ENCODING.get(nt, ENCODING["N"])
         except (KeyError, Exception) as e:
-            self._loggers.errorlog.log_exception(f"Bit encoding failed: {e}", os.EX_DATAERR)
+            self._loggers.errorlog.log_exception(
+                f"Bit encoding failed: {e}", os.EX_DATAERR
+            )
 
     def decode(self) -> str:
         try:
             return "".join(DECODING[self._data[i] & 0xF] for i in range(self._length))
         except (KeyError, Exception) as e:
-            self._loggers.errorlog.log_exception(f"Bit sequence decoding failed: {e}", os.EX_DATAERR)
+            self._loggers.errorlog.log_exception(
+                f"Bit sequence decoding failed: {e}", os.EX_DATAERR
+            )
 
     @property
     def data(self) -> bytearray:

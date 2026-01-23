@@ -114,17 +114,12 @@ class ContigSequence(Sequence):
                 stop = self._length
 
             yield ContigSequence(
-                self.subsequence(start, stop), 
-                self._contig, 
-                start, 
-                stop, 
-                self._loggers
+                self.subsequence(start, stop), self._contig, start, stop, self._loggers
             )
 
     def encode(self) -> bytearray:
         # encode contig sequence as byte array
         return BitSequence(self.sequence, self._loggers).data
-
 
     @property
     def contig(self) -> str:
@@ -137,5 +132,3 @@ class ContigSequence(Sequence):
     @property
     def stop(self) -> int:
         return self._stop
-
-

@@ -100,7 +100,7 @@ class PAM:
             str: The PAM sequence.
         """
         return f"{self._sequence}"
-    
+
     def _assess_cas_system(self, right: bool) -> None:
         self._cas_system = -1  # unknown cas system pam
         if self._sequence in CASXPAM:  # casx system pam
@@ -128,21 +128,23 @@ class PAM:
         assert hasattr(self, "_sequence") and hasattr(self, "_sequence_rc")
         self._bitsequence = BitSequence(self._sequence, self._loggers)
         self._bitsequence_rc = BitSequence(self._sequence_rc, self._loggers)
-    
+
     def decode(self, strand: int) -> str:
         if strand not in [0, 1]:  # unknown strand
             self._loggers.errorlog.log_raise_exception(
                 "Only 0 (forward) and 1 (reverse) are values allowed for "
-                f"strandness, got {strand}", 
-                os.EX_DATAERR, 
+                f"strandness, got {strand}",
+                os.EX_DATAERR,
                 Crisprme2PamError,
             )
-        return self._bitsequence.decode() if strand == 0 else self._bitsequence_rc.decode()
+        return (
+            self._bitsequence.decode() if strand == 0 else self._bitsequence_rc.decode()
+        )
 
     @property
     def pam(self) -> str:
         return self._sequence
-    
+
     @property
     def pamb(self) -> bytearray:
         return self._bitsequence.data
@@ -150,7 +152,7 @@ class PAM:
     @property
     def rc(self) -> str:
         return self._sequence_rc
-    
+
     @property
     def rcb(self) -> bytearray:
         return self._bitsequence_rc.data

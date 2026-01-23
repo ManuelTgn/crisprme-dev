@@ -16,6 +16,7 @@ from pathlib import Path
 
 import os
 
+
 # fasta file extensions
 FASTAEXTENSIONS = valid_extensions = {"fasta", "fa", "fna", "ffn", "faa", "frn", "fas"}
 
@@ -24,7 +25,7 @@ class Fasta:
 
     def __init__(self, filepath: str, loggers: CrisprmeLoggers) -> None:
         self._loggers = loggers  # store loggers
-        self._filepath = Path(filepath)  # fasta filename
+        self._filepath = filepath  # fasta filename
         self._validate_file()  # validate fasta file structure
         self._index = self._search_index()  # fai index
         self._fasta_handle: Optional[FastaFile] = None
@@ -32,21 +33,10 @@ class Fasta:
         self._init_contig_length()  # initialize contig name and length
 
     def _validate_file(self) -> None:
-        if not self._filepath.exists():
-            self._loggers.errorlog.log_raise_exception(
-                f"FASTA file not found: {self._filepath}",
-                os.EX_DATAERR,
-                Crisprme2FastaFileNotFoundError,
-            )
-        if not self._filepath.is_file():
-            self._loggers.errorlog.log_raise_exception(
-                f"Path is not a file: {self._filepath}",
-                os.EX_DATAERR,
-                Crisprme2FastaFileNotFoundError,
-            )
         # check file extension
-        if not any(
-            str(self._filepath).lower().endswith(ext) for ext in FASTAEXTENSIONS
+        if (
+            os.path.splitext(os.path.basename(self._filepath))[1].replace(".", "")
+            not in FASTAEXTENSIONS
         ):
             self._loggers.errorlog.log_raise_exception(
                 f"File {self._filepath} does not have a standard FASTA extension",
@@ -59,7 +49,9 @@ class Fasta:
             if self._index and not pytest:  # launch warning
                 warning("FASTA index already present, forcing update", 1)
         try:  # create index in the same folder as the input fasta
-            self._loggers.verboselog.debug(f"Creating index for FASTA: {self._filepath}")
+            self._loggers.verboselog.debug(
+                f"Creating index for FASTA: {self._filepath}"
+            )
             faidx(str(self._filepath))
         except (OSError, Exception):
             self._loggers.errorlog.log_exception(

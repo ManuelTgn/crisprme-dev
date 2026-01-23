@@ -1,0 +1,85 @@
+""" """
+
+from .crisprme2_error import Crisprme2ScannerError
+from .fasta_utils import read_fasta_files
+from .utils import OFFTARGETLEN
+from .logger import CrisprmeLoggers
+from .fasta import Fasta
+from .guide import Guide
+from .pam import PAM
+
+from typing import List, Dict
+from time import time
+
+import os
+
+
+def _safe_fasta_contig(fasta: Fasta, contig: str, loggers: CrisprmeLoggers) -> str:
+
+    c = contig
+    if c not in fasta:
+        contig_alt = fasta.contig  # normalized single-contig name from file
+        if contig_alt in fasta:
+            c = contig_alt
+        else:
+            fasta.close()  # ensure file is closed before raising exception
+            loggers.errorlog.log_raise_exception(
+                f"Contig {contig} not found in FASTA {fasta._filepath} (available: {fasta.contig})",
+                os.EX_DATAERR,
+                Crisprme2ScannerError,
+            )
+    return c
+
+
+def extract_targets(
+    fastas: Dict[str, Fasta],
+    size: int,
+    right: bool,
+    threads: int,
+    loggers: CrisprmeLoggers,
+):
+    for contig, fasta in fastas.items():  # iterate over single fasta
+        loggers.verboselog.debug(
+            f"Scanning contig {contig} for targets (threads = {threads}, right = {right}, size = {size})"
+        )
+        start = time()  # trace scanner run time on current contig
+        try:  # Fasta.contig normalizes "chr" prefix; dict key are already be normalized
+            with fasta as f:
+                # ensure we fetch using a reference that exists in the opened handle
+                c = _safe_fasta_contig(fasta, contig, loggers)
+                sequence = f.fetch(c)  # fetch contig sequence
+        except Exception as e:
+            # raise to stop the pipeline
+            loggers.errorlog.log_raise_exception(
+                f"Scanning contig {contig} failed: {e}",
+                os.EX_DATAERR,
+                Crisprme2ScannerError,
+            )
+        finally:
+            loggers.verboselog.debug(
+                f"Contig {contig} scanned in {time() - start:.2f}s"
+            )
+
+
+def _compute_target_size(offset: int) -> int:
+    return OFFTARGETLEN + offset
+
+
+def scan_fasta_reference_genome(
+    fasta_files: List[str],
+    pam: PAM,
+    guide: Guide,
+    offset: int,
+    right: bool,
+    threads: int,
+    loggers: CrisprmeLoggers,
+):
+    loggers.verboselog.debug(
+        "Follow reference genome-based off-targets extraction pipeline"
+    )
+    fastas = read_fasta_files(fasta_files, loggers)  # read input fasta files
+    # compute off-target size for extraction
+    size = _compute_target_size(offset)  # offset is max(bdna, brna)
+    loggers.verboselog.debug(f"Off-targets extraction size: {size}")
+    # extract targets from reference genome fasta files
+    extract_targets(fastas, size, right, threads, loggers)

@@ -19,7 +19,7 @@ Run 'crisprme2 -h/--help' to display the complete help
 """
 
 from .crisprme2_argparse import Crisprme2ArgumentParser, Crisprme2SearchInputArgs
-from .crisprme2 import complete_search
+from .complete_search import execute_complete_search
 from .exception_handlers import sigint_handler
 from .crisprme2_version import __version__
 from .utils import TOOLNAME
@@ -222,7 +222,7 @@ def main():
             parser.error_noargs()
         args = parser.parse_args(sys.argv[1:])  # parse input args
         if args.command == SEARCH:  # complete-search command
-            complete_search(Crisprme2SearchInputArgs(args, parser))
+            execute_complete_search(Crisprme2SearchInputArgs(args, parser))
     except KeyboardInterrupt:
         sigint_handler()  # catch SIGINT and exit gracefully
     sys.stdout.write(f"{TOOLNAME} - Elapsed time {(time() - start):.2f}s\n")

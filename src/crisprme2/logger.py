@@ -11,7 +11,12 @@ import shutil
 import sys
 import os
 
+
+# define log levels
 LOGLEVELS = [0, 1, 2]
+
+# define logs directory
+LOGDIR = "logs"
 
 
 class BaseLogger:
@@ -158,10 +163,13 @@ class ErrorLogger(BaseLogger):
 
 
 class CrisprmeLoggers:
-    def __init__(self) -> None:
-        self._basiclog = BasicLogger(TOOLNAME)  # 1) basic run info
-        self._verboselog = VerboseLogger(TOOLNAME)  # 2) verbose debug + info
-        self._errorlog = ErrorLogger(TOOLNAME)  # 3) error + critical
+    def __init__(self, outdir: str) -> None:
+        log_dir = os.path.join(outdir, LOGDIR)
+        self._basiclog = BasicLogger(TOOLNAME, log_dir=log_dir)  # 1) basic run info
+        self._verboselog = VerboseLogger(
+            TOOLNAME, log_dir=log_dir
+        )  # 2) verbose debug + info
+        self._errorlog = ErrorLogger(TOOLNAME, log_dir=log_dir)  # 3) error + critical
 
     @property
     def basiclog(self) -> BasicLogger:

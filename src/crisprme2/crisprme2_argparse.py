@@ -242,15 +242,15 @@ class Crisprme2SearchInputArgs:
     @property
     def pam(self) -> str:
         return self._args.pam
-    
+
     @property
     def mm(self) -> int:
         return self._mm
-    
+
     @property
     def bdna(self) -> int:
         return self._bdna
-    
+
     @property
     def brna(self) -> int:
         return self._brna
@@ -328,15 +328,18 @@ def _initialize_threads(threads: int) -> int:
     max_threads = multiprocessing.cpu_count()
     return max_threads if threads == 0 else threads
 
+
 def _initialize_mm(mm: int, parser: Crisprme2ArgumentParser) -> int:
     if mm < 0:
         parser.error(f"Invalid number of mismatches selected ({mm})")
     return mm
 
+
 def _initialize_bdna(bdna: int, parser: Crisprme2ArgumentParser) -> int:
     if bdna < 0:
         parser.error(f"Invalid number of DNA bulges selected ({bdna})")
     return bdna
+
 
 def _initialize_brna(brna: int, parser: Crisprme2ArgumentParser) -> int:
     if brna < 0:
