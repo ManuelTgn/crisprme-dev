@@ -1,12 +1,12 @@
 [package]
-name = "target_candidates_parser"
+name = "crisprme2_rs"
 version = "0.1.0"
 edition = "2021"
 authors = ["Manuel Tognon"]
 license = "MIT"
 
 [lib]
-name = "target_candidates_parser"
+name = "target_candidates_scanner_rs"
 crate-type = ["cdylib"]
 
 [dependencies]

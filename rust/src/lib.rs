@@ -3,16 +3,12 @@ mod scan;
 mod pam; 
 mod iupac;
 mod target;
-mod hashing;
+mod threadpool;
 
-use std::collections::HashMap;
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList};
 use pyo3::exceptions::PyValueError;
-use pyo3::{PyResult, PyObject};
+use pyo3::PyResult;
 
-// Type alias for the complex value data, just for cleaner code
-type OccurrenceData = Vec<(String, usize, bool)>;
 
 /// Finds all potential target candidates (CRISPR gRNAs) within a given sequence.
 ///
@@ -36,86 +32,28 @@ type OccurrenceData = Vec<(String, usize, bool)>;
 /// # Errors
 /// Returns a `PyValueError` if input constraints are violated (e.g., invalid sizes or PAM sequence).
 #[pyfunction]
-pub fn find_target_candidates(
-    _py: Python,
+pub fn extract_targets_rs(
     sequence: &str, 
     contig: &str, 
-    pam_seq: &str, 
-    k: usize, 
+    pam_seq: &str,
+    size: usize, 
     right: bool,
-    is_first_chunk: bool,
-    path: &str,
     threads: usize,
-// ) -> PyResult<PyObject> {
-) -> PyResult<()> {
-    // --- input validation ---
-
-    if k == 0 {
-        return Err(PyValueError::new_err(
-            "Size must be greater than 0",
-        ));
-    }
-    
-    if threads == 0 {
-        return Err(PyValueError::new_err(
-            "threads must be greater than 0",
-        ));
-    }
-    
-    let seq_len = sequence.len();
-    
-    if seq_len == 0 {
-        return Err(PyValueError::new_err(
-            "sequence cannot be empty",
-        ));
-    }
-    
-    if k > seq_len {
-        return Err(PyValueError::new_err(
-            format!("size ({}) cannot be greater than sequence length ({})", k, seq_len),
-        ));
-    }
-
-    // --- PAM parsing and validation ---
-
-    // parse the PAM sequence string into a ParsedPAM struct (converting to bitmasks)
-    // the .map_err converts the internal Rust String error into a Python PyValueError
+) -> PyResult<Vec<target::Target>> {
     let pat = pam::ParsedPAM::new(pam_seq)
-        .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid PAM sequence: {}", e)))?;
+        .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid PAM sequence: {e}")))?;
 
-    // -- execution ---
-
-    // // execute the core parallel scanning logic and return the results
-    scan::scan_targets(sequence, contig, &pat, k, right, is_first_chunk, path, threads);
-
-    Ok(())
-    // let py_dict = PyDict::new(py);
-    
-    // // Iterate over the Rust HashMap
-    // for (vec_u8_key, occurrences) in targets_map.into_iter() {
-        
-    //     // Convert Vec<u8> (Rust) to Python bytes (immutable, hashable)
-    //     // .as_bytes() creates the Python bytes object from the Rust slice.
-    //     let py_key = vec_u8_key.as_slice().into_py(py);
-        
-    //     // Convert the OccurrenceData (Vec<...>) to a Python list of tuples
-    //     // PyO3 handles the Vec -> list and inner tuple conversion automatically here.
-    //     let py_value = occurrences.into_py(py);
-        
-    //     // Insert the key (bytes) and value (list) into the dictionary
-    //     // This is where the panic occurred previously, but now the key is guaranteed 'bytes'.
-    //     py_dict.set_item(py_key, py_value)?;
-    // }
-
-    // // Return the dictionary as a PyObject
-    // Ok(py_dict.into())
+    // Execute the core parallel scanning logic and return the results
+    scan::scan_targets(sequence, contig, &pat, size, right, threads)
+        .map_err(|e| PyErr::new::<PyValueError, _>(e))
 }
+
 
 /// Defines the Python module structure and exposes Rust functions
 #[pymodule]
-fn target_candidates_parser(_py: Python, m : &PyModule) -> PyResult<()> {
+fn target_candidates_scanner_rs(_py: Python, m : &PyModule) -> PyResult<()> {
     // add the top-level function to the Python module
-    m.add_function(wrap_pyfunction!(find_target_candidates, m)?)?;
+    m.add_function(wrap_pyfunction!(extract_targets_rs, m)?)?;
     
     Ok(())
 }

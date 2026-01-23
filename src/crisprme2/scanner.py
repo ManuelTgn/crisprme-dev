@@ -8,6 +8,8 @@ from .fasta import Fasta
 from .guide import Guide
 from .pam import PAM
 
+from .target_candidates_scanner_rs import extract_targets_rs
+
 from typing import List, Dict
 from time import time
 
@@ -61,8 +63,8 @@ def extract_targets(
             )
 
 
-def _compute_target_size(offset: int) -> int:
-    return OFFTARGETLEN + offset
+def _compute_target_size(pam: PAM, offset: int) -> int:
+    return OFFTARGETLEN + len(pam) + offset
 
 
 def scan_fasta_reference_genome(
@@ -79,7 +81,7 @@ def scan_fasta_reference_genome(
     )
     fastas = read_fasta_files(fasta_files, loggers)  # read input fasta files
     # compute off-target size for extraction
-    size = _compute_target_size(offset)  # offset is max(bdna, brna)
+    size = _compute_target_size(pam, offset)  # offset is max(bdna, brna)
     loggers.verboselog.debug(f"Off-targets extraction size: {size}")
     # extract targets from reference genome fasta files
     extract_targets(fastas, size, right, threads, loggers)

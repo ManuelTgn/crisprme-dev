@@ -49,7 +49,7 @@ setup(
     # ===== Rust extension =====
     rust_extensions=[
         RustExtension(
-            "crisprme2.target_candidates_parser",  # Python module path
+            "crisprme2.target_candidates_scanner_rs",  # Python module path
             "rust/Cargo.toml",            # path to your Rust crate
             binding=Binding.PyO3,
             debug=False,
