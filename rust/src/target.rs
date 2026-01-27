@@ -1,3 +1,5 @@
+use crate::iupac::iupac_to_char;
+
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
@@ -62,5 +64,22 @@ impl Target {
     pub fn target<'py>(&self, py: Python<'py>) -> Py<PyBytes> {
         // convert the internal Vec<u8> slice into a PyBytes object
         PyBytes::new(py, &self.target).into()
+    }
+
+    fn __repr__(&self) -> String {
+        // Decode full target (Vec<u8> bitmasks) into IUPAC string
+        let mut decoded = String::with_capacity(self.target.len());
+        for &b in &self.target {
+            decoded.push(iupac_to_char(b));
+        }
+
+        format!(
+            "<Target object; contig={}, position={}, strand={}, length={}, target={}>",
+            self.contig,
+            self.position,
+            if self.orientation { "+" } else { "-" },
+            self.target.len(),
+            decoded
+        )
     }
 }

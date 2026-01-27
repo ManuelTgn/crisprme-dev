@@ -2,7 +2,7 @@
 
 from .crisprme2_error import Crisprme2ScannerError
 from .fasta_utils import read_fasta_files
-from .utils import OFFTARGETLEN
+from .utils import flatten_list, OFFTARGETLEN
 from .logger import CrisprmeLoggers
 from .fasta import Fasta
 from .guide import Guide
@@ -10,14 +10,20 @@ from .pam import PAM
 
 from .target_candidates_scanner_rs import extract_targets_rs
 
-from typing import List, Dict
+from typing import List, Dict, Any
 from time import time
 
 import os
 
 
-def _safe_fasta_contig(fasta: Fasta, contig: str, loggers: CrisprmeLoggers) -> str:
+# define sequence chunk size
+CHUNKSIZE = 10_000_000
 
+# define overlap size between chunks
+CHUNKOVERLAP = 29  # 30 - 1 (we extract 30-mers)
+
+
+def _safe_fasta_contig(fasta: Fasta, contig: str, loggers: CrisprmeLoggers) -> str:
     c = contig
     if c not in fasta:
         contig_alt = fasta.contig  # normalized single-contig name from file
@@ -35,6 +41,7 @@ def _safe_fasta_contig(fasta: Fasta, contig: str, loggers: CrisprmeLoggers) -> s
 
 def extract_targets(
     fastas: Dict[str, Fasta],
+    pam: PAM,
     size: int,
     right: bool,
     threads: int,
@@ -50,6 +57,15 @@ def extract_targets(
                 # ensure we fetch using a reference that exists in the opened handle
                 c = _safe_fasta_contig(fasta, contig, loggers)
                 sequence = f.fetch(c)  # fetch contig sequence
+                chunkedseq = sequence.chunk(CHUNKSIZE, CHUNKOVERLAP)
+                # preallocate target candidates lists
+                candidates_chunk: List[List[Any]] = [None] * len(chunkedseq)  # type: ignore
+                for i, chunkseq in enumerate(chunkedseq):
+                    # extract targets in spwaning threads on each sequence chunk
+                    # go down to rust to optimize threads spawning
+                    candidates_chunk[i] = extract_targets_rs(
+                        chunkseq, contig, pam.pam, size, right, threads
+                    )
         except Exception as e:
             # raise to stop the pipeline
             loggers.errorlog.log_raise_exception(
@@ -61,6 +77,7 @@ def extract_targets(
             loggers.verboselog.debug(
                 f"Contig {contig} scanned in {time() - start:.2f}s"
             )
+        candidates = flatten_list(candidates_chunk)
 
 
 def _compute_target_size(pam: PAM, offset: int) -> int:
@@ -84,4 +101,4 @@ def scan_fasta_reference_genome(
     size = _compute_target_size(pam, offset)  # offset is max(bdna, brna)
     loggers.verboselog.debug(f"Off-targets extraction size: {size}")
     # extract targets from reference genome fasta files
-    extract_targets(fastas, size, right, threads, loggers)
+    extract_targets(fastas, pam, size, right, threads, loggers)

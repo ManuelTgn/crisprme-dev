@@ -85,41 +85,51 @@ class ContigSequence(Sequence):
         self._start = start  # start sequence start position
         self._stop = stop  # store sequence stop position
 
-    def chunk(self, size: int, overlap: int):
-        if overlap >= size:
+    def chunk(self, size: int, overlap: int) -> List[str]:
+        # validate size and overlap values
+        if size <= 0:
+            self._loggers.errorlog.log_raise_exception(
+                f"Chunk size must be > 0 (got {size})",
+                os.EX_DATAERR,
+                Crisprme2ContigSequenceError,
+            )
+        if overlap < 0:
+            self._loggers.errorlog.log_raise_exception(
+                f"Overlap must be >= 0 (got {overlap})",
+                os.EX_DATAERR,
+                Crisprme2ContigSequenceError,
+            )
+        if overlap >= size and self._length > size:
             self._loggers.errorlog.log_raise_exception(
                 f"Overlap size ({overlap}) must be less than the chunk size ({size})",
                 os.EX_DATAERR,
                 Crisprme2ContigSequenceError,
             )
-
-        if size >= self._length:  # small contig
-            yield ContigSequence(
-                self.subsequence(0, self._length),
-                self._contig,
-                0,
-                self._length,
-                self._loggers,
-            )
-            return
-
-        step = size - overlap  # ← FIX: move forward by size−overlap
-
-        for i in range(0, self._length, step):
-            start = i
-            stop = i + size
-
-            # clip to contig boundaries
-            if stop > self._length:
+        # handle simple cases: empty sequence or short sequence
+        if self._length == 0:  # empty sequence
+            return []
+        # small contig: single chunk, no need to do anything fancy
+        if size >= self._length:
+            return [self.sequence]
+        sequence = self.sequence  # materialize the full constig string once
+        # number of core chunks
+        n_chunks = (self._length + size - 1) // size  # ceil(n / size)
+        # initialize chunk sequences list + preallocation
+        chunks: List[str] = [None] * n_chunks  # type: ignore
+        write_idx = 0
+        for start in range(0, self._length, size):  # construct chunks
+            if (stop := start + size) > self._length:
                 stop = self._length
-
-            yield ContigSequence(
-                self.subsequence(start, stop), self._contig, start, stop, self._loggers
-            )
-
-    def encode(self) -> bytearray:
-        # encode contig sequence as byte array
-        return BitSequence(self.sequence, self._loggers).data
+            ext_start = 0 if start == 0 else start - overlap
+            ext_stop = stop  # ext_stop is stop (left-overlap)
+            # slice directly from materialized string
+            chunks[write_idx] = sequence[ext_start:ext_stop]
+            write_idx += 1
+            if stop == self._length:
+                break  # nothing to do from here
+        if write_idx != n_chunks:
+            chunks = chunks[:write_idx]  # trash preallocated unused cells
+        return chunks
 
     @property
     def contig(self) -> str:
