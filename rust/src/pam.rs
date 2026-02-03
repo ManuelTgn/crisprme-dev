@@ -1,103 +1,96 @@
-use crate::iupac::{Iupac, matches_iupac, iupac_to_char};
+use crate::iupac::{Iupac};
 
-/// Represents a Protospacer Adjacent Motif (PAM) sequence parsed into IUPAC bitmasks.
+
+/// Parsed representation of a Protospacer Adjacent Motif (PAM).
 ///
-/// This struct holds both the forward PAM sequence and its reverse complement
-/// as efficient vectors of 4-bit IUPAC masks.
+/// This structure stores a PAM sequence encoded as IUPAC bitmasks, together
+/// with its reverse complement and a flag indicating whether the PAM is fully
+/// unconstrained (i.e., composed exclusively of `N` characters).
+///
+/// The bitmask representation enables extremely fast matching using bitwise
+/// operations and supports both exact and degenerate PAM definitions.
 pub struct ParsedPAM {
-    // the PAM sequence converted into IUPAC bitmasks
+    /// PAM sequence encoded as IUPAC bitmasks (forward orientation).
+    ///
+    /// Each element is a 4-bit mask representing the set of allowed bases
+    /// at that position.
     pub bytes: Vec<u8>,
-    // the reverse complement of the PAM sequence, also in IUPAC bitmasks
+
+    /// Reverse-complement of the PAM sequence, also encoded as IUPAC bitmasks.
+    ///
+    /// This is precomputed to allow strand-aware scanning without performing
+    /// reverse-complement operations during the hot scanning loop.
     pub revcomp: Vec<u8>,
+
+    /// Flag indicating whether the PAM is fully unconstrained.
+    ///
+    /// This is `true` if and only if all PAM positions are `N`
+    /// (`0b1111` in IUPAC encoding), meaning the PAM imposes no constraints
+    /// on matching.
+    ///
+    /// This flag enables fast-path optimizations during scanning, where PAM
+    /// checks can be skipped entirely.
+    pub unconstrained: bool,
 }
 
+
 impl ParsedPAM{
-    /// Creates a new `ParsedPAM` instance from an ASCII PAM string.
+    /// Parses an ASCII PAM string into its IUPAC bitmask representation.
     ///
-    /// The function converts the input string into forward bitmasks and calculates
-    /// the reverse complement bitmasks.
+    /// This function converts each nucleotide character into a 4-bit IUPAC
+    /// mask, computes the reverse complement at the bitmask level, and
+    /// determines whether the PAM is fully degenerate (`NNN...`).
     ///
     /// # Arguments
-    /// * `pam` - The ASCII string representation of the PAM (e.g., "NGG").
+    /// * `pam` - PAM sequence as an ASCII string (e.g., `"NGG"`, `"NNGRRT"`).
     ///
     /// # Returns
-    /// * `Ok(Self)` if parsing is successful.
-    /// * `Err(String)` if any character in `pam` is not a valid IUPAC code.
+    /// * `Ok(ParsedPAM)` on successful parsing
+    /// * `Err(String)` if the PAM contains an invalid IUPAC character
+    ///
+    /// # Notes
+    /// * Parsing is case-insensitive.
+    /// * Reverse complementation is performed using bitwise operations rather
+    ///   than character-level transformations for efficiency.
     pub fn new(pam: &str) -> Result<Self, String> {
-        // 1. Convert each ASCII nucleotide to its IUPAC bitmask.
+        // convert each ASCII nucleotide to its IUPAC bitmask.
         let bytes: Result<Vec<u8>, String> = pam.as_bytes()
             .iter()
             .map(|&b| Iupac::from_ascii(b).map(|iupac| iupac.0))
             .collect();
 
-        // Use the '?' operator to extract the Vec<u8> or return the error String immediately
+        // use the '?' operator to extract the Vec<u8> or return the error String immediately
         let bytes: Vec<u8> = bytes?;
 
-        // 2. Create reverse complement using bit masks: reverse order and complement each mask
+        // create reverse complement using bit masks: reverse order and complement each mask
         let revcomp: Vec<u8> = bytes.iter()
             .rev()
             .map(|&b| complement_bitmask(b))
             .collect();
 
-        Ok(Self { bytes, revcomp })
-    }
+        // assess whether the PAM sequence is degenerated (NNN)
+        let unconstrained = bytes.iter().all(|&b| b == 0b1111);
 
-    /// Checks if a sequence fragment's bitmasks match the PAM pattern bitmasks.
-    ///
-    /// Matching uses the `matches_iupac` logic, checking for overlap in base possibilities.
-    ///
-    /// # Arguments
-    /// * `seq` - A slice of `u8` IUPAC bitmasks representing the sequence fragment.
-    ///
-    /// # Returns
-    /// * `true` if the sequence slice has the same length as the PAM and matches
-    ///   the pattern at all positions; `false` otherwise.
-    pub fn matches(&self, seq: &[u8]) -> bool {
-        if seq.len() != self.bytes.len() {
-            return false;
-        }
-
-        seq.iter()
-            .zip(self.bytes.iter())
-            .all(|(&nt_mask, &pattern_mask)| {
-                matches_iupac(nt_mask, pattern_mask)
-            })
+        Ok(Self { bytes, revcomp, unconstrained })
     }
     
-    /// Decodes the stored IUPAC bitmask vector back into a readable ASCII string.
-    ///
-    /// # Arguments
-    /// * `rc` - If `true`, decodes the reverse complement (`self.revcomp`); 
-    ///          otherwise, decodes the forward sequence (`self.bytes`).
-    ///
-    /// # Returns
-    /// A `String` containing the standard IUPAC nucleotide characters (e.g., "NGG")
-    pub fn decode(&self, rc: bool) -> String {
-        if rc {
-            self.revcomp.iter()
-                // map each bitmask to its corresponding char
-                .map(|&bitmask| iupac_to_char(bitmask))
-                .collect()
-        } else {
-            self.bytes.iter()
-                // map each bitmask to its corresponding char
-                .map(|&bitmask| iupac_to_char(bitmask))
-                .collect()
-        }
-    }
 }
 
-/// Complements a nucleotide IUPAC bitmask.
+
+/// Computes the complement of an IUPAC nucleotide bitmask.
 ///
-/// The function swaps the bit positions corresponding to:
-/// A <-> T (0001 <-> 1000) and C <-> G (0010 <-> 0100).
-/// This correctly handles both standard and degenerate IUPAC codes (e.g., 'N' complements to 'N').
+/// This function swaps the bit positions corresponding to complementary bases:
+/// * A ↔ T (`0001` ↔ `1000`)
+/// * C ↔ G (`0010` ↔ `0100`)
+///
+/// The operation correctly handles both standard and degenerate IUPAC codes
+/// (e.g., `N` complements to `N`).
 ///
 /// # Arguments
-/// * `mask` - The 4-bit IUPAC code (`u8`).
+/// * `mask` - 4-bit IUPAC nucleotide bitmask
 ///
 /// # Returns
-/// The complemented IUPAC bitmask (`u8`).
+/// The complemented IUPAC bitmask.
 fn complement_bitmask(mask: u8) -> u8 {
     // extract each base's bit
     let a = mask & 0b0001;
@@ -106,16 +99,9 @@ fn complement_bitmask(mask: u8) -> u8 {
     let t = mask & 0b1000;
     
     // perform the bit swaps for complementation:
-    // 1. A (0001) shifts left 3 to become T (1000)
     let complement_t = a << 3; 
-    
-    // 2. C (0010) shifts left 1 to become G (0100)
     let complement_g = c << 1; 
-    
-    // 3. G (0100) shifts right 1 to become C (0010)
     let complement_c = g >> 1; 
-    
-    // 4. T (1000) shifts right 3 to become A (0001)
     let complement_a = t >> 3;
     
     // combine the resulting complement bits

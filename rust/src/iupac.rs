@@ -1,5 +1,23 @@
 use std::result::Result;  // explicitely import Result for clarity
 
+
+/// Lookup table mapping ASCII nucleotide characters to 4-bit IUPAC bitmasks.
+///
+/// Each entry encodes the set of possible bases represented by an IUPAC code
+/// using the following bit assignments:
+///
+/// - A -> 0b0001
+/// - C -> 0b0010
+/// - G -> 0b0100
+/// - T -> 0b1000
+///
+/// Ambiguous IUPAC codes are represented as the bitwise OR of their possible
+/// bases (e.g., `R = A|G = 0b0101`).
+///
+/// The value `0b1111` corresponds to `N` (any base).
+///
+/// All non-IUPAC or unrecognized characters map to `0b0000`, which is used as
+/// a sentinel value to signal invalid input during parsing.
 const IUPAC_LOOKUP_TABLE: [u8; 256] = {
     // 0b1111 is the 'N' mask (Any base). We use 0b0000 (0) as the default for 
     // invalid/unrecognized characters to mark them distinctly.
@@ -39,20 +57,43 @@ const IUPAC_LOOKUP_TABLE: [u8; 256] = {
     table
 };
 
-/// Represents a nucleotide using the 4-bit IUPAC ambiguity code bitmask.
-/// 
-/// The standard mapping is:
-/// - A: 0b0001 (1)
-/// - C: 0b0010 (2)
-/// - G: 0b0100 (4)
-/// - T: 0b1000 (8)
-/// 
-/// The contained `u8` value is the bitmask.
+
+/// Represents a nucleotide encoded as a 4-bit IUPAC ambiguity mask.
+///
+/// This compact representation allows constant-time matching via bitwise
+/// operations and supports both standard and degenerate nucleotide codes.
+///
+/// # Bitmask encoding
+/// - A: `0b0001`
+/// - C: `0b0010`
+/// - G: `0b0100`
+/// - T: `0b1000`
+///
+/// Ambiguous codes are encoded as the bitwise OR of their possible bases.
+/// For example:
+/// - R (A or G): `0b0101`
+/// - N (any base): `0b1111`
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Iupac(pub u8);  // bit mask wrapper
 
 impl Iupac {
-pub fn from_ascii(nt: u8) -> Result<Self, String> {
+    /// Converts an ASCII nucleotide character into its IUPAC bitmask
+    /// representation.
+    ///
+    /// This function performs a constant-time lookup using a precomputed
+    /// table and supports both uppercase and lowercase characters.
+    ///
+    /// # Arguments
+    /// * `nt` - ASCII byte representing a nucleotide or IUPAC ambiguity code
+    ///
+    /// # Returns
+    /// * `Ok(Iupac)` if the character is a valid IUPAC code
+    /// * `Err(String)` if the character is invalid or unrecognized
+    ///
+    /// # Errors
+    /// Invalid characters map to a sentinel value (`0b0000`) and produce
+    /// a descriptive error message.
+    pub fn from_ascii(nt: u8) -> Result<Self, String> {
         // Direct table lookup. This is the fastest possible conversion.
         let code = IUPAC_LOOKUP_TABLE[nt as usize];
         
@@ -69,16 +110,18 @@ pub fn from_ascii(nt: u8) -> Result<Self, String> {
     }
 }
 
-/// Converts an IUPAC bitmask back into its corresponding single-character 
-/// representation.
-/// 
-/// This is the inverse of the mapping performed by `Iupac::from_ascii`.
-/// 
+
+/// Converts an IUPAC bitmask into its corresponding single-character code.
+///
+/// This is the inverse operation of `Iupac::from_ascii` and is primarily
+/// intended for debugging, logging, and human-readable output.
+///
 /// # Arguments
-/// * `bitmask` - The 4-bit IUPAC code (`u8`).
-/// 
+/// * `bitmask` - 4-bit IUPAC nucleotide mask
+///
 /// # Returns
-/// * The single ASCII character representing the bitmask, or '?' for unknown codes
+/// * ASCII character representing the IUPAC code
+/// * `'?'` for unknown or invalid bitmasks
 pub fn iupac_to_char(bitmask: u8) -> char {
     match bitmask {
         // standard bases
@@ -109,19 +152,22 @@ pub fn iupac_to_char(bitmask: u8) -> char {
     }
 }
 
-/// Checks if a nucleotide bitmask matches a pattern bitmask.
-/// 
-/// In IUPAC coding, a match occurs if the set of possible bases in the nucleotide (`nt`) 
-/// overlaps with the set of possible bases in the pattern (`pattern`).
-/// 
-/// This is achieved by checking if the bitwise AND operation yields a non-zero result.
-/// 
+
+/// Checks whether a nucleotide bitmask matches a pattern bitmask.
+///
+/// In IUPAC semantics, a match occurs if the set of possible bases encoded
+/// by the nucleotide overlaps with the set encoded by the pattern.
+///
+/// This is implemented as a bitwise AND operation and is the core primitive
+/// used for both PAM and guide matching.
+///
 /// # Arguments
-/// * `nt` - The bitmask of the sequence nucleotide.
-/// * `pattern` - The bitmask of the pattern/template nucleotide.
-/// 
+/// * `nt` - Bitmask of the sequence nucleotide
+/// * `pattern` - Bitmask of the pattern/template nucleotide
+///
 /// # Returns
-/// * `true` if there is at least one common base (match), `false` otherwise
+/// * `true` if there is at least one common base
+/// * `false` otherwise
 pub fn matches_iupac(nt: u8, pattern: u8) -> bool {
     (nt & pattern) != 0
 }

@@ -1,3 +1,22 @@
+//! Parallel target candidate scanner.
+//!
+//! This module implements the hot-loop genome scanning logic used to extract
+//! candidate target windows (k-mers) that satisfy a PAM definition.
+//!
+//! The scanner operates on a sequence converted into 4-bit IUPAC bitmasks,
+//! enabling constant-time matching via bitwise operations. Scanning is
+//! parallelized by splitting the sequence into disjoint chunks, each extended
+//! by `(size - 1)` bases to ensure k-mers that cross chunk boundaries are not
+//! missed. Duplicate reporting is avoided by only emitting k-mers whose start
+//! position lies in the original (non-extended) chunk interval.
+//!
+//! Performance optimizations:
+//! - Uses a cached Rayon thread pool (see `threadpool::with_pool`) to avoid pool
+//!   construction overhead across repeated scans.
+//! - Skips k-mers containing `N` (`0b1111`) to avoid ambiguous candidates.
+//! - Implements fast-paths for fully unconstrained PAMs (`NNN...`) and partially
+//!   unconstrained PAMs by using sparse matching over informative PAM positions.
+
 use crate::pam::ParsedPAM;
 use crate::iupac::{Iupac, matches_iupac};
 use crate::target::Target;
@@ -6,28 +25,68 @@ use crate::threadpool;
 use rayon::prelude::*;
 use std::result::Result; 
 
-// Type alias for the complex value data, just for cleaner code
 
-/// Scans a sequence in parallel to find all candidate targets (k-mers) that match the PAM requirements.
+
+/// IUPAC bitmask for `N` (any base).
 ///
-/// The sequence is first converted to IUPAC bitmasks. The scanning is parallelized across
-/// multiple threads using Rayon, with chunks extended to prevent boundary-crossing k-mers from being missed.
+/// In this representation, `N` is `0b1111` (A|C|G|T). It is used both as a
+/// degenerate PAM code and as an ambiguity marker in the input sequence.
+/// In the scanner, k-mers containing `N` are skipped (see `scan_targets`).
+const N_MASK: u8 = 0b1111;
+
+
+/// Scans a sequence in parallel and returns candidate target windows that satisfy PAM constraints.
 ///
+/// The input `sequence` is first converted to IUPAC bitmasks using a fast lookup table
+/// (`Iupac::from_ascii`). The scan then slides a fixed-size window of length `size`
+/// across the sequence and evaluates PAM compatibility on both orientations:
+/// - Forward orientation uses `pam.bytes`
+/// - Reverse orientation uses `pam.revcomp`
+///
+/// Parallelization strategy:
+/// - The sequence is split into `threads` chunks (ceiling division).
+/// - Each chunk is *extended* by `(size - 1)` at the end to prevent missing k-mers
+///   that cross chunk boundaries.
+/// - Only k-mers whose start position lies within the original (non-extended) chunk
+///   interval are emitted, avoiding duplicates between adjacent chunks.
+///
+/// PAM handling strategy:
+/// - If `pam.unconstrained == true` (e.g., `NNN...`), PAM checks are skipped and
+///   every k-mer (excluding those containing `N` in the sequence) is emitted.
+/// - Otherwise, PAM matching is performed either:
+///   - densely (check all PAM positions), or
+///   - sparsely (check only informative PAM positions, skipping `N` entries in the PAM),
+///     depending on the degeneracy heuristic.
+/// 
 /// # Arguments
-/// * `sequence` - The DNA/RNA sequence string to scan.
-/// * `contig` - The identifier of the sequence (e.g., "chr1").
-/// * `pam` - The parsed PAM structure containing the forward and reverse complement bitmasks.
-/// * `size` - The length of the target k-mer (protospacer + pam + offset length).
-/// * `right` - If `true`, the PAM is expected to be *right* of the k-mer in the scan window.
-/// * `threads` - The number of threads to use for parallel processing.
+/// * `sequence` - DNA/RNA sequence to scan (ASCII).
+/// * `contig` - Contig identifier associated with `sequence` (e.g., `"chr1"`).
+/// * `pam` - Parsed PAM containing forward and reverse-complement bitmasks plus
+///           `unconstrained` flag.
+/// * `size` - Scan window length (protospacer + PAM + optional bulge offset).
+/// * `right` - Controls which end of the scan window is interpreted as the PAM.
+///
+///   **Important:** `right` reflects the scanner’s *window layout convention*.
+///   With the current implementation:
+///   - if `right == true`, the *forward PAM slice* starts at index `0`
+///   - if `right == false`, the *forward PAM slice* starts at index `size - plen`
+///
+///   (and the reverse slice uses the opposite end). This preserves the behavior of
+///   the existing Python-level pipeline.
+/// * `threads` - Number of threads to use. Must be > 0.
 ///
 /// # Returns
-/// A `HashedTargets` object containing all unique targets and their occurrences, 
-/// with grouping performed in Rust for maximum efficiency.
+/// * `Ok(Vec<Target>)` containing all candidate targets found.
+/// * `Err(String)` if the sequence contains invalid characters or PAM length is inconsistent.
 ///
-/// # Panics
-/// Panics if the input sequence contains an unknown nucleotide character or if the Rayon 
-/// thread pool cannot be built.
+/// # Errors
+/// - Returns `Err` if `sequence` contains non-IUPAC characters (e.g., `*`, `-`, etc.).
+/// - Returns `Err` if `pam.bytes.len() == 0` or `pam.bytes.len() > size`.
+///
+/// # Notes
+/// - k-mers containing `N` in the sequence are skipped.
+/// - Fully unconstrained PAMs (`NNN...`) preserve the current behavior of emitting
+///   both orientations for every valid k-mer.
 pub fn scan_targets(
     sequence: &str,
     contig: &str,
@@ -36,7 +95,7 @@ pub fn scan_targets(
     right: bool,
     threads: usize,
 ) -> Result<Vec<Target>, String> {
-    // 1) Convert sequence to IUPAC bitmasks (return error instead of panic)
+    // convert sequence to IUPAC bitmasks (return error instead of panic)
     let seq_bitmask: Vec<u8> = sequence
         .as_bytes()
         .iter()
@@ -61,7 +120,17 @@ pub fn scan_targets(
         return Err(format!("Invalid PAM length: plen={plen}, size={size}"));
     }
 
-    // 2) Run the parallel scan inside a cached pool for this `threads` value
+    // build sparse representations for PAM (avoid matching N positions)
+    let (idx_fwd, mask_fwd) = build_sparse(pat);
+    let (idx_rev, mask_rev) = build_sparse(rev);
+
+    // Heuristic: use sparse if it materially reduces work.
+    // example threshold: fewer than half positions are informative.
+    let use_sparse_fwd = !pam.unconstrained && idx_fwd.len() < plen;
+    let use_sparse_rev = !pam.unconstrained && idx_rev.len() < plen;
+
+
+    // run the parallel scan inside a cached pool for this `threads` value
     threadpool::with_pool(threads, || {
         // chunk size (ceiling division)
         let chunk_size = (slen + threads - 1) / threads;
@@ -102,29 +171,60 @@ pub fn scan_targets(
                             continue;
                         }
 
-                        // NOTE: keep PAM slicing behavior
-                        let (pam_slice_fwd, pam_slice_rev) = if right {
-                            (&target_bitmask[0..plen], &target_bitmask[size - plen..size])
-                        } else {
-                            (&target_bitmask[size - plen..size], &target_bitmask[0..plen])
-                        };
-
-                        if matches_pattern(pam_slice_fwd, pat) {
+                        // push target in results vector
+                        if pam.unconstrained {  // NNN PAM -> avoid PAM matching
                             chunk_targets.push(Target::new(
-                                contig,
-                                global_pos,
-                                true,
-                                target_bitmask.to_vec(),
+                                contig, 
+                                global_pos, 
+                                true, 
+                                target_bitmask.to_vec()
                             ));
-                        }
-
-                        if matches_pattern(pam_slice_rev, rev) {
                             chunk_targets.push(Target::new(
-                                contig,
-                                global_pos,
-                                false,
-                                target_bitmask.to_vec(),
+                                contig, 
+                                global_pos, 
+                                false, 
+                                target_bitmask.to_vec()
                             ));
+                        } else {  // regular PAM -> match PAM before reporting 
+                            // define PAM start index 
+                            let pam_start_fwd = if right { 0 } else { size - plen };
+                            let pam_start_rev = if right { size - plen } else { 0 };
+                            
+                            // match pam on forward strand (sparse or regular)
+                            let fwd_ok = if use_sparse_fwd {
+                                matches_pattern_sparse(target_bitmask, pam_start_fwd, &idx_fwd, &mask_fwd)
+                            } else {
+                                // PAM slicing on forward strand
+                                let pam_slice_fwd = &target_bitmask[pam_start_fwd..pam_start_fwd + plen];
+                                matches_pattern(pam_slice_fwd, pat)
+                            };
+                            
+                            // match pam on reverse strand (sparse or regular)
+                            let rev_ok = if use_sparse_rev {
+                                matches_pattern_sparse(target_bitmask, pam_start_rev, &idx_rev, &mask_rev)
+                            } else {
+                                // PAM slicing on reverse strand
+                                let pam_slice_rev = &target_bitmask[pam_start_rev..pam_start_rev + plen];
+                                matches_pattern(pam_slice_rev, rev)
+                            };
+
+                            // push candidates in results vector if match found
+                            if fwd_ok {
+                                chunk_targets.push(Target::new(
+                                    contig, 
+                                    global_pos, 
+                                    true, 
+                                    target_bitmask.to_vec()
+                                ));
+                            }
+                            if rev_ok {
+                                chunk_targets.push(Target::new(
+                                    contig, 
+                                    global_pos, 
+                                    false, 
+                                    target_bitmask.to_vec()
+                                ));
+                            }
                         }
                     }
                 }
@@ -133,21 +233,26 @@ pub fn scan_targets(
             })
             .flatten()
             .collect::<Vec<Target>>()
+
     })
+
 }
 
 
-/// Checks if a sequence bitmask slice matches a PAM pattern bitmask slice.
+/// Checks if a sequence bitmask slice matches a PAM pattern bitmask slice (dense matching).
 ///
-/// This uses the IUPAC matching logic (`matches_iupac`) to ensure every position 
-/// in the sequence slice overlaps with the required pattern bits.
+/// A dense match checks all `pam.len()` positions and requires that each
+/// nucleotide bitmask overlaps with the corresponding PAM bitmask according
+/// to IUPAC semantics (bitwise AND is non-zero).
+///
+/// This is typically optimal for low-degeneracy PAMs (few or no `N` positions).
 ///
 /// # Arguments
-/// * `seq` - The sequence fragment bitmask slice (e.g., the PAM part of the k-mer window).
-/// * `pam` - The PAM pattern bitmask slice (forward or reverse complement).
+/// * `seq` - Sequence fragment bitmask slice (PAM region within the scan window).
+/// * `pam` - PAM bitmask pattern slice (forward or reverse complement).
 ///
 /// # Returns
-/// * `true` if the sequence matches the pattern at all corresponding positions
+/// * `true` if all positions match under IUPAC semantics, otherwise `false`.
 #[inline(always)]
 fn matches_pattern(seq: &[u8], pam: &[u8]) -> bool {
     seq.iter()
@@ -155,27 +260,85 @@ fn matches_pattern(seq: &[u8], pam: &[u8]) -> bool {
         .all(|(&a, &b)| matches_iupac(a, b))
 }
 
-// --------------------------------------------------------------------------------------------------
 
-/// Extracts the PAM-defining slice from the k-mer window based on its relative position.
+/// Builds a sparse representation of a PAM pattern by retaining only *informative* positions.
+///
+/// In IUPAC encoding, the mask `0b1111` (`N`) matches any nucleotide and therefore
+/// does not constrain matching. This function filters out such positions and returns:
+///   - the indices of PAM positions that impose constraints, and
+///   - the corresponding IUPAC bitmasks.
+///
+/// This representation reduces per-k-mer matching work for partially-degenerate PAMs
+/// (e.g., `NNGRRT`, `GGNRG`) by checking only informative positions.
 ///
 /// # Arguments
-/// * `target` - The bitmask slice representing the k-mer *plus* the PAM window.
-/// * `plen` - The length of the PAM sequence.
-/// * `k` - The length of the target/protospacer (used to calculate the start position).
-/// * `right` - If `true`, the PAM is on the left (at the start of the slice); 
-///             if `false`, the PAM is on the right (at the end of the slice).
+/// * `pam` - Slice of IUPAC bitmasks representing the PAM sequence.
 ///
 /// # Returns
-/// A slice (`&[u8]`) containing only the bitmasks for the PAM region.
-fn get_pam_slice(target: &[u8], plen: usize, k: usize, right: bool) -> &[u8] {
-    if right {
-        // if the PAM is specified to be *right* of the k-mer, then we assume the current
-        // slice is structured as: [PAM_seq | K-mer]. The PAM is at the beginning.
-        &target[0..plen]
-    } else {
-        // if the PAM is specified to be *left* of the k-mer, then the slice is 
-        // structured as: [K-mer | PAM_seq]. The PAM is at the end.
-        &target[k - plen..k]
+/// A tuple `(idx, mask)` where:
+/// * `idx[i]` is the position within the PAM of the `i`-th informative base.
+/// * `mask[i]` is the corresponding IUPAC bitmask at that position.
+///
+/// # Notes
+/// * If all PAM positions are unconstrained (`N`), both vectors will be empty.
+/// * If no positions are unconstrained, `idx.len() == pam.len()`.
+#[inline]
+fn build_sparse(pam: &[u8]) -> (Vec<usize>, Vec<u8>) {
+    // define vectors of indeexes and masks
+    let mut idx: Vec<usize> = Vec::new();
+    let mut mask: Vec<u8> = Vec::new();
+
+    // iterate over pam nts
+    for (i, &m) in pam.iter().enumerate() {
+        if m != N_MASK {
+            idx.push(i);
+            mask.push(m);
+        }
     }
+
+    (idx, mask)
+
+}
+
+
+/// Checks whether a target sequence matches a PAM pattern using a sparse representation.
+///
+/// This function evaluates only the informative PAM positions (i.e., those not equal to `N`),
+/// using IUPAC overlap matching (bitwise AND non-zero).
+///
+/// Compared to dense matching over the full PAM length, this approach can
+/// significantly reduce the cost of PAM evaluation when the PAM contains many `N`s.
+///
+/// # Arguments
+/// * `target_bitmask` - Full scan window encoded as IUPAC bitmasks (length `size`).
+/// * `pam_start` - Start index of the PAM region within `target_bitmask`.
+/// * `idx` - Indices of informative PAM positions (relative to `pam_start`).
+/// * `mask` - IUPAC bitmasks corresponding to `idx`.
+///
+/// # Returns
+/// * `true` if all informative PAM positions match, otherwise `false`.
+///
+/// # Safety
+/// This function uses unchecked indexing for performance. Correctness relies on:
+/// * `idx.len() == mask.len()`
+/// * `pam_start + idx[i] < target_bitmask.len()` for all `i`
+///
+/// These invariants are guaranteed by construction in `scan_targets`.
+#[inline(always)]
+fn matches_pattern_sparse(
+    target_bitmask: &[u8],
+    pam_start: usize,
+    idx: &[usize],
+    mask: &[u8],
+) -> bool {
+    // idx and mask have the same length
+    for t in 0..idx.len() {
+        let seq_mask = unsafe { *target_bitmask.get_unchecked(pam_start + idx[t]) };
+        let pam_mask = unsafe { *mask.get_unchecked(t) };
+        if (seq_mask & pam_mask) == 0 {
+            return false;
+        }
+    }
+
+    true
 }

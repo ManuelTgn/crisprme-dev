@@ -78,10 +78,11 @@ def extract_targets(
                 f"Contig {contig} scanned in {time() - start:.2f}s"
             )
         candidates = flatten_list(candidates_chunk)
+        print(f"Number of candidates: {len(candidates)}")
 
 
-def _compute_target_size(pam: PAM, offset: int) -> int:
-    return OFFTARGETLEN + len(pam) + offset
+def _compute_target_size(guide: Guide, pam: PAM, offset: int) -> int:
+    return len(guide) + len(pam) + offset
 
 
 def scan_fasta_reference_genome(
@@ -98,7 +99,7 @@ def scan_fasta_reference_genome(
     )
     fastas = read_fasta_files(fasta_files, loggers)  # read input fasta files
     # compute off-target size for extraction
-    size = _compute_target_size(pam, offset)  # offset is max(bdna, brna)
+    size = _compute_target_size(guide, pam, offset)  # offset is max(bdna, brna)
     loggers.verboselog.debug(f"Off-targets extraction size: {size}")
     # extract targets from reference genome fasta files
     extract_targets(fastas, pam, size, right, threads, loggers)
