@@ -10,9 +10,10 @@ from .pam import PAM
 
 from .target_candidates_scanner_rs import extract_targets_rs
 
-from typing import List, Dict, Any
+from typing import List, Dict, Tuple
 from time import time
 
+import sys
 import os
 
 
@@ -59,12 +60,12 @@ def extract_targets(
                 sequence = f.fetch(c)  # fetch contig sequence
                 chunkedseq = sequence.chunk(CHUNKSIZE, CHUNKOVERLAP)
                 # preallocate target candidates lists
-                candidates_chunk: List[List[Any]] = [None] * len(chunkedseq)  # type: ignore
+                candidates_chunk: List[Tuple[List[int], List[int]]] = [None] * len(chunkedseq)  # type: ignore
                 for i, chunkseq in enumerate(chunkedseq):
                     # extract targets in spwaning threads on each sequence chunk
                     # go down to rust to optimize threads spawning
                     candidates_chunk[i] = extract_targets_rs(
-                        chunkseq, contig, pam.pam, size, right, threads
+                        chunkseq, pam.pam, size, right, threads
                     )
         except Exception as e:
             # raise to stop the pipeline
@@ -77,8 +78,16 @@ def extract_targets(
             loggers.verboselog.debug(
                 f"Contig {contig} scanned in {time() - start:.2f}s"
             )
-        candidates = flatten_list(candidates_chunk)
-        print(f"Number of candidates: {len(candidates)}")
+        all_pos = []
+        all_strand = []
+        for pos, strand in candidates_chunk:
+            all_pos.extend(pos)
+            all_strand.extend(strand)
+
+        # candidates = flatten_list(candidates_chunk)
+        print(f"Number of candidates: {len(all_pos)}")
+        print(f"Pos: {(sys.getsizeof(all_pos) + sum(sys.getsizeof(e) for e in all_pos)) / (1024 ** 3)}")
+        print(f"strand: {(sys.getsizeof(all_strand) + sum(sys.getsizeof(e) for e in all_strand)) / (1024 ** 3)}")
 
 
 def _compute_target_size(guide: Guide, pam: PAM, offset: int) -> int:

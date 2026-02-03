@@ -34,17 +34,16 @@ use pyo3::PyResult;
 #[pyfunction]
 pub fn extract_targets_rs(
     sequence: &str, 
-    contig: &str, 
     pam_seq: &str,
     size: usize, 
     right: bool,
     threads: usize,
-) -> PyResult<Vec<target::Target>> {
+) -> PyResult<(Vec<usize>, Vec<u8>)> {
     let pat = pam::ParsedPAM::new(pam_seq)
         .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid PAM sequence: {e}")))?;
 
     // Execute the core parallel scanning logic and return the results
-    scan::scan_targets(sequence, contig, &pat, size, right, threads)
+    scan::scan_targets(sequence, &pat, size, right, threads)
         .map_err(|e| PyErr::new::<PyValueError, _>(e))
 }
 
