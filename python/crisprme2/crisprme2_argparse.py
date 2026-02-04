@@ -1,9 +1,8 @@
 """ """
 
-from .utils import COMMAND, DNA, IUPAC
+from .utils import COMMAND, DNA, IUPAC, VCFEXTENSIONS
 from .crisprme2_version import __version__
 from .fasta import FASTAEXTENSIONS
-from .vcf import VCFEXTENSIONS
 
 from argparse import (
     SUPPRESS,

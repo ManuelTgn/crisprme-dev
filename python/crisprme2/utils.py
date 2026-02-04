@@ -106,6 +106,10 @@ FAI = "fai"
 # off-targets length
 OFFTARGETLEN = 30
 
+# define VCF extensions
+# vcf extensions
+VCFEXTENSIONS = {"vcf", "vcf.gz", "bcf", "bcf.gz"}
+
 # ==============================================================================
 #
 # UTILS MODULE FUNCTIONS

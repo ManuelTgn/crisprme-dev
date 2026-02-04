@@ -1,9 +1,15 @@
 // modules used by the main function
-mod scan;
+mod scanner;
 mod pam; 
 mod iupac;
 mod target;
 mod threadpool;
+mod batcher;
+
+
+mod pipeline;
+
+use crate::batcher::{TargetBatcher, FeedStatus, BatcherStats};
 
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
@@ -43,7 +49,7 @@ pub fn extract_targets_rs(
         .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid PAM sequence: {e}")))?;
 
     // Execute the core parallel scanning logic and return the results
-    scan::scan_targets(sequence, &pat, size, right, threads)
+    scanner::scan_targets(sequence, &pat, size, right, threads)
         .map_err(|e| PyErr::new::<PyValueError, _>(e))
 }
 
@@ -52,7 +58,11 @@ pub fn extract_targets_rs(
 #[pymodule]
 fn target_candidates_scanner_rs(_py: Python, m : &PyModule) -> PyResult<()> {
     // add the top-level function to the Python module
-    m.add_function(wrap_pyfunction!(extract_targets_rs, m)?)?;
+    // m.add_function(wrap_pyfunction!(extract_targets_rs, m)?)?;
+
+    m.add_class::<TargetBatcher>()?;
+    m.add_class::<FeedStatus>()?;
+    m.add_class::<BatcherStats>()?;
     
     Ok(())
 }

@@ -8,7 +8,7 @@ from .fasta import Fasta
 from .guide import Guide
 from .pam import PAM
 
-from .target_candidates_scanner_rs import extract_targets_rs
+from .target_candidates_scanner_rs import TargetBatcher
 
 from typing import List, Dict, Tuple
 from time import time
@@ -22,6 +22,9 @@ CHUNKSIZE = 10_000_000
 
 # define overlap size between chunks
 CHUNKOVERLAP = 29  # 30 - 1 (we extract 30-mers)
+
+# define batch hits
+BATCHITS = 1_000_000
 
 
 def _safe_fasta_contig(fasta: Fasta, contig: str, loggers: CrisprmeLoggers) -> str:
@@ -42,31 +45,46 @@ def _safe_fasta_contig(fasta: Fasta, contig: str, loggers: CrisprmeLoggers) -> s
 
 def extract_targets(
     fastas: Dict[str, Fasta],
+    contig_ids: Dict[str, int],
     pam: PAM,
     size: int,
     right: bool,
     threads: int,
     loggers: CrisprmeLoggers,
 ):
+    
+    batcher = TargetBatcher(pam.pam, size, right, threads, BATCHITS, 250_000, CHUNKOVERLAP)
+
     for contig, fasta in fastas.items():  # iterate over single fasta
         loggers.verboselog.debug(
             f"Scanning contig {contig} for targets (threads = {threads}, right = {right}, size = {size})"
         )
         start = time()  # trace scanner run time on current contig
+        contig_id = contig_ids[contig]  # retrieve contig id
         try:  # Fasta.contig normalizes "chr" prefix; dict key are already be normalized
             with fasta as f:
                 # ensure we fetch using a reference that exists in the opened handle
                 c = _safe_fasta_contig(fasta, contig, loggers)
                 sequence = f.fetch(c)  # fetch contig sequence
+                seqlen = len(sequence)
                 chunkedseq = sequence.chunk(CHUNKSIZE, CHUNKOVERLAP)
-                # preallocate target candidates lists
-                candidates_chunk: List[Tuple[List[int], List[int]]] = [None] * len(chunkedseq)  # type: ignore
-                for i, chunkseq in enumerate(chunkedseq):
-                    # extract targets in spwaning threads on each sequence chunk
-                    # go down to rust to optimize threads spawning
-                    candidates_chunk[i] = extract_targets_rs(
-                        chunkseq, pam.pam, size, right, threads
-                    )
+                for i, chunkseq in enumerate(chunkedseq):  # iterate over subchunks
+                    core_start = i * CHUNKSIZE  # compute chunk start (e.g. 0, 10M, etc.)
+                    core_len = min(CHUNKSIZE, seqlen - core_start)
+                    # initialize batcher data for subsequence
+                    chunk_start = 0 if i == 0 else core_start - CHUNKOVERLAP
+                    if len(chunkseq) < size:
+                        continue
+                    # pass subchunk to rust API batcher
+                    status = batcher.feed_chunk(contig_id, chunk_start, chunkseq, core_len)
+
+                    # TODO: remove after debugging
+                    if status.flushed:
+                        loggers.verboselog.debug(
+                            f"Batch flushed while scanning contig {contig} "
+                            f"chunk={i} chunk_start={chunk_start}"
+                        )
+
         except Exception as e:
             # raise to stop the pipeline
             loggers.errorlog.log_raise_exception(
@@ -78,20 +96,34 @@ def extract_targets(
             loggers.verboselog.debug(
                 f"Contig {contig} scanned in {time() - start:.2f}s"
             )
-        all_pos = []
-        all_strand = []
-        for pos, strand in candidates_chunk:
-            all_pos.extend(pos)
-            all_strand.extend(strand)
 
-        # candidates = flatten_list(candidates_chunk)
-        print(f"Number of candidates: {len(all_pos)}")
-        print(f"Pos: {(sys.getsizeof(all_pos) + sum(sys.getsizeof(e) for e in all_pos)) / (1024 ** 3)}")
-        print(f"strand: {(sys.getsizeof(all_strand) + sum(sys.getsizeof(e) for e in all_strand)) / (1024 ** 3)}")
+    # Flush tail at end of genome
+    tail = batcher.finalize()
+
+    # TODO: remove after debugging
+    loggers.verboselog.debug(
+        f"Final flush completed (hits={tail.hits_in_batch}, unique={tail.unique_windows})"
+    )
+
+
+        # all_pos = []
+        # all_strand = []
+        # for pos, strand in candidates_chunk:
+        #     all_pos.extend(pos)
+        #     all_strand.extend(strand)
+
+        # # candidates = flatten_list(candidates_chunk)
+        # print(f"Number of candidates: {len(all_pos)}")
+        # print(f"Pos: {(sys.getsizeof(all_pos) + sum(sys.getsizeof(e) for e in all_pos)) / (1024 ** 3)}")
+        # print(f"strand: {(sys.getsizeof(all_strand) + sum(sys.getsizeof(e) for e in all_strand)) / (1024 ** 3)}")
 
 
 def _compute_target_size(guide: Guide, pam: PAM, offset: int) -> int:
     return len(guide) + len(pam) + offset
+
+
+def _compute_contig_ids(contigs: List[str]) -> Dict[str, int]:
+    return {c: i for i, c in enumerate(contigs)}
 
 
 def scan_fasta_reference_genome(
@@ -107,8 +139,10 @@ def scan_fasta_reference_genome(
         "Follow reference genome-based off-targets extraction pipeline"
     )
     fastas = read_fasta_files(fasta_files, loggers)  # read input fasta files
+    contig_ids = _compute_contig_ids(list(fastas.keys()))  # compute contig ids
     # compute off-target size for extraction
     size = _compute_target_size(guide, pam, offset)  # offset is max(bdna, brna)
     loggers.verboselog.debug(f"Off-targets extraction size: {size}")
     # extract targets from reference genome fasta files
-    extract_targets(fastas, pam, size, right, threads, loggers)
+    extract_targets(fastas, contig_ids, pam, size, right, threads, loggers)
+    

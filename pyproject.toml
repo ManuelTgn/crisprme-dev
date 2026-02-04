@@ -46,7 +46,7 @@ docs = [
 ]
 
 [project.scripts]
-crisprme2 = "src.__main__:main"
+crisprme2 = "crisprme2.__main__:main"
 
 [project.urls]
 Homepage = "https://github.com/ManuelTgn/CRISPRme2"

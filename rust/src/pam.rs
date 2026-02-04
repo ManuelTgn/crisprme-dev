@@ -1,6 +1,13 @@
 use crate::iupac::{Iupac};
 
 
+/// IUPAC bitmask for `N` (any base).
+///
+/// In this representation, `N` is `0b1111` (A|C|G|T). It is used both as a
+/// degenerate PAM code and as an ambiguity marker in the input sequence.
+/// In the scanner, k-mers containing `N` are skipped (see `scan_targets`).
+const N_MASK: u8 = 0b1111;
+
 /// Parsed representation of a Protospacer Adjacent Motif (PAM).
 ///
 /// This structure stores a PAM sequence encoded as IUPAC bitmasks, together
@@ -107,3 +114,41 @@ fn complement_bitmask(mask: u8) -> u8 {
     // combine the resulting complement bits
     complement_t | complement_g | complement_c | complement_a
 }
+
+/// Builds a sparse representation of a PAM pattern by retaining only *informative* positions.
+///
+/// In IUPAC encoding, the mask `0b1111` (`N`) matches any nucleotide and therefore
+/// does not constrain matching. This function filters out such positions and returns:
+///   - the indices of PAM positions that impose constraints, and
+///   - the corresponding IUPAC bitmasks.
+///
+/// This representation reduces per-k-mer matching work for partially-degenerate PAMs
+/// (e.g., `NNGRRT`, `GGNRG`) by checking only informative positions.
+///
+/// # Arguments
+/// * `pam` - Slice of IUPAC bitmasks representing the PAM sequence.
+///
+/// # Returns
+/// A tuple `(idx, mask)` where:
+/// * `idx[i]` is the position within the PAM of the `i`-th informative base.
+/// * `mask[i]` is the corresponding IUPAC bitmask at that position.
+///
+/// # Notes
+/// * If all PAM positions are unconstrained (`N`), both vectors will be empty.
+/// * If no positions are unconstrained, `idx.len() == pam.len()`.
+#[inline]
+pub fn build_sparse(pam: &[u8]) -> (Vec<usize>, Vec<u8>) {
+    // define vectors of indeexes and masks
+    let mut idx: Vec<usize> = Vec::new();
+    let mut mask: Vec<u8> = Vec::new();
+
+    // iterate over pam nts
+    for (i, &m) in pam.iter().enumerate() {
+        if m != N_MASK {
+            idx.push(i);
+            mask.push(m);
+        }
+    }
+    (idx, mask)
+}
+

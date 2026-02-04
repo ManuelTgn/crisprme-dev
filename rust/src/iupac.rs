@@ -171,3 +171,12 @@ pub fn iupac_to_char(bitmask: u8) -> char {
 pub fn matches_iupac(nt: u8, pattern: u8) -> bool {
     (nt & pattern) != 0
 }
+
+
+pub fn sequence_encoder(sequence: &str) -> Vec<u8> {
+    sequence
+        .as_bytes()
+        .iter()
+        .map(|&b| Iupac::from_ascii(b).unwrap().0)
+        .collect()
+}
