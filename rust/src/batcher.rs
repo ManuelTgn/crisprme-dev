@@ -8,6 +8,12 @@ use ahash::AHashMap;
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
 
+use std::fs::{File, OpenOptions};
+use std::io::{BufWriter, Write};
+use std::path::{Path, PathBuf};
+
+
+
 /// Key: owned window bytes (IUPAC bitmasks), length == size.
 type WindowKey = Box<[u8]>;
 
@@ -21,6 +27,28 @@ type Occ = u64;
 fn pack_occ(contig_id: u32, pos: u32, strand_bit: u8) -> Occ {
     ((contig_id as u64) << 33) | ((pos as u64) << 1) | ((strand_bit as u64) & 1)
 }
+
+#[derive(Debug)]
+pub struct WindowBatch {
+    /// Unique windows, each length == sequence_len (aka `size` used in scanning/aligning)
+    pub windows: Vec<WindowKey>,
+    /// Occurrences for each window (parallel to `windows`)
+    pub occs: Vec<Vec<Occ>>,
+    /// Total occurrences across all windows
+    pub total_hits: usize,
+}
+
+impl WindowBatch {
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.windows.len()
+    }
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.windows.is_empty()
+    }
+}
+
 
 
 #[pyclass]
@@ -301,6 +329,34 @@ impl TargetBatcher {
 
 
 impl TargetBatcher {
+    // Convert the current batch (unique windows + occurrences) into a `WindowBatch`
+    /// and clear internal state.
+    ///
+    /// Intended to be called by a future `flush_and_align()` method.
+    pub fn flush_to_batch(&mut self) -> WindowBatch {
+        // Take ownership of the map without reallocating it entry-by-entry
+        let map: AHashMap<WindowKey, Vec<Occ>> = std::mem::take(&mut self.map);
+        // avoid cloning keys/values in map
+
+        let unique = map.len();  // unique windows 
+        let mut windows: Vec<WindowKey> = Vec::with_capacity(unique);
+        let mut occs: Vec<Vec<Occ>> = Vec::with_capacity(unique);
+
+        let mut total_hits = 0usize;
+
+        for (k, v) in map {
+            total_hits += v.len();
+            windows.push(k);
+            occs.push(v);
+        }
+
+        // Reset counters/state
+        self.hits_in_batch = 0;
+        // self.map is already empty beacuse we used mem::take
+
+        WindowBatch { windows, occs, total_hits }  // return window batch
+    } 
+    
     #[inline(always)]
     fn should_flush(&self) -> bool {
         self.hits_in_batch >= self.batch_hits || self.map.len() >= self.max_unique

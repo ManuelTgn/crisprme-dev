@@ -2,12 +2,8 @@
 mod scanner;
 mod pam; 
 mod iupac;
-mod target;
 mod threadpool;
 mod batcher;
-
-
-mod pipeline;
 
 use crate::batcher::{TargetBatcher, FeedStatus, BatcherStats};
 

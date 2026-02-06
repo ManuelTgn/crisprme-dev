@@ -106,18 +106,6 @@ def extract_targets(
     )
 
 
-        # all_pos = []
-        # all_strand = []
-        # for pos, strand in candidates_chunk:
-        #     all_pos.extend(pos)
-        #     all_strand.extend(strand)
-
-        # # candidates = flatten_list(candidates_chunk)
-        # print(f"Number of candidates: {len(all_pos)}")
-        # print(f"Pos: {(sys.getsizeof(all_pos) + sum(sys.getsizeof(e) for e in all_pos)) / (1024 ** 3)}")
-        # print(f"strand: {(sys.getsizeof(all_strand) + sum(sys.getsizeof(e) for e in all_strand)) / (1024 ** 3)}")
-
-
 def _compute_target_size(guide: Guide, pam: PAM, offset: int) -> int:
     return len(guide) + len(pam) + offset
 
