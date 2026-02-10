@@ -18,8 +18,8 @@
 //! - `Guide` bytes match the CUDA side layout/encoding
 
 use crate::{
-    common::guide::Guide,
-    common::thresholds::Thresholds,
+    crispr::guide::Guide,
+    utils::thresholds::Thresholds,
     memory::batch::{AlignmentRingBatch, SequenceRingBatch},
 };
 

@@ -1,3 +1,3 @@
 pub mod cuda;
 pub mod aligner;
-pub mod score;
+pub mod scores;

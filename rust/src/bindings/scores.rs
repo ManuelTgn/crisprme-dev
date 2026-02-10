@@ -6,7 +6,7 @@
 //! - `strings` contains `n` strings, each of length `slen`, concatenated back-to-back.
 //! - `result` has length at least `n` (one score per string), unless the CUDA API specifies otherwise.
 
-use crate::Iupac;
+use crate::iupac::Iupac;
 
 
 #[cxx::bridge]

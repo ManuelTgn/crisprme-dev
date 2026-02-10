@@ -1,10 +1,11 @@
 // modules used by the main function
 pub mod bindings;
+pub mod crispr;
+pub mod utils;
+pub mod memory;
 
 mod scanner;
-mod pam; 
 mod iupac;
-mod guide;
 mod threadpool;
 mod batcher;
 
@@ -44,7 +45,7 @@ pub fn extract_targets_rs(
     right: bool,
     threads: usize,
 ) -> PyResult<(Vec<usize>, Vec<u8>)> {
-    let pat = pam::ParsedPAM::new(pam_seq)
+    let pat = crispr::pam::ParsedPAM::new(pam_seq)
         .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid PAM sequence: {e}")))?;
 
     // Execute the core parallel scanning logic and return the results
