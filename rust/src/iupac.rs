@@ -1,5 +1,4 @@
-use std::result::Result;  // explicitely import Result for clarity
-
+use bytemuck::{Pod, Zeroable};
 
 /// Lookup table mapping ASCII nucleotide characters to 4-bit IUPAC bitmasks.
 ///
@@ -73,82 +72,108 @@ const IUPAC_LOOKUP_TABLE: [u8; 256] = {
 /// For example:
 /// - R (A or G): `0b0101`
 /// - N (any base): `0b1111`
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct Iupac(pub u8);  // bit mask wrapper
+#[repr(transparent)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Iupac(u8);  // bit mask wrapper
+
+unsafe impl Zeroable for Iupac { }
+unsafe impl Pod for Iupac { }
+unsafe impl Send for Iupac { }
 
 impl Iupac {
-    /// Converts an ASCII nucleotide character into its IUPAC bitmask
-    /// representation.
-    ///
-    /// This function performs a constant-time lookup using a precomputed
-    /// table and supports both uppercase and lowercase characters.
-    ///
-    /// # Arguments
-    /// * `nt` - ASCII byte representing a nucleotide or IUPAC ambiguity code
-    ///
-    /// # Returns
-    /// * `Ok(Iupac)` if the character is a valid IUPAC code
-    /// * `Err(String)` if the character is invalid or unrecognized
-    ///
-    /// # Errors
-    /// Invalid characters map to a sentinel value (`0b0000`) and produce
-    /// a descriptive error message.
-    pub fn from_ascii(nt: u8) -> Result<Self, String> {
-        // Direct table lookup. This is the fastest possible conversion.
-        let code = IUPAC_LOOKUP_TABLE[nt as usize];
-        
-        // Check if the lookup resulted in the sentinel value (0b0000)
-        // which we defined as an unknown character.
-        if code == 0b0000 {
-            return Err(format!(
-                "Unknown nucleotide: '{}' (ASCII: {}). Valid IUPAC codes are: A, C, G, T, N, and ambiguity codes.",
-                nt as char, nt
-            ));
-        }
-
-        Ok(Iupac(code))
+    #[inline(always)]
+    pub const fn new(mask: u8) -> Self {
+        Self(mask)
     }
-}
 
+    #[inline(always)]
+    pub const fn as_u8(self) -> u8 {
+        self.0
+    }
 
-/// Converts an IUPAC bitmask into its corresponding single-character code.
-///
-/// This is the inverse operation of `Iupac::from_ascii` and is primarily
-/// intended for debugging, logging, and human-readable output.
-///
-/// # Arguments
-/// * `bitmask` - 4-bit IUPAC nucleotide mask
-///
-/// # Returns
-/// * ASCII character representing the IUPAC code
-/// * `'?'` for unknown or invalid bitmasks
-pub fn iupac_to_char(bitmask: u8) -> char {
-    match bitmask {
-        // standard bases
-        0b0001 => 'A',
-        0b0010 => 'C',
-        0b0100 => 'G',
-        0b1000 => 'T',
+    #[inline(always)]
+    pub fn try_from_ascii(value: u8) -> Option<Self> {
+        let code = IUPAC_LOOKUP_TABLE[value as usize];
+        if code == 0 { None } else { Some(Self(code)) }
+    }
 
-        // two-base ambiguities
-        0b0101 => 'R', 
-        0b1010 => 'Y', 
-        0b0110 => 'S', 
-        0b1001 => 'W', 
-        0b1100 => 'K', 
-        0b0011 => 'M', 
+    #[inline(always)]
+    pub fn from_ascii_lossy(value: u8) -> Self {
+        Self::try_from_ascii(value).unwrap_or_else(|| Self(0b1111))
+    }
 
-        // three-base ambiguities
-        0b1110 => 'B', 
-        0b1101 => 'D', 
-        0b1011 => 'H', 
-        0b0111 => 'V', 
+    #[inline(always)]
+    pub fn fropm_ascii_strict(value: u8) -> Self {
+        Self::try_from_ascii(value).expect("invalid IUPAC ASCII character")
+    }
 
-        // any base
-        0b1111 => 'N',  // never match it
+    #[inline(always)]
+    pub fn complement(self) -> Self {
+        let mut code = 0;
+        if self.0 & 0b0001 != 0 { code |= 0b1000; }  // A -> T
+        if self.0 & 0b0010 != 0 { code |= 0b0100; }  // C -> G 
+        if self.0 & 0b1000 != 0 { code |= 0b0010; }  // G -> C
+        if self.0 & 0b1000 != 0 { code |= 0b0001; }  // T -> A 
+        Self(code)
+    }
 
-        // safety fallback for non-IUPAC or zero masks
-        _ => '?',
+    #[inline(always)]
+    pub fn to_ascii(self) -> u8 {
+       match self.0 {
+
+            0b0001 => b'A',
+            0b0010 => b'C',
+            0b0100 => b'G',
+            0b1000 => b'T',
+
+            0b0101 => b'R',
+            0b1010 => b'Y',
+            0b0110 => b'S',
+            0b1001 => b'W',
+            0b1100 => b'K',
+            0b0011 => b'M',
+            
+            0b1110 => b'B',
+            0b1101 => b'D',
+            0b1011 => b'H',
+            0b0111 => b'V',
+            
+            0b1111 => b'N',
+            _ => b'?',  // invalid / unknown code
+        }
+    }
+
+    #[inline(always)]
+    pub fn from_utf8_lossy(value: char) -> Self {
+        Self::from_ascii_lossy(value as u8)
+    }
+
+    #[inline(always)]
+    pub fn to_utf8(self) -> char {
+        self.to_ascii() as char
+    }
+
+    #[inline(always)]
+    pub fn matches(self, other: Self) -> bool {
+        (self.0 & other.0) != 0
+    }
+
+    /// Returns true if exactly one base (A/C/G/T).
+    #[inline(always)]
+    pub fn is_pure(self) -> bool {
+        self.0.count_ones() == 1
+    }
+
+    /// Returns true if this is `N` (wildcard).
+    #[inline(always)]
+    pub fn is_wildcard(self) -> bool {
+        self.0 == 0b1111
+    }
+
+    /// Number of possible bases represented by this code (1..4).
+    #[inline(always)]
+    pub fn mutation_score(self) -> u32 {
+        self.0.count_ones()
     }
 }
 
@@ -177,6 +202,14 @@ pub fn sequence_encoder(sequence: &str) -> Vec<u8> {
     sequence
         .as_bytes()
         .iter()
-        .map(|&b| Iupac::from_ascii(b).unwrap().0)
+        .map(|&b| Iupac::from_ascii_lossy(b).as_u8())
         .collect()
+}
+
+pub fn sequence_encoder_strict(sequence: &str) -> Option<Vec<u8>> {
+    let mut out = Vec::with_capacity(sequence.len());
+    for &b in sequence.as_bytes() {
+        out.push(Iupac::try_from_ascii(b)?.as_u8());
+    }
+    Some(out)
 }

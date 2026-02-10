@@ -1,4 +1,4 @@
-use crate::iupac::{Iupac};
+use crate::iupac::Iupac;
 
 
 /// IUPAC bitmask for `N` (any base).
@@ -7,6 +7,24 @@ use crate::iupac::{Iupac};
 /// degenerate PAM code and as an ambiguity marker in the input sequence.
 /// In the scanner, k-mers containing `N` are skipped (see `scan_targets`).
 const N_MASK: u8 = 0b1111;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParsedPAMError {
+    pub position: usize,
+    pub byte: u8,
+}
+
+impl std::fmt::Display for ParsedPAMError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Invalid PAM character '{}' (ASCII {}) at position {}",
+            self.byte as char, self.byte, self.position
+        )
+    }    
+}
+
+impl std::error::Error for ParsedPAMError { } 
 
 /// Parsed representation of a Protospacer Adjacent Motif (PAM).
 ///
@@ -42,45 +60,28 @@ pub struct ParsedPAM {
 
 
 impl ParsedPAM{
-    /// Parses an ASCII PAM string into its IUPAC bitmask representation.
-    ///
-    /// This function converts each nucleotide character into a 4-bit IUPAC
-    /// mask, computes the reverse complement at the bitmask level, and
-    /// determines whether the PAM is fully degenerate (`NNN...`).
-    ///
-    /// # Arguments
-    /// * `pam` - PAM sequence as an ASCII string (e.g., `"NGG"`, `"NNGRRT"`).
-    ///
-    /// # Returns
-    /// * `Ok(ParsedPAM)` on successful parsing
-    /// * `Err(String)` if the PAM contains an invalid IUPAC character
-    ///
-    /// # Notes
-    /// * Parsing is case-insensitive.
-    /// * Reverse complementation is performed using bitwise operations rather
-    ///   than character-level transformations for efficiency.
-    pub fn new(pam: &str) -> Result<Self, String> {
+    pub fn new(pam: &str) -> Result<Self, ParsedPAMError> {
         // convert each ASCII nucleotide to its IUPAC bitmask.
-        let bytes: Result<Vec<u8>, String> = pam.as_bytes()
+        let mut bytes = Vec::with_capacity(pam.len()); 
+        
+        for (i, &b) in pam.as_bytes().iter().enumerate() {
+            let code = Iupac::try_from_ascii(b)
+                .ok_or(ParsedPAMError { position: i, byte: b })?
+                .as_u8();
+            bytes.push(code);
+        }
+
+        let unconstrained = bytes.iter().all(|&m| m == N_MASK);
+
+        // Reverse-complement via Iupac::complement (keeps one source of thruth)
+        let revcomp: Vec<u8> = bytes
             .iter()
-            .map(|&b| Iupac::from_ascii(b).map(|iupac| iupac.0))
-            .collect();
-
-        // use the '?' operator to extract the Vec<u8> or return the error String immediately
-        let bytes: Vec<u8> = bytes?;
-
-        // create reverse complement using bit masks: reverse order and complement each mask
-        let revcomp: Vec<u8> = bytes.iter()
             .rev()
-            .map(|&b| complement_bitmask(b))
+            .map(|&m| Iupac::new(m).complement().as_u8())
             .collect();
-
-        // assess whether the PAM sequence is degenerated (NNN)
-        let unconstrained = bytes.iter().all(|&b| b == 0b1111);
 
         Ok(Self { bytes, revcomp, unconstrained })
     }
-    
 }
 
 
@@ -139,8 +140,8 @@ fn complement_bitmask(mask: u8) -> u8 {
 #[inline]
 pub fn build_sparse(pam: &[u8]) -> (Vec<usize>, Vec<u8>) {
     // define vectors of indeexes and masks
-    let mut idx: Vec<usize> = Vec::new();
-    let mut mask: Vec<u8> = Vec::new();
+    let mut idx: Vec<usize> = Vec::with_capacity(pam.len());
+    let mut mask: Vec<u8> = Vec::with_capacity(pam.len());
 
     // iterate over pam nts
     for (i, &m) in pam.iter().enumerate() {

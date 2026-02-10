@@ -17,7 +17,6 @@ use tracing::{debug};
 mod ffi {
     unsafe extern "C++" {
         include!("crisprme-core/include/api.cuh");
-        
         unsafe fn malloc(bytes: u64) -> *mut u8;
         unsafe fn free(memory: *mut u8);
         unsafe fn memcpy_to_gpu(gpu: *mut u8, cpu: *const u8, bytes: u64);

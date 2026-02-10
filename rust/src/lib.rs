@@ -1,7 +1,10 @@
 // modules used by the main function
+pub mod bindings;
+
 mod scanner;
 mod pam; 
 mod iupac;
+mod guide;
 mod threadpool;
 mod batcher;
 

@@ -10,14 +10,25 @@ name = "target_candidates_scanner_rs"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.20", features = ["extension-module", "abi3-py38"] }
-rayon = "1.8"
-bincode = "1.3"
-crossbeam-channel = "0.5"
 ahash = "0.8"
-
-# Optional SIMD (consider enabling once stable)
-# packed_simd_2 = "0.3"
+bincode = "1.3"
+bump-scope = "1.3.0"
+bumpalo = { version = "3.17.0", features = ["collections"] }
+bytemuck = "1.23.2"
+crossbeam = { version = "0.8.4", features = ["crossbeam-channel"] }
+crossbeam-channel = "0.5"
+cxx = { version = "1.0.157", features = ["c++17"] }
+enum_dispatch = "0.3.13"
+indicatif = "0.18.0"
+memmap2 = "0.9.7"
+nix = "0.30.1"
+num-traits = "0.2.19"
+num_cpus = "1.17.0"
+pyo3 = { version = "0.20", features = ["extension-module", "abi3-py38"] }
+rand = { version = "0.9.1" }
+rayon = "1.10.0"
+thread_local = "1.1.9"
+tracing = "0.1.41"
 
 [build-dependencies]
 pyo3-build-config = "0.20"
@@ -38,6 +49,4 @@ opt-level = 0            # fast compilation during development
 incremental = true       # incremental builds for faster rebuilds
 
 [features]
-# Optional SIMD support
-# simd = ["packed_simd_2"]
 default = []

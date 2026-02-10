@@ -12,6 +12,8 @@ use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
+use crate::bindings;
+
 
 
 /// Key: owned window bytes (IUPAC bitmasks), length == size.
