@@ -16,6 +16,8 @@ setup(
     version="0.1.0",
     author="Manuel Tognon",
     author_email="manu.tognon@gmail.com",
+    maintainer="Manuel Tognon",
+    maintainer_email="manu.tognon@gmail.com",
     description=(
         "CRISPRme2: High-performance and scalable tool for variant- and "
         "haplotype-aware genome-wide off-target assessment in CRISPR-Cas systems"
@@ -23,12 +25,12 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/ManuelTgn/CRISPRme2",
-    packages=find_packages("python"),
-    package_dir={"": "python"},
+    packages=find_packages("src"),
+    package_dir={"": "src"},
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Science/Research",
-        "License :: OSI Approved :: AGPL-3 License",
+        "License :: OSI Approved :: GNU Affero General Public License v3",
         "Operating System :: OS Independent",
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.10",
@@ -51,8 +53,8 @@ setup(
     # ===== Rust extension =====
     rust_extensions=[
         RustExtension(
-            "crisprme2.target_candidates_scanner_rs",  # Python module path
-            "rust/Cargo.toml",            # path to your Rust crate
+            "crisprme2._crisprme2_native",      # Python module path
+            "native/rust/Cargo.toml",           # path to your Rust crate
             binding=Binding.PyO3,
             debug=False,
         ),

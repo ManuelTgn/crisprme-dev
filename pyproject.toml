@@ -17,12 +17,11 @@ authors = [
 maintainers = [
     {name = "Manuel Tognon", email = "manu.tognon@gmail.com"}
 ]
-license = {text = "AGPL-3"}
+license = "AGPL-3.0-or-later"
 keywords = ["CRISPR", "off-targets", "haplotype", "variant", "bioinformatics"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: GNU Affero General Public License v3",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
@@ -60,15 +59,12 @@ Changelog = "https://github.com/ManuelTgn/CRISPRme2/blob/main/CHANGELOG.md"
 # =============================================================================
 
 [tool.setuptools]
-package-dir = {"" = "python"}
+package-dir = {"" = "src"}
 include-package-data = true
 zip-safe = false
 
 [tool.setuptools.packages.find]
-where = ["python"]
-
-[tool.setuptools.package-data]
-"crisprme2" = ["scripts/*"]
+where = ["src"]
 
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}
@@ -131,7 +127,7 @@ exclude = [
 ]
 
 [tool.coverage.run]
-source = ["python/crisprme2"]
+source = ["src/crisprme2"]
 omit = [
     "*/tests/*",
     "*/test_*",

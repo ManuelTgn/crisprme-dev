@@ -235,6 +235,16 @@ impl AlignmentRingBatch {
             align.id = ids[align.id as usize]; 
         }
     }
+
+    #[inline(always)]
+    pub fn sync_gpu_to_cpu(&mut self, bytes: Option<usize>) {
+        self.lease.sync_gpu_to_cpu(bytes);
+    }
+
+    #[inline(always)]
+    pub fn sync_cpu_to_gpu(&mut self, bytes: Option<usize>) {
+        self.lease.sync_cpu_to_gpu(bytes);
+    }
 }
 
 impl RingAdapter for AlignmentRingBatch {

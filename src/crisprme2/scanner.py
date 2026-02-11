@@ -8,7 +8,7 @@ from .fasta import Fasta
 from .guide import Guide
 from .pam import PAM
 
-from .target_candidates_scanner_rs import TargetBatcher
+from ._crisprme2_native import TargetBatcher
 
 from typing import List, Dict, Tuple
 from time import time

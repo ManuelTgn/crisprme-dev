@@ -11,7 +11,7 @@
 //! - `len * size_of::<T>()` does not overflow and fits in `u64`
 
 use std::{mem, ptr::NonNull, time::Instant};
-use tracing::{debug};
+use tracing::debug;
 
 #[cxx::bridge(namespace = "cuda")]
 mod ffi {

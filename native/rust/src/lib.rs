@@ -1,12 +1,14 @@
 // modules used by the main function
-mod bindings;
+// pub mod bindings;
+
+
 mod crispr;
-mod utils;
-mod memory;
+pub mod utils;
+// mod memory;
 mod alignment;
 mod sequence;
 mod batching;
-mod storage;
+// mod storage;
 
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
@@ -55,7 +57,7 @@ pub fn extract_targets_rs(
 
 /// Defines the Python module structure and exposes Rust functions
 #[pymodule]
-fn target_candidates_scanner_rs(_py: Python, m : &PyModule) -> PyResult<()> {
+fn _crisprme2_native(_py: Python, m : &PyModule) -> PyResult<()> {
     // add the top-level function to the Python module
     // m.add_function(wrap_pyfunction!(extract_targets_rs, m)?)?;
 

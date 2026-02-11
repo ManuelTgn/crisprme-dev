@@ -103,7 +103,7 @@ impl Iupac {
     }
 
     #[inline(always)]
-    pub fn fropm_ascii_strict(value: u8) -> Self {
+    pub fn from_ascii_strict(value: u8) -> Self {
         Self::try_from_ascii(value).expect("invalid IUPAC ASCII character")
     }
 
