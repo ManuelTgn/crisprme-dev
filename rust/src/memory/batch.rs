@@ -6,10 +6,11 @@ use crate::{
     bindings,
     crispr::guide::Guide,
     iupac::Iupac,
+    alignment::alignment::Alignment,
 };
     
-//      common::{alignment::Alignment, guide::Guide, iupac::Iupac, sequence::Sequence}, storage::{reader::SequenceBatchDescr, writer::AlignmentBatchDescr}
-// };
+     common::{sequence::Sequence}, storage::{reader::SequenceBatchDescr, writer::AlignmentBatchDescr}
+};
 
 /// View into a batch of sequences in a ring buffer
 pub struct SequenceRingBatch {

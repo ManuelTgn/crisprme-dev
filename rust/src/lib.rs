@@ -3,6 +3,7 @@ pub mod bindings;
 pub mod crispr;
 pub mod utils;
 pub mod memory;
+pub mod alignment;
 
 mod scanner;
 mod iupac;
