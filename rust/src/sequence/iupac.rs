@@ -144,9 +144,14 @@ impl Iupac {
     }
 
     #[inline(always)]
-    pub fn from_utf8_lossy(value: char) -> Self {
+    fn from_utf8_lossy(value: char) -> Self {
         Self::from_ascii_lossy(value as u8)
     }
+
+    #[inline(always)]
+    pub fn from_utf8(value: char) -> Self {
+        Self::from_utf8_lossy(value)
+    } 
 
     #[inline(always)]
     pub fn to_utf8(self) -> char {

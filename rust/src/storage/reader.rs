@@ -2,11 +2,11 @@ use std::io::Read;
 use std::os::unix::fs::FileExt;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::{fs::File, path::Path}; // Unix only
+use std::fs::File;
 
-use crate::common::iupac::Iupac;
-use crate::memory::arena::{transmute_box, ArenaBox, Memory};
-use crate::memory::batch::{AlignmentRingBatch, SequenceRingBatch};
+use crate::sequence::iupac::Iupac;
+use crate::memory::arena::{ArenaBox, Memory};
+use crate::memory::batch::SequenceRingBatch;
 
 /// Iterate over all ids arrays present in the binary file
 pub struct BinaryPositionReader<'mem, R: Read> {

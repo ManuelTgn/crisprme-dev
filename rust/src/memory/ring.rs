@@ -1,8 +1,5 @@
 use crossbeam::channel::SendError;
-use std::{
-    io::Read,
-    ops::{Deref, DerefMut},
-};
+use std::ops::{Deref, DerefMut};
 use tracing::{error, trace, warn};
 
 use crate::bindings;
@@ -41,7 +38,7 @@ impl<T> RingSlot<T> {
     /// # Panics
     /// Panics if no GPU memory has been allocated for this slot.
     pub fn gpu_ptr(&self) -> *const T {
-        self.storage_gpu.as_ref().unwrap().ptr
+        self.storage_gpu.as_ref().unwrap().as_ptr() as *const T
     }
 
     /// Returns a mutable raw pointer to the GPU buffer, marking it as dirty.
@@ -50,7 +47,7 @@ impl<T> RingSlot<T> {
     /// Panics if no GPU memory has been allocated for this slot.
     pub fn gpu_ptr_mut(&mut self) -> *mut T {
         self.gpu_dirty = true;
-        self.storage_gpu.as_mut().unwrap().ptr
+        self.storage_gpu.as_mut().unwrap().as_ptr()
     }
 
     /// Copy CPU buffer contents into GPU memory.
@@ -62,11 +59,13 @@ impl<T> RingSlot<T> {
         if self.cpu_dirty {
             if let Some(gpu) = &self.storage_gpu {
                 trace!("buffer with dirty CPU memory, synchronizing");
-                bindings::cuda::memcpy_to_gpu::<T>(
-                    self.storage_cpu.as_ptr(),
-                    gpu.ptr,
-                    bytes.unwrap_or(self.capacity()),
-                );
+                unsafe{
+                    bindings::cuda::memcpy_to_gpu::<T>(
+                        self.storage_cpu.as_ptr(),
+                        gpu.as_ptr(),
+                        bytes.unwrap_or(self.capacity()),
+                    );
+                }
                 self.cpu_dirty = false;
             }
         }
@@ -81,11 +80,13 @@ impl<T> RingSlot<T> {
         if self.gpu_dirty {
             if let Some(gpu) = &self.storage_gpu {
                 trace!("buffer with dirty GPU memory, synchronizing");
-                bindings::cuda::memcpy_to_cpu::<T>(
-                    self.storage_cpu.as_mut_ptr(),
-                    gpu.ptr,
-                    bytes.unwrap_or(self.capacity()),
-                );
+                unsafe {
+                    bindings::cuda::memcpy_to_cpu::<T>(
+                        self.storage_cpu.as_mut_ptr(),
+                        gpu.as_ptr() as *const T,
+                        bytes.unwrap_or(self.capacity()),
+                    );
+                }
                 self.gpu_dirty = false;
             }
         }

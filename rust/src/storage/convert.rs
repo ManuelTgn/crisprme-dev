@@ -1,10 +1,8 @@
-use std::{
-    fs::File,
-    io::{BufRead, BufReader, BufWriter, Read, Write},
-    path::{Path, PathBuf},
-};
+use std::fs::File;
+use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::path::Path;
 
-use crate::{common::{iupac::Iupac, sequence::Sequence}, memory::arena::Memory};
+use crate::sequence::iupac::Iupac;
 
 /// Read a text genome file and convert it to a packed binary file
 pub fn binary_block_pack_soa<P: AsRef<Path>>(input: P, output: P, seq_len: usize) {

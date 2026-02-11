@@ -1,2 +1,2 @@
 pub mod alignment;
-mod cigarx;
+pub mod cigarx;

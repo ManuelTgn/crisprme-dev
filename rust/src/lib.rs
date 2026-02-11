@@ -1,20 +1,18 @@
 // modules used by the main function
-pub mod bindings;
-pub mod crispr;
-pub mod utils;
-pub mod memory;
-pub mod alignment;
-
-mod scanner;
-mod iupac;
-mod threadpool;
-mod batcher;
-
-use crate::batcher::{TargetBatcher, FeedStatus, BatcherStats};
+mod bindings;
+mod crispr;
+mod utils;
+mod memory;
+mod alignment;
+mod sequence;
+mod batching;
+mod storage;
 
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
 use pyo3::PyResult;
+
+use crate::batching::batcher::{TargetBatcher, FeedStatus, BatcherStats};
 
 
 /// Finds all potential target candidates (CRISPR gRNAs) within a given sequence.
@@ -50,7 +48,7 @@ pub fn extract_targets_rs(
         .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid PAM sequence: {e}")))?;
 
     // Execute the core parallel scanning logic and return the results
-    scanner::scan_targets(sequence, &pat, size, right, threads)
+    sequence::scanner::scan_targets(sequence, &pat, size, right, threads)
         .map_err(|e| PyErr::new::<PyValueError, _>(e))
 }
 

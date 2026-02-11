@@ -1,4 +1,4 @@
-use crate::iupac::Iupac;
+use crate::sequence::iupac::Iupac;
 
 /// A CRISPR guide sequence encoded as IUPAC 4-bit masks.
 ///
@@ -31,7 +31,7 @@ use crate::iupac::Iupac;
 pub struct Guide(Vec<Iupac>);
 
 impl Guide {
-    // Construct a guide from already-encoded IUAPC codes
+    // Construct a guide from already-encoded IUPAC codes
     #[inline]
     pub fn from_iupac(vec: Vec<Iupac>) -> Self {
         Self(vec)

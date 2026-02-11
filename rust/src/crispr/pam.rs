@@ -1,4 +1,4 @@
-use crate::iupac::Iupac;
+use crate::sequence::iupac::Iupac;
 
 
 /// IUPAC bitmask for `N` (any base).

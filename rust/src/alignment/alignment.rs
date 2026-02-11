@@ -27,8 +27,6 @@
 //!   in this state representation.
 //!
 
-use bytemuck::{Pod, Zeroable};
-
 use super::cigarx::{Cigarx, CigarxOp};
 
 use crate::utils::thresholds::Thresholds;

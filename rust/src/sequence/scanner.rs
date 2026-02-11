@@ -1,10 +1,9 @@
-use crate::crispr::pam::{ParsedPAM, build_sparse};
-use crate::iupac::{matches_iupac, sequence_encoder};
-use crate::threadpool;
-
 use rayon::prelude::*;
 use std::result::Result; 
 
+use crate::crispr::pam::{ParsedPAM, build_sparse};
+use crate::sequence::iupac::{matches_iupac, sequence_encoder};
+use crate::utils::threadpool;
 
 /// IUPAC bitmask for `N` (any base).
 ///

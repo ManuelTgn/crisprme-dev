@@ -2,15 +2,13 @@ use std::ops::Deref;
 
 use super::ring::{RingAdapter, RingSlotLease};
 
-use crate::{
-    bindings,
-    crispr::guide::Guide,
-    iupac::Iupac,
-    alignment::alignment::Alignment,
-};
-    
-     common::{sequence::Sequence}, storage::{reader::SequenceBatchDescr, writer::AlignmentBatchDescr}
-};
+use crate::bindings;
+use crate::crispr::guide::Guide;
+use crate::sequence::iupac::Iupac;
+use crate::sequence::sequence::Sequence;
+use crate::alignment::alignment::Alignment;
+use crate::storage::reader::SequenceBatchDescr;
+use crate::storage::writer::AlignmentBatchDescr;
 
 /// View into a batch of sequences in a ring buffer
 pub struct SequenceRingBatch {
@@ -116,8 +114,8 @@ impl SequenceRingBatch {
     /// Calculate the edit-distance score between all sequences and the guide
     pub fn edit_distace_scores(&mut self, guide: &Guide, result: &mut [u8]) {
         // TODO: This allocates on gpu every time
-        bindings::score::scores_with_arena(
-            guide,
+        bindings::scores::scores_into(
+            guide.as_slice(),
             self.iupac(),
             result,
             self.descriptor.sequence_len,

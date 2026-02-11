@@ -1,11 +1,10 @@
-use std::{
-    fs::{File, OpenOptions},
-    os::unix::fs::FileExt,
-    path::{Path, PathBuf},
-    sync::{atomic::AtomicUsize, Arc},
-};
+use std::fs::{File, OpenOptions};
+use std::os::unix::fs::FileExt;
+use std::path::Path;
+use std::sync::atomic::AtomicUsize;
+use std::sync::Arc;
 
-use crate::common::alignment::Alignment;
+use crate::alignment::alignment::Alignment;
 
 #[derive(Clone, Debug, Default)]
 pub struct AlignmentBatchDescr {

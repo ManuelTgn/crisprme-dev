@@ -28,11 +28,11 @@ mod ffi {
 /// Allocate `len` elements of `T` on the GPU
 /// 
 /// Returns a non-null pointer on success, or None if allocation failed.
-pub fn malloc<T>(len: usize) -> *mut T {
+pub fn malloc<T>(len: usize) -> Option<NonNull<T>> {
     let bytes = mem::size_of::<T>()
         .checked_mul(len)?;
-    let ptr = unsafe { ffi::malloc(bytes as u64) };
-    ptr as *mut T
+    let ptr = unsafe { ffi::malloc(bytes as u64) } as *mut T;
+    NonNull::new(ptr)
 }
 
 

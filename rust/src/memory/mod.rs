@@ -1,7 +1,7 @@
 use crate::bindings;
 use arena::Memory;
 use bump_scope::NoDrop;
-use std::ops::{Deref, DerefMut};
+use std::{ops::{Deref, DerefMut}, ptr::NonNull};
 use tracing::trace;
 
 pub mod arena;
@@ -12,7 +12,7 @@ pub type CpuBuffer<'s, T> = &'s mut [T];
 
 /// Wrapper for gpu data, this is safe to send between threads
 pub struct GpuPtr<T> {
-    pub ptr: *mut T,
+    pub ptr: NonNull<T>,
 }
 
 unsafe impl<T: Send> Send for GpuPtr<T> {}
@@ -21,17 +21,22 @@ unsafe impl<T: Sync> Sync for GpuPtr<T> {}
 impl<T> GpuPtr<T> {
     /// Allocate buffer on the GPU
     pub fn alloc(len: usize) -> Self {
+        let ptr = bindings::cuda::malloc::<T>(len)
+            .expect("cuda malloc failed");
         trace!("allocated gpu buffer ({len} elements)");
-        Self {
-            ptr: bindings::cuda::malloc::<T>(len),
-        }
+        Self { ptr }
+    }
+
+    #[inline]
+    pub fn as_ptr(&self) -> *mut T {
+        self.ptr.as_ptr()
     }
 }
 
 /// Free the memory on the GPU
 impl<T> Drop for GpuPtr<T> {
     fn drop(&mut self) {
-        bindings::cuda::free::<T>(self.ptr);
+        unsafe { bindings::cuda::free::<T>(self.ptr) };
         trace!("dropped gpu buffer");
     }
 }
@@ -84,7 +89,7 @@ impl<'s, T: 'static> HybridBuffer<'s, T> {
         match &self.gpu {
             Some(gpu) => {
                 self.gpu_dirty = true;
-                Some(gpu.ptr)
+                Some(gpu.as_ptr())
             }
             None => None,
         }
@@ -95,7 +100,7 @@ impl<'s, T: 'static> HybridBuffer<'s, T> {
     /// # Safety
     /// The caller must ensure GPU memory is valid before dereferencing.
     pub fn gpu_ptr(&self) -> Option<*const T> {
-        self.gpu.as_ref().map(|e| e.ptr as *const T)
+        self.gpu.as_ref().map(|e| e.as_ptr() as *const T)
     }
 
     /// Synchronizes CPU data to GPU if the CPU is dirty.
@@ -104,7 +109,13 @@ impl<'s, T: 'static> HybridBuffer<'s, T> {
     pub fn sync_to_gpu(&mut self) {
         if self.cpu_dirty {
             if let Some(gpu) = &self.gpu {
-                bindings::cuda::memcpy_to_gpu::<T>(self.cpu.as_ptr(), gpu.ptr, self.capacity);
+                unsafe {
+                    bindings::cuda::memcpy_to_gpu::<T>(
+                        self.cpu.as_ptr(),  // *const T
+                        gpu.as_ptr(),  // *mut T
+                        self.capacity,
+                    );
+                }
             }
         }
     }
@@ -115,7 +126,13 @@ impl<'s, T: 'static> HybridBuffer<'s, T> {
     pub fn sync_to_cpu(&mut self) {
         if self.gpu_dirty {
             if let Some(gpu) = &self.gpu {
-                bindings::cuda::memcpy_to_cpu::<T>(self.cpu.as_mut_ptr(), gpu.ptr, self.capacity);
+                unsafe{
+                    bindings::cuda::memcpy_to_cpu(
+                        self.cpu.as_mut_ptr(),  // *mut T 
+                        gpu.as_ptr() as *const T,  // *const T
+                        self.capacity
+                    );
+                }
             }
         }
     }
