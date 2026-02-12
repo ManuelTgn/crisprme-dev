@@ -112,7 +112,7 @@ impl Iupac {
         let mut code = 0;
         if self.0 & 0b0001 != 0 { code |= 0b1000; }  // A -> T
         if self.0 & 0b0010 != 0 { code |= 0b0100; }  // C -> G 
-        if self.0 & 0b1000 != 0 { code |= 0b0010; }  // G -> C
+        if self.0 & 0b0100 != 0 { code |= 0b0010; }  // G -> C
         if self.0 & 0b1000 != 0 { code |= 0b0001; }  // T -> A 
         Self(code)
     }

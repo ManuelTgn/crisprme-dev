@@ -28,8 +28,7 @@
 //!
 
 use super::cigarx::{Cigarx, CigarxOp};
-
-use crate::utils::thresholds::Thresholds;
+use super::thresholds::Thresholds;
 
 /// The next operation to try when expanding an [`AlignmentState`].
 ///

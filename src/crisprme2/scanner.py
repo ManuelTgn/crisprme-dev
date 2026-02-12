@@ -46,6 +46,7 @@ def _safe_fasta_contig(fasta: Fasta, contig: str, loggers: CrisprmeLoggers) -> s
 def extract_targets(
     fastas: Dict[str, Fasta],
     contig_ids: Dict[str, int],
+    guide: Guide,
     pam: PAM,
     size: int,
     right: bool,
@@ -54,6 +55,10 @@ def extract_targets(
 ):
     
     batcher = TargetBatcher(pam.pam, size, right, threads, BATCHITS, 250_000, CHUNKOVERLAP)
+    
+    otfname = "results/test-run/test.txt"
+
+    print(contig_ids)
 
     for contig, fasta in fastas.items():  # iterate over single fasta
         loggers.verboselog.debug(
@@ -77,14 +82,21 @@ def extract_targets(
                         continue
                     # pass subchunk to rust API batcher
                     status = batcher.feed_chunk(contig_id, chunk_start, chunkseq, core_len)
+                    st = batcher.stats()
+                    print("hits_in_batch", st.hits_in_batch, "unique", st.unique_windows)
 
                     # TODO: remove after debugging
                     if status.flushed:
-                        loggers.verboselog.debug(
-                            f"Batch flushed while scanning contig {contig} "
-                            f"chunk={i} chunk_start={chunk_start}"
-                        )
-
+                        batcher.flush_and_align_placeholder_tsv(guide.sequence, 4, otfname)
+                        # windows_written, rows_written = batcher.flush_and_align_placeholder_tsv(
+                        #     guide.sequence,
+                        #     4,                 # max_mm
+                        #     str(otfname),       # PathBuf/str ok
+                        # )
+                        # loggers.verboselog.debug(
+                        #     f"Flushed: windows={windows_written}, rows={rows_written}, "
+                        #     f"at contig={contig}, chunk={i}, chunk_start={chunk_start}"
+                        # )
         except Exception as e:
             # raise to stop the pipeline
             loggers.errorlog.log_raise_exception(
@@ -97,13 +109,19 @@ def extract_targets(
                 f"Contig {contig} scanned in {time() - start:.2f}s"
             )
 
-    # Flush tail at end of genome
-    tail = batcher.finalize()
+    # Final tail flush: you must explicitly flush remaining windows too
+    # windows_written, rows_written = batcher.flush_and_align_placeholder_tsv(
+    #     guide.sequence,
+    #     4,
+    #     str(otfname),
+    # )
+    batcher.flush_and_align_placeholder_tsv(guide.sequence, 4, otfname)
+    tail = batcher.finalize()  # clears internal state
 
-    # TODO: remove after debugging
-    loggers.verboselog.debug(
-        f"Final flush completed (hits={tail.hits_in_batch}, unique={tail.unique_windows})"
-    )
+    # loggers.verboselog.debug(
+    #     f"Final flush: windows={windows_written}, rows={rows_written}; "
+    #     f"tail stats: hits={tail.hits_in_batch}, unique={tail.unique_windows}"
+    # )
 
 
 def _compute_target_size(guide: Guide, pam: PAM, offset: int) -> int:
@@ -132,5 +150,5 @@ def scan_fasta_reference_genome(
     size = _compute_target_size(guide, pam, offset)  # offset is max(bdna, brna)
     loggers.verboselog.debug(f"Off-targets extraction size: {size}")
     # extract targets from reference genome fasta files
-    extract_targets(fastas, contig_ids, pam, size, right, threads, loggers)
+    extract_targets(fastas, contig_ids, guide, pam, size, right, threads, loggers)
     
