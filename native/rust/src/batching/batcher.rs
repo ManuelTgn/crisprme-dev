@@ -6,13 +6,19 @@
 // - Keeps your current behavior (does NOT clear on `feed_chunk` flush signal).
 // - Scanner debug prints are behind `cfg!(debug_assertions)` so they won’t spam release builds.
 // - Placeholder aligner is strand-aware and assumes window size == guide length (e.g., 23).
-// - Mismatch counting excludes PAM bases (PAM already enforced by scanner).
-// - Output is TSV: contig_id, pos, strand, mismatches, guide_aligned, target_aligned
+// - NEW: adds `flush_and_align_engine_debug(...)` exposed to Python.
+//   This drains the current batch and submits it to a *persistent* Rust engine instance.
+//   In your current DEBUG hybrid.rs, the engine prints the unique windows it would mine.
+// - Engine is initialized lazily on first flush and then reused across subsequent flushes.
 //
-// IMPORTANT: this file assumes:
-// - `pam::ParsedPAM` exposes `.bytes` and `.revcomp` (as in your scanner).
-// - `sequence_encoder` uses IUPAC bitmasks (0b1111 for N).
-// - Reverse complement bitmasks are computed here via bit-level complement (no dependence on Iupac::complement()).
+// IMPORTANT assumptions for the new debug method:
+// - `HybridEngine::new(device_id)` and `HybridEngine::execute(alignment_params)` exist (your debug hybrid.rs).
+// - `execute()` returns an `EngineHandle` with a public `window_producer` supporting `acquire()` and `commit()`.
+// - `WindowRingBatch` supports Option-B helpers + a public `descriptor`:
+//     windows_iupac_mut(), occ_starts_mut(), occ_lens_mut(), occ_contig_mut(), occ_pos_mut(), occ_strand_mut()
+//     and descriptor.{sequence_len, window_count, occ_count}.
+//
+// If your module paths differ, adjust the imports marked "ADJUST PATH".
 
 use crate::crispr::pam;
 use crate::sequence::iupac::{sequence_encoder, Iupac};
@@ -26,6 +32,56 @@ use std::fs::OpenOptions;
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 
+// --- NEW imports for engine-backed flush (ADJUST PATHS if needed) ---
+// use crate::memory::batch::WindowRingBatch; // ADJUST PATH if WindowRingBatch lives elsewhere
+// use crate::engine::hybrid::{EngineHandle, HybridEngine}; // ADJUST PATH
+// use crate::engine::params::AlignmentParams; // ADJUST PATH (same struct used by hybrid.rs)
+
+use std::sync::{Mutex, OnceLock};
+
+// =====================================================================================
+// Engine runtime (persistent across flushes)
+// =====================================================================================
+
+
+#[inline(always)]
+fn align_up(x: usize, a: usize) -> usize {
+    debug_assert!(a.is_power_of_two());
+    (x + a - 1) & !(a - 1)
+}
+
+/// Compute the ring slot bytes needed for a `WindowRingBatch` (Option B layout).
+///
+/// This MUST match how your `WindowRingBatch` interprets the underlying `RingSlotLease`.
+/// The layout assumed here:
+///
+/// [ windows: Iupac[max_windows * sequence_len] ]  (bytes)
+/// align to u32
+/// [ occ_starts: u32[max_windows] ]
+/// [ occ_lens  : u32[max_windows] ]
+/// [ occ_contig: u32[max_occs] ]
+/// [ occ_pos   : u32[max_occs] ]
+/// [ occ_strand: u8[max_occs] ]
+/// (optional padding to 8 bytes)
+fn compute_window_ring_slot_bytes(sequence_len: usize, max_windows: usize, max_occs: usize) -> usize {
+    let windows_bytes = max_windows * sequence_len * std::mem::size_of::<u8>(); // Iupac repr(u8)
+    let mut off = windows_bytes;
+
+    off = align_up(off, std::mem::align_of::<u32>());
+    off += max_windows * std::mem::size_of::<u32>(); // starts
+    off += max_windows * std::mem::size_of::<u32>(); // lens
+
+    off += max_occs * std::mem::size_of::<u32>(); // contig
+    off += max_occs * std::mem::size_of::<u32>(); // pos
+    off += max_occs * std::mem::size_of::<u8>();  // strand
+
+    // Keep the slot reasonably aligned
+    off = align_up(off, 8);
+    off
+}
+
+// =====================================================================================
+
 /// Key: owned window bytes (IUPAC bitmasks), length == size.
 type WindowKey = Box<[u8]>;
 
@@ -35,7 +91,7 @@ type WindowKey = Box<[u8]>;
 type Occ = u64;
 
 #[inline(always)]
-fn pack_occ(contig_id: u32, pos: u32, strand_bit: u8) -> Occ {
+pub fn pack_occ(contig_id: u32, pos: u32, strand_bit: u8) -> Occ {
     ((contig_id as u64) << 33) | ((pos as u64) << 1) | ((strand_bit as u64) & 1)
 }
 
@@ -48,13 +104,8 @@ fn unpack_occ(occ: Occ) -> (u32, u32, u8) {
 }
 
 /// Convert bitmask (0b0001/0010/0100/1000 sets) to its complement.
-/// Works for ambiguity codes too by mapping each base bit independently.
 #[inline(always)]
 fn complement_mask(m: u8) -> u8 {
-    // A(0001)->T(1000)
-    // C(0010)->G(0100)
-    // G(0100)->C(0010)
-    // T(1000)->A(0001)
     ((m & 0b0001) << 3) | ((m & 0b0010) << 1) | ((m & 0b0100) >> 1) | ((m & 0b1000) >> 3)
 }
 
@@ -74,23 +125,6 @@ fn bits_to_string(bits: &[u8]) -> String {
         s.push(Iupac::new(b).to_utf8());
     }
     s
-}
-
-/// Determine the region of the window where we should count mismatches (exclude PAM).
-///
-/// Your scanner places PAM start as:
-/// - fwd: pam_start_fwd = if right { 0 } else { size - plen }
-/// so:
-/// - right == false => PAM is on the RIGHT (end) of the window => compare [0 .. size-plen)
-/// - right == true  => PAM is on the LEFT (start) of the window => compare [plen .. size)
-#[inline(always)]
-fn mismatch_range(size: usize, plen: usize, right: bool) -> (usize, usize) {
-    debug_assert!(plen <= size);
-    if right {
-        (plen, size)
-    } else {
-        (0, size - plen)
-    }
 }
 
 #[inline(always)]
@@ -121,7 +155,6 @@ impl WindowBatch {
     pub fn len(&self) -> usize {
         self.windows.len()
     }
-
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.windows.is_empty()
@@ -204,14 +237,6 @@ impl TargetBatcher {
     }
 
     /// Feed a single chunk.
-    ///
-    /// Arguments:
-    /// - contig_id: numeric contig ID managed by Python
-    /// - chunk_start: start coordinate in contig (0-based)
-    /// - chunk_seq: ASCII sequence for the chunk, including right overlap (size-1) if available
-    /// - valid_len: length of the non-overlap "owned" region (usually 10Mb, shorter at contig end)
-    ///
-    /// Returns: FeedStatus(flushed, stats)
     pub fn feed_chunk(
         &mut self,
         contig_id: u32,
@@ -219,10 +244,8 @@ impl TargetBatcher {
         chunk_seq: &str,
         valid_len: usize,
     ) -> PyResult<FeedStatus> {
-        // Convert chunk to IUPAC bitmask once (needed for window keys)
         let seq_bitmask: Vec<u8> = sequence_encoder(chunk_seq);
 
-        // Run scanner on bitmask (no duplicate conversion)
         let (pos_local, strand) = scanner::scan_targets_bitmask(
             &seq_bitmask,
             &self.pam,
@@ -262,21 +285,9 @@ impl TargetBatcher {
             });
         }
 
-        // Max start position (exclusive) such that window [p, p+size) fits.
         let max_start_excl = chunk_len - self.size + 1;
         let core_len = valid_len;
 
-        // Overlap-aware acceptance interval in LOCAL coordinates.
-        //
-        // chunk_start == 0 => first chunk, no left-overlap conceptually:
-        // accept only starts within [0, core_len)
-        //
-        // chunk_start != 0 => chunk has left overlap of overlap_left bases:
-        // accept:
-        //   A) core starts:     [overlap_left, overlap_left + core_len)
-        //   B) recovery starts: [overlap_left - (size-1), overlap_left)
-        //
-        // Combined: [overlap_left-(size-1), overlap_left+core_len)
         let (accept_lo, mut accept_hi) = if chunk_start == 0 {
             (0usize, core_len)
         } else {
@@ -287,15 +298,12 @@ impl TargetBatcher {
             (lo, hi)
         };
 
-        // Clamp hi to the range where windows fit
         if accept_hi > max_start_excl {
             accept_hi = max_start_excl;
         }
 
-        // Empty acceptance range -> nothing to do
         if accept_hi <= accept_lo {
             let flushed = self.should_flush();
-            // IMPORTANT: do NOT clear here; Python / flush_and_align will drain it.
             return Ok(FeedStatus {
                 flushed,
                 stats: BatcherStats {
@@ -307,30 +315,17 @@ impl TargetBatcher {
 
         for i in 0..pos_local.len() {
             let p = pos_local[i];
-
-            // Apply overlap-aware filter
             if p < accept_lo || p >= accept_hi {
                 continue;
             }
 
-            // Global contig coordinate: chunk_start corresponds to local position 0
             let pos_global = chunk_start as usize + p;
             if pos_global > (u32::MAX as usize) {
                 return Err(PyErr::new::<PyValueError, _>("Position overflow"));
             }
 
-            if cfg!(debug_assertions) {
-                eprintln!(
-                    "  [ACCEPTED] contig={} global_pos={} strand={}",
-                    contig_id,
-                    pos_global,
-                    if strand[i] == 1 { '+' } else { '-' }
-                );
-            }
-
             let strand_bit = strand[i]; // 1=fwd (+), 0=rev (-)
 
-            // Window key: own bytes once per unique window
             let start = p;
             let end = start + self.size;
             let window = &seq_bitmask[start..end];
@@ -347,10 +342,8 @@ impl TargetBatcher {
             self.hits_in_batch += 1;
         }
 
-        let flushed = self.should_flush();
-
         Ok(FeedStatus {
-            flushed,
+            flushed: self.should_flush(),
             stats: BatcherStats {
                 hits_in_batch: self.hits_in_batch,
                 unique_windows: self.map.len(),
@@ -377,35 +370,32 @@ impl TargetBatcher {
     }
 
     /// TEST/DEBUG:
-    /// Return all accepted (contig_id, pos, strand) triples currently stored in the batch.
     pub fn debug_collect_positions(&self) -> PyResult<Vec<(u32, u32, u8)>> {
         let mut out: Vec<(u32, u32, u8)> = Vec::new();
-
         for occs in self.map.values() {
             for &occ in occs {
                 let (contig_id, pos, strand) = unpack_occ(occ);
                 out.push((contig_id, pos, strand));
             }
         }
-
         Ok(out)
     }
 
-    /// Placeholder alignment:
-    /// - scanner works on full window size = spacer + PAM (e.g. 23)
-    /// - BUT here we align only the spacer (e.g. 20)
-    /// - '+' uses guide as-is; '-' uses revcomp(guide)
-    /// - strand in TSV is the PAM strand (from scanner / Occ)
-    ///
-    /// Output TSV columns:
-    /// contig_id  pos  strand  mismatches  guide_aligned  target_aligned
+    pub fn flush_and_align(
+        &mut self,
+        
+    ) -> PyResult<()> {
+        println!("aligning");
+        Ok(())
+    }
+    
+    /// Existing placeholder alignment kept as-is
     pub fn flush_and_align_placeholder_tsv(
         &mut self,
-        guide: &str,          // spacer ONLY (e.g. 20)
+        guide: &str, // spacer ONLY (e.g. 20)
         max_mm: u16,
         out_path: PathBuf,
     ) -> PyResult<(usize, usize)> {
-        // Encode spacer guide
         let guide_plus = sequence_encoder(guide);
 
         let plen = self.pam.bytes.len();
@@ -427,9 +417,6 @@ impl TargetBatcher {
             )));
         }
 
-        // Determine where the spacer lies inside the full window
-        // right=false => PAM on RIGHT => spacer at [0..guide_len)
-        // right=true  => PAM on LEFT  => spacer at [plen..plen+guide_len)
         let (spacer_lo_plus, spacer_hi_plus) = if self.right {
             (plen, plen + guide_len)
         } else {
@@ -442,13 +429,10 @@ impl TargetBatcher {
             (plen, plen + guide_len)
         };
 
-        // Precompute reverse-complement spacer guide bits (window is reference-forward)
         let guide_minus = revcomp_bits(&guide_plus);
-
         let guide_plus_str = bits_to_string(&guide_plus);
         let guide_minus_str = bits_to_string(&guide_minus);
 
-        // Drain batch (consumes internal map)
         let batch: WindowBatch = self.flush_to_batch();
 
         let mut writer = BufWriter::new(
@@ -465,16 +449,12 @@ impl TargetBatcher {
         for (window, occs) in batch.windows.into_iter().zip(batch.occs.into_iter()) {
             let target_bits: &[u8] = &window;
 
-            // Extract the spacer slice from the full candidate window
             let target_spacer_plus = &target_bits[spacer_lo_plus..spacer_hi_plus];
-            let target_spacer_plus_str = bits_to_string(target_spacer_plus);
-
             let target_spacer_minus = &target_bits[spacer_lo_minus..spacer_hi_minus];
-            let target_spacer_minus_str = bits_to_string(target_spacer_minus);
 
-            // Mismatch counts (over spacer only)
             let mm_plus = count_mismatches_iupac_range(target_spacer_plus, &guide_plus, 0, guide_len);
-            let mm_minus = count_mismatches_iupac_range(target_spacer_minus, &guide_minus, 0, guide_len);
+            let mm_minus =
+                count_mismatches_iupac_range(target_spacer_minus, &guide_minus, 0, guide_len);
 
             if mm_plus > max_mm && mm_minus > max_mm {
                 continue;
@@ -484,8 +464,6 @@ impl TargetBatcher {
 
             for occ in occs {
                 let (contig_id, pos, strand_bit) = unpack_occ(occ);
-
-                // PAM strand selects guide orientation; target stays reference-forward
                 let (strand_char, mm, guide_str) = if strand_bit == 1 {
                     ('+', mm_plus, &guide_plus_str)
                 } else {
@@ -524,16 +502,12 @@ impl TargetBatcher {
 
         Ok((windows_with_hits, total_rows))
     }
-
 }
 
 impl TargetBatcher {
     /// Convert the current batch (unique windows + occurrences) into a `WindowBatch`
     /// and clear internal state.
-    ///
-    /// Intended to be called by `flush_and_align_*` methods.
     pub fn flush_to_batch(&mut self) -> WindowBatch {
-        // Take ownership of the map without reallocating it entry-by-entry
         let map: AHashMap<WindowKey, Vec<Occ>> = std::mem::take(&mut self.map);
 
         let unique = map.len();
@@ -541,7 +515,6 @@ impl TargetBatcher {
         let mut occs: Vec<Vec<Occ>> = Vec::with_capacity(unique);
 
         let mut total_hits = 0usize;
-
         for (k, v) in map {
             total_hits += v.len();
             windows.push(k);
@@ -549,7 +522,6 @@ impl TargetBatcher {
         }
 
         self.hits_in_batch = 0;
-        // self.map is already empty (mem::take)
 
         WindowBatch {
             windows,

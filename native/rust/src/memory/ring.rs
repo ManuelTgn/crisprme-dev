@@ -2,7 +2,7 @@ use crossbeam::channel::SendError;
 use std::ops::{Deref, DerefMut};
 use tracing::{error, trace, warn};
 
-use crate::bindings;
+// use crate::bindings;
 
 use super::GpuPtr;
 
@@ -59,13 +59,13 @@ impl<T> RingSlot<T> {
         if self.cpu_dirty {
             if let Some(gpu) = &self.storage_gpu {
                 trace!("buffer with dirty CPU memory, synchronizing");
-                unsafe{
-                    bindings::cuda::memcpy_to_gpu::<T>(
-                        self.storage_cpu.as_ptr(),
-                        gpu.as_ptr(),
-                        bytes.unwrap_or(self.capacity()),
-                    );
-                }
+                // unsafe{
+                //     bindings::cuda::memcpy_to_gpu::<T>(
+                //         self.storage_cpu.as_ptr(),
+                //         gpu.as_ptr(),
+                //         bytes.unwrap_or(self.capacity()),
+                //     );
+                // }
                 self.cpu_dirty = false;
             }
         }
@@ -80,13 +80,13 @@ impl<T> RingSlot<T> {
         if self.gpu_dirty {
             if let Some(gpu) = &self.storage_gpu {
                 trace!("buffer with dirty GPU memory, synchronizing");
-                unsafe {
-                    bindings::cuda::memcpy_to_cpu::<T>(
-                        self.storage_cpu.as_mut_ptr(),
-                        gpu.as_ptr() as *const T,
-                        bytes.unwrap_or(self.capacity()),
-                    );
-                }
+                // unsafe {
+                //     bindings::cuda::memcpy_to_cpu::<T>(
+                //         self.storage_cpu.as_mut_ptr(),
+                //         gpu.as_ptr() as *const T,
+                //         bytes.unwrap_or(self.capacity()),
+                //     );
+                // }
                 self.gpu_dirty = false;
             }
         }

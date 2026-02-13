@@ -1,14 +1,13 @@
 // modules used by the main function
-// pub mod bindings;
-
-
+// mod bindings;
 mod crispr;
-pub mod utils;
+mod utils;
 // mod memory;
 mod alignment;
 mod sequence;
 mod batching;
 // mod storage;
+// mod engine;
 
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;

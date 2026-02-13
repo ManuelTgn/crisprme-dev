@@ -87,7 +87,10 @@ def extract_targets(
 
                     # TODO: remove after debugging
                     if status.flushed:
-                        batcher.flush_and_align_placeholder_tsv(guide.sequence, 4, otfname)
+                        # batcher.flush_and_align_placeholder_tsv(guide.sequence, 4, otfname)
+                        batcher.flush_and_align()
+
+
                         # windows_written, rows_written = batcher.flush_and_align_placeholder_tsv(
                         #     guide.sequence,
                         #     4,                 # max_mm
@@ -115,7 +118,8 @@ def extract_targets(
     #     4,
     #     str(otfname),
     # )
-    batcher.flush_and_align_placeholder_tsv(guide.sequence, 4, otfname)
+    # batcher.flush_and_align_placeholder_tsv(guide.sequence, 4, otfname)
+    batcher.flush_and_align()
     tail = batcher.finalize()  # clears internal state
 
     # loggers.verboselog.debug(
