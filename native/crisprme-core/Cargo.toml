@@ -1,5 +1,5 @@
 [package]
-name = "crisprme2-native"
+name = "crisprme-core"
 version = "0.1.0"
 edition = "2021"
 authors = ["Manuel Tognon"]
@@ -7,7 +7,7 @@ license = "MIT"
 publish = false
 
 [lib]
-name = "_crisprme2_native"
+name = "_crisprme_core"
 crate-type = ["cdylib"]
 
 [dependencies]
@@ -28,23 +28,21 @@ rand = { version = "0.9.1" }
 rayon = "1.10.0"
 thread_local = "1.1.9"
 tracing = "0.1.41"
+cxx = "1.0.194"
 
 # --- Python extension layer ---
 pyo3 = { version = "0.21", features = ["extension-module", "abi3-py310"] }
 
-# --- CUDA/C++ bridge ---
-cxx = { version = "1.0.157", features = ["c++17"], optional = true }
-
 [build-dependencies]
 pyo3-build-config = "0.21"
-which = "6"
-cxx-build = { version = "1.0.157", optional = true }
+cxx-build = { version = "1.0.194" }
 
 [features]
 # default = ["cuda"]
 # cuda = ["dep:cxx", "dep:cxx-build"]
-default = ["cpu"]  # NOTE: dev on OSX
-cpu = []
+# default = ["cpu"]  # NOTE: dev on OSX
+# cpu = []
+# cxx = []
 
 
 [profile.release]

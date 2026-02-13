@@ -39,6 +39,9 @@ def _retrieve_target_candidates(
 
 
 def execute_complete_search(args: Crisprme2SearchInputArgs) -> None:
+
+    # engine = init_engine(args)
+
     loggers = CrisprmeLoggers(args.outdir)  # initialize crisprme loggers
     loggers.basiclog.info(f"Start {TOOLNAME} search")
     # initialize guides and pam objects
@@ -56,4 +59,5 @@ def execute_complete_search(args: Crisprme2SearchInputArgs) -> None:
             args.right,
             args.threads,
             loggers,
+            # engine
         )

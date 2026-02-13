@@ -19,7 +19,7 @@
 
 use crate::{
     crispr::guide::Guide,
-    utils::thresholds::Thresholds,
+    alignment::thresholds::Thresholds,
     memory::batch::{AlignmentRingBatch, SequenceRingBatch},
 };
 
@@ -35,7 +35,7 @@ mod ffi {
     }
 
     unsafe extern "C++" {
-        include!("crisprme-core/include/api.cuh");
+        include!("api.cuh");
 
         fn initialize(device: u32);
 

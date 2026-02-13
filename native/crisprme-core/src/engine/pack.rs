@@ -1,8 +1,9 @@
 use crate::memory::batch::WindowRingBatch;
-use crate::batching::batcher::{WindowBatch, unpack_occ};
+use crate::batching::batching::{WindowBatch, unpack_occ};
 use crate::sequence::iupac::Iupac;
 
-fn fill_window_ring(dst: &mut WindowRingBatch, src: WindowBatch, sequence_len: usize) {
+/*
+fn fill_window_ring(dst: &mut SequenceRingBatch, src: WindowBatch, sequence_len: usize) {
     debug_assert_eq!(sequence_len, dst.descriptor.sequence_len);
     debug_assert_eq!(src.windows.len(), src.occs.len());
 
@@ -46,3 +47,4 @@ fn fill_window_ring(dst: &mut WindowRingBatch, src: WindowBatch, sequence_len: u
     // --- 3) Only windows need to go to GPU for mining ---
     dst.sync_windows_cpu_to_gpu(); // sync only window bytes
 }
+    */

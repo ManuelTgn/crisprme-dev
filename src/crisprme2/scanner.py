@@ -90,7 +90,6 @@ def extract_targets(
                         # batcher.flush_and_align_placeholder_tsv(guide.sequence, 4, otfname)
                         batcher.flush_and_align()
 
-
                         # windows_written, rows_written = batcher.flush_and_align_placeholder_tsv(
                         #     guide.sequence,
                         #     4,                 # max_mm

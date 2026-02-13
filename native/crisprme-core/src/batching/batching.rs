@@ -20,7 +20,7 @@ fn pack_occ(contig_id: u32, pos: u32, strand_bit: u8) -> Occ {
 }
 
 #[inline(always)]
-fn unpack_occ(occ: Occ) -> (u32, u32, u8) {
+pub fn unpack_occ(occ: Occ) -> (u32, u32, u8) {
     let contig_id = (occ >> 33) as u32;
     let pos = ((occ >> 1) & 0xFFFF_FFFF) as u32;
     let strand_bit = (occ & 1) as u8;

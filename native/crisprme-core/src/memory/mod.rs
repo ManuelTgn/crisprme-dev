@@ -21,10 +21,12 @@ unsafe impl<T: Sync> Sync for GpuPtr<T> {}
 impl<T> GpuPtr<T> {
     /// Allocate buffer on the GPU
     pub fn alloc(len: usize) -> Self {
-        let ptr = bindings::cuda::malloc::<T>(len)
-            .expect("cuda malloc failed");
+        let ptr = bindings::cuda::malloc::<T>(len);
         trace!("allocated gpu buffer ({len} elements)");
-        Self { ptr }
+        Self { 
+            ptr: NonNull::new(ptr)
+                .expect("failed CUDA malloc") 
+        }
     }
 
     #[inline]
@@ -36,7 +38,7 @@ impl<T> GpuPtr<T> {
 /// Free the memory on the GPU
 impl<T> Drop for GpuPtr<T> {
     fn drop(&mut self) {
-        unsafe { bindings::cuda::free::<T>(self.ptr) };
+        unsafe { bindings::cuda::free::<T>(self.ptr.as_ptr()) };
         trace!("dropped gpu buffer");
     }
 }
