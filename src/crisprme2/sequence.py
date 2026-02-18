@@ -2,10 +2,9 @@
 
 from .crisprme2_error import Crisprme2SequenceError, Crisprme2ContigSequenceError
 from .logger import CrisprmeLoggers
-from .encoder import BitSequence
 from .utils import RC
 
-from typing import Optional, Union, List, Generator
+from typing import Optional, List
 
 import os
 

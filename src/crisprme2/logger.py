@@ -1,6 +1,7 @@
 """ """
 
-from .utils import TOOLNAME, warning
+from .crisprme2_warning import warning
+from .crisprme2 import TOOLNAME
 
 from typing import Optional, Dict, NoReturn
 from logging.handlers import RotatingFileHandler

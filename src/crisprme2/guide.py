@@ -5,12 +5,10 @@ from .crisprme2_error import Crisprme2GuideError
 from .sequence import Sequence
 from .logger import CrisprmeLoggers
 from .utils import reverse_complement
-from .encoder import BitSequence
 from .sequence import Sequence
 from .fasta import GuideFasta
-from .pam import PAM
 
-from typing import Union, List, Optional
+from typing import Union, List
 from time import time
 
 import sys
@@ -60,35 +58,9 @@ class Guide(Sequence):
                 f"Failed reverse complement on guide {self.sequence}", os.EX_DATAERR
             )
 
-    def _encode(self) -> None:
-        # encode forward and reverse pam
-        assert hasattr(self, "_sequence") and hasattr(self, "_sequence_rc")
-        self._bitsequence = BitSequence(self.sequence, self._loggers)
-        self._bitsequence_rc = BitSequence(self.sequence, self._loggers)
-
-    def decode(self, strand: int) -> str:
-        if strand not in [0, 1]:  # unknown strand
-            self._loggers.errorlog.log_raise_exception(
-                "Only 0 (forward) and 1 (reverse) are values allowed for "
-                f"strandness, got {strand}",
-                os.EX_DATAERR,
-                Crisprme2GuideError,
-            )
-        return (
-            self._bitsequence.decode() if strand == 0 else self._bitsequence_rc.decode()
-        )
-
-    @property
-    def pamb(self) -> bytearray:
-        return self._bitsequence.data
-
     @property
     def rc(self) -> Sequence:
         return self._sequence_rc
-
-    @property
-    def rcb(self) -> bytearray:
-        return self._bitsequence_rc.data
 
 
 class GuidesList:

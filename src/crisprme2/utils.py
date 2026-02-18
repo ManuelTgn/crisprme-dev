@@ -7,7 +7,6 @@ and static variables used across the CRISPRme2 software.
 """
 
 from typing import List, Any
-from colorama import Fore
 from itertools import permutations
 
 import sys
@@ -18,13 +17,6 @@ import os
 # STATIC VARIABLES
 #
 # ==============================================================================
-
-# define static variables shared across software modules
-TOOLNAME = "CRISPRme2"  # tool name
-COMMAND = "crisprme2"  # command line call
-
-# define verbosity levels
-VERBOSITYLVL = [0, 1, 2, 3]
 
 # dna alphabet
 DNA = ["A", "C", "G", "T", "N"]
@@ -116,39 +108,6 @@ VCFEXTENSIONS = {"vcf", "vcf.gz", "bcf", "bcf.gz"}
 #
 # ==============================================================================
 
-
-def print_verbosity(message: str, verbosity: int, verbosity_threshold: int) -> None:
-    """Print a message if the verbosity level meets the threshold.
-
-    Outputs the provided message to standard output if the current verbosity is
-    greater than or equal to the specified threshold.
-
-    Args:
-        message: The message to print.
-        verbosity: The current verbosity level.
-        verbosity_threshold: The minimum verbosity level required to print the
-            message.
-    """
-    if verbosity >= verbosity_threshold:
-        sys.stdout.write(f"{message}\n")
-    return
-
-
-def warning(message: str, verbosity: int) -> None:
-    """Display a warning message if the verbosity level is sufficient.
-
-    Prints a formatted warning message to standard error if the verbosity
-    threshold is met.
-
-    Args:
-        message: The warning message to display.
-        verbosity: The current verbosity level.
-    """
-    if verbosity >= VERBOSITYLVL[1]:
-        sys.stderr.write(f"{Fore.YELLOW}WARNING: {message}.{Fore.RESET}\n")
-    return
-
-
 def flatten_list(lst: List[List[Any]]) -> List[Any]:
     """Flatten a list of lists into a single list.
 
@@ -164,6 +123,18 @@ def flatten_list(lst: List[List[Any]]) -> List[Any]:
 
 
 def reverse_complement(sequence: str) -> str:
+    """Return the reverse complement of a nucleotide sequence.
+
+    Computes the reverse complement of the input sequence using the defined nucleotide
+    mapping.
+
+    Args:
+        sequence (str): The nucleotide sequence to reverse complement.
+        debug (bool): Boolean indicating whether to provide debug information on error.
+
+    Returns:
+        str: The reverse complement of the input sequence as a string.
+    """
     return "".join([RC[nt] for nt in sequence[::-1]])
 
 
@@ -192,3 +163,17 @@ def find_fai_index(fname: str) -> bool:
     if os.path.exists(fai_index):  # index must be a non empty file
         return os.path.isfile(fai_index) and os.stat(fai_index).st_size > 0
     return False
+
+
+def dna2rna(sequence: str) -> str:
+    """Convert a DNA sequence to its RNA equivalent.
+
+    Replaces all occurrences of 'T' with 'U' and 't' with 'u' in the input sequence.
+
+    Args:
+        sequence (str): The DNA sequnce to convert.
+
+    Returns:
+        str: the RNA sequence.
+    """
+    return sequence.replace("T", "U").replace("t", "u")

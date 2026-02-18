@@ -2,10 +2,10 @@
 
 from .crisprme2_error import (
     Crisprme2FastaError,
-    Crisprme2FastaFileNotFoundError,
     Crisprme2SequenceError,
 )
-from .utils import FAI, warning, find_fai_index
+from .crisprme2_warning import warning
+from .utils import FAI, find_fai_index
 from .sequence import ContigSequence
 from .logger import CrisprmeLoggers
 

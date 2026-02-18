@@ -21,8 +21,8 @@ Run 'crisprme2 -h/--help' to display the complete help
 from .crisprme2_argparse import Crisprme2ArgumentParser, Crisprme2SearchInputArgs
 from .complete_search import execute_complete_search
 from .exception_handlers import sigint_handler
-from .crisprme2_version import __version__
-from .utils import TOOLNAME
+from .version import __version__
+from .crisprme2 import TOOLNAME
 
 from argparse import _SubParsersAction
 from time import time

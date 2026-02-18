@@ -1,7 +1,7 @@
 """ """
 
 from .crisprme2_argparse import Crisprme2SearchInputArgs
-from .utils import TOOLNAME
+from .crisprme2 import TOOLNAME
 from .logger import CrisprmeLoggers
 from .scanner import scan_fasta_reference_genome
 from .guide import read_guides, GuidesList, Guide
