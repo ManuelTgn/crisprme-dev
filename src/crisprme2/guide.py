@@ -2,9 +2,8 @@
 
 from .crisprme2_argparse import Crisprme2SearchInputArgs
 from .crisprme2_error import Crisprme2GuideError
-from .sequence import Sequence
+from .sequence import Sequence, reverse_complement
 from .logger import CrisprmeLoggers
-from .utils import reverse_complement
 from .sequence import Sequence
 from .fasta import GuideFasta
 
@@ -51,7 +50,7 @@ class Guide(Sequence):
         assert hasattr(self, "_sequence")  # required
         try:  # reverse complement is used to find off-targets on 3'-5'
             self._sequence_rc = Sequence(
-                reverse_complement(self.sequence), self._loggers
+                reverse_complement(self.sequence, self._loggers), self._loggers
             )
         except (KeyError, Exception):
             self._loggers.errorlog.log_exception(

@@ -9,7 +9,6 @@ and static variables used across the CRISPRme2 software.
 from typing import List, Any
 from itertools import permutations
 
-import sys
 import os
 
 # ==============================================================================
@@ -122,22 +121,6 @@ def flatten_list(lst: List[List[Any]]) -> List[Any]:
     return [e for sublist in lst for e in sublist]
 
 
-def reverse_complement(sequence: str) -> str:
-    """Return the reverse complement of a nucleotide sequence.
-
-    Computes the reverse complement of the input sequence using the defined nucleotide
-    mapping.
-
-    Args:
-        sequence (str): The nucleotide sequence to reverse complement.
-        debug (bool): Boolean indicating whether to provide debug information on error.
-
-    Returns:
-        str: The reverse complement of the input sequence as a string.
-    """
-    return "".join([RC[nt] for nt in sequence[::-1]])
-
-
 def find_tbi_index(fname: str) -> bool:
     """Check if a Tabix index exists for the input VCF/BED file.
 
@@ -165,15 +148,4 @@ def find_fai_index(fname: str) -> bool:
     return False
 
 
-def dna2rna(sequence: str) -> str:
-    """Convert a DNA sequence to its RNA equivalent.
 
-    Replaces all occurrences of 'T' with 'U' and 't' with 'u' in the input sequence.
-
-    Args:
-        sequence (str): The DNA sequnce to convert.
-
-    Returns:
-        str: the RNA sequence.
-    """
-    return sequence.replace("T", "U").replace("t", "u")

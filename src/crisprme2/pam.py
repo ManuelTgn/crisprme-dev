@@ -7,7 +7,7 @@ their reverse complements for efficient sequence matching.
 
 from .crisprme2_error import Crisprme2PamError
 from .logger import CrisprmeLoggers
-from .utils import reverse_complement
+from .sequence import reverse_complement
 
 from time import time
 
@@ -114,7 +114,7 @@ class PAM:
     def _reverse_complement(self) -> None:
         assert hasattr(self, "_sequence")  # required
         try:  # reverse complement is used to find off-targets on 3'-5'
-            self._sequence_rc = reverse_complement(self._sequence)
+            self._sequence_rc = reverse_complement(self._sequence, self._loggers)
         except (KeyError, Exception):
             self._loggers.errorlog.log_exception(
                 f"Failed reverse complement on PAM {self._sequence}", os.EX_DATAERR
