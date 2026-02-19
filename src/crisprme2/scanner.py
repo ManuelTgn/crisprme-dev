@@ -53,9 +53,11 @@ def extract_targets(
     threads: int,
     loggers: CrisprmeLoggers,
 ):
-    
-    batcher = TargetBatcher(pam.pam, size, right, threads, BATCHITS, 250_000, CHUNKOVERLAP)
-    
+
+    batcher = TargetBatcher(
+        pam.pam, size, right, threads, BATCHITS, 250_000, CHUNKOVERLAP
+    )
+
     otfname = "results/test-run/test.txt"
 
     print(contig_ids)
@@ -74,16 +76,22 @@ def extract_targets(
                 seqlen = len(sequence)
                 chunkedseq = sequence.chunk(CHUNKSIZE, CHUNKOVERLAP)
                 for i, chunkseq in enumerate(chunkedseq):  # iterate over subchunks
-                    core_start = i * CHUNKSIZE  # compute chunk start (e.g. 0, 10M, etc.)
+                    core_start = (
+                        i * CHUNKSIZE
+                    )  # compute chunk start (e.g. 0, 10M, etc.)
                     core_len = min(CHUNKSIZE, seqlen - core_start)
                     # initialize batcher data for subsequence
                     chunk_start = 0 if i == 0 else core_start - CHUNKOVERLAP
                     if len(chunkseq) < size:
                         continue
                     # pass subchunk to rust API batcher
-                    status = batcher.feed_chunk(contig_id, chunk_start, chunkseq, core_len)
+                    status = batcher.feed_chunk(
+                        contig_id, chunk_start, chunkseq, core_len
+                    )
                     st = batcher.stats()
-                    print("hits_in_batch", st.hits_in_batch, "unique", st.unique_windows)
+                    print(
+                        "hits_in_batch", st.hits_in_batch, "unique", st.unique_windows
+                    )
 
                     # TODO: remove after debugging
                     if status.flushed:
@@ -154,4 +162,3 @@ def scan_fasta_reference_genome(
     loggers.verboselog.debug(f"Off-targets extraction size: {size}")
     # extract targets from reference genome fasta files
     extract_targets(fastas, contig_ids, guide, pam, size, right, threads, loggers)
-    

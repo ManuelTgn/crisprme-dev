@@ -107,6 +107,7 @@ VCFEXTENSIONS = {"vcf", "vcf.gz", "bcf", "bcf.gz"}
 #
 # ==============================================================================
 
+
 def flatten_list(lst: List[List[Any]]) -> List[Any]:
     """Flatten a list of lists into a single list.
 
@@ -146,6 +147,3 @@ def find_fai_index(fname: str) -> bool:
     if os.path.exists(fai_index):  # index must be a non empty file
         return os.path.isfile(fai_index) and os.stat(fai_index).st_size > 0
     return False
-
-
-

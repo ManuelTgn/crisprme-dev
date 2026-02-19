@@ -1,1 +1,1 @@
-from .cfdscore import cfdscore
+from .cfd_score import cfdscore

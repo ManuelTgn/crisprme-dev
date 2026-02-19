@@ -5,6 +5,7 @@ import sys
 # define supported verbosity levels
 VERBOSITYLVL = [0, 1, 2, 3]
 
+
 def print_verbosity(message: str, verbosity: int, verbosity_threshold: int) -> None:
     """Print a message if the verbosity level meets the threshold.
 

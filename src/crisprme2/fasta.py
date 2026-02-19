@@ -111,7 +111,7 @@ class Fasta:
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         self.close()
 
-    def read(self):
+    def read(self) -> bytearray:
         with open(self._filepath, mode="rb") as fin:
             fin.readline()  # consume header buffer
             return bytearray(fin.read())

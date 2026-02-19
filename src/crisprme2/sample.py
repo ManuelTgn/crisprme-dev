@@ -24,6 +24,7 @@ class Sample:
     @property
     def name(self) -> str:
         return self._name
-    
+
+
 class SampleList:
     pass

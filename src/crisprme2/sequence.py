@@ -1,6 +1,11 @@
 """ """
 
-from .crisprme2_error import Crisprme2SequenceError, Crisprme2ContigSequenceError, Crisprme2ReverseComplementError, Crisprme2DnaRnaError
+from .crisprme2_error import (
+    Crisprme2SequenceError,
+    Crisprme2ContigSequenceError,
+    Crisprme2ReverseComplementError,
+    Crisprme2DnaRnaError,
+)
 from .logger import CrisprmeLoggers
 from .utils import RC
 
@@ -141,17 +146,25 @@ class ContigSequence(Sequence):
     @property
     def stop(self) -> int:
         return self._stop
-    
+
 
 def reverse_complement(sequence: str, loggers: CrisprmeLoggers) -> str:
     try:
         return "".join([RC[nt] for nt in sequence[::-1]])
     except (KeyError, Exception) as e:
-        loggers.errorlog.log_raise_exception(f"Failed reverse complement on {sequence}: {e}", os.EX_DATAERR, Crisprme2ReverseComplementError)
+        loggers.errorlog.log_raise_exception(
+            f"Failed reverse complement on {sequence}: {e}",
+            os.EX_DATAERR,
+            Crisprme2ReverseComplementError,
+        )
+
 
 def dna2rna(sequence: str, loggers: CrisprmeLoggers) -> str:
     try:
         return sequence.replace("T", "U").replace("t", "u")
     except ValueError as e:
-        loggers.errorlog.log_raise_exception(f"Failed translating DNA to RNA on {sequence}: {e}", os.EX_DATAERR, Crisprme2DnaRnaError)
-
+        loggers.errorlog.log_raise_exception(
+            f"Failed translating DNA to RNA on {sequence}: {e}",
+            os.EX_DATAERR,
+            Crisprme2DnaRnaError,
+        )

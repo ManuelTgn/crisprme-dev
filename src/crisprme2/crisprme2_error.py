@@ -22,7 +22,7 @@ class Crisprme2FastaError(Crisprme2Error):
 
     def __str__(self):
         return super().__str__()  # string representation for the exception
-    
+
 
 class Crisprme2SequenceError(Crisprme2Error):
     def __init__(self, value: str):
@@ -40,7 +40,8 @@ class Crisprme2ContigSequenceError(Crisprme2SequenceError):
 
     def __str__(self):
         return super().__str__()  # string representation for the exception
-    
+
+
 class Crisprme2ReverseComplementError(Crisprme2SequenceError):
     def __init__(self, value: str):
         # initialize exception object when raised
@@ -48,7 +49,8 @@ class Crisprme2ReverseComplementError(Crisprme2SequenceError):
 
     def __str__(self):
         return super().__str__()  # string representation for the exception
-    
+
+
 class Crisprme2DnaRnaError(Crisprme2SequenceError):
     def __init__(self, value: str):
         # initialize exception object when raised
@@ -155,7 +157,8 @@ class Crisprme2ScannerError(Crisprme2Error):
 
     def __str__(self):
         return super().__str__()  # string representation for the exception
-    
+
+
 class Crisprme2ScoreError(Crisprme2Error):
     def __init__(self, value: str):
         # initialize exception object when raised
@@ -163,8 +166,18 @@ class Crisprme2ScoreError(Crisprme2Error):
 
     def __str__(self):
         return super().__str__()  # string representation for the exception
-    
+
+
 class Crisprme2CfdScoreError(Crisprme2ScoreError):
+    def __init__(self, value: str):
+        # initialize exception object when raised
+        super().__init__(value)  # error message or error related info
+
+    def __str__(self):
+        return super().__str__()  # string representation for the exception
+
+
+class Crisprme2AnnotationError(Crisprme2Error):
     def __init__(self, value: str):
         # initialize exception object when raised
         super().__init__(value)  # error message or error related info
