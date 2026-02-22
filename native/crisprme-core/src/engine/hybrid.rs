@@ -11,6 +11,7 @@
 // - Completely removes unused mine_and_expand_pass() to avoid warnings/confusion.
 // - Keeps bindings import only for shutdown in Drop (as requested).
 
+use std::thread::JoinHandle;
 use crate::bindings;
 use crate::alignment::alignment::Alignment;
 use crate::memory::batch::{AlignmentRingBatch, SequenceRingBatch};
@@ -24,8 +25,9 @@ use super::params::AlignmentParams;
 
 use std::time::Instant;
 use pyo3::{pyclass, pymethods, PyResult};
+use pyo3::exceptions::PyBufferError;
 use tracing::{error, info, trace, warn};
-use crate::python::AlignmentBatchView;
+use crate::python::views::AlignmentBatchView;
 use crate::sequence::iupac::Iupac;
 use crate::storage::reader::SequenceBatchDescr;
 
@@ -47,8 +49,9 @@ macro_rules! engine_spawn_thread {
 
 #[pyclass]
 pub struct HybridEngine {
-    sequence_producer:  SequenceSend,
-    alignment_consumer: AlignmentRecv
+    sequence_producer: Option<SequenceSend>,
+    alignment_consumer: AlignmentRecv,
+    threads: Vec<JoinHandle<()>>
 }
 
 impl HybridEngine {
@@ -60,7 +63,7 @@ impl HybridEngine {
         // Window ring
         let sequence_batch_bytes = alignment.sequence_batch_size * (alignment.sequence_len + 4);
         let (sequence_producer, sequence_consumer) =
-            ring_buffer::<SequenceRingBatch>(12, sequence_batch_bytes, true);
+            ring_buffer::<SequenceRingBatch>(6, sequence_batch_bytes, true);
 
         // Alignment ring (unused in debug but kept for drop-in compatibility)
         let alignment_batch_bytes = alignment.alignment_batch_size * size_of::<Alignment>();
@@ -80,13 +83,29 @@ impl HybridEngine {
             output = alignment_producer.clone()
         );
 
-        // Drop internal producers. Miner never uses alignment_producer in debug mode.
-        // drop(alignment_producer);
-
         Self {
-            sequence_producer,
-            alignment_consumer
+            sequence_producer: Some(sequence_producer),
+            alignment_consumer,
+            threads
         }
+    }
+}
+
+impl Drop for HybridEngine {
+    fn drop(&mut self) {
+        info!("shutting down hybrid engine");
+
+        // Signal to the miners that they should stop
+        drop(self.sequence_producer.take());
+
+        // Wait for all threads
+        for thread in self.threads.drain(..) {
+            if let Err(e) = thread.join() {
+                error!("error dropping thread: {:?}", e);
+            }
+        }
+
+        info!("all threads stopped");
     }
 }
 
@@ -209,8 +228,13 @@ impl HybridEngine {
 
     pub fn send(&mut self, batcher: &TargetBatcher) -> PyResult<()> {
 
+        // Try to get sequence producer, can fail on mid-shutdown
+        let producer = self.sequence_producer.as_mut()
+            .ok_or_else(|| PyBufferError::new_err("engine is not online"))?;
+
         // Wait for an empty buffer
-        let mut batch = self.sequence_producer.acquire();
+        let mut batch = producer.acquire();
+
         if batcher.get_window_count() != batch.len() {
             warn!("received batcher window count does not match buffer size");
         }
@@ -245,7 +269,7 @@ impl HybridEngine {
         });
 
         // Send the filled buffer
-        self.sequence_producer.commit_with_descriptor(batch, SequenceBatchDescr {
+        producer.commit_with_descriptor(batch, SequenceBatchDescr {
             sequence_count: batcher.get_window_count(),
             sequence_len: 30, // TODO,
             global_offset: 0,
