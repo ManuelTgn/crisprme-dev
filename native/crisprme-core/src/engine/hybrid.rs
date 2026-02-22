@@ -224,8 +224,7 @@ fn th_miner_cuda(pipeline: AlignmentParams, input: SequenceRecv, output: Alignme
 #[pymethods]
 impl HybridEngine {
 
-    // Send TargetBatcher to engine
-
+    /// Send TargetBatcher to engine
     pub fn send(&mut self, batcher: &TargetBatcher) -> PyResult<()> {
 
         // Try to get sequence producer, can fail on mid-shutdown
@@ -278,7 +277,6 @@ impl HybridEngine {
 
         info!("sent batcher window keys (size = {})", batcher.get_window_count());
         Ok(())
-
     }
 
 
