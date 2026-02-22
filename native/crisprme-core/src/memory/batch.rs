@@ -204,20 +204,20 @@ impl AlignmentRingBatch {
 
     /// Returns number of alignments
     pub fn len(&self) -> usize {
-        self.descriptor.alignment_count
+        self.descriptor.alignments_count
     }
 
     /// Set the amount of mined alignments
     pub fn set_len(&mut self, len: usize) {
         assert!(len < self.capacity());
-        self.descriptor.alignment_count = len;
+        self.descriptor.alignments_count = len;
     }
 
     pub fn alignments(&self) -> &[Alignment] {
         unsafe {
             std::slice::from_raw_parts(
                 self.lease.as_ptr() as *const Alignment,
-                self.descriptor.alignment_count,
+                self.descriptor.alignments_count,
             )
         }
     }
@@ -226,7 +226,7 @@ impl AlignmentRingBatch {
         unsafe {
             std::slice::from_raw_parts_mut(
                 self.lease.as_mut_ptr() as *mut Alignment,
-                self.descriptor.alignment_count,
+                self.descriptor.alignments_count,
             )
         }
     }
@@ -239,7 +239,7 @@ impl AlignmentRingBatch {
     }
 
     pub fn id(&self) -> usize {
-        self.descriptor.alignment_count
+        self.descriptor.alignments_count
     }
 
     #[inline(always)]
