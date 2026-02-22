@@ -23,7 +23,11 @@ use crate::batching::batching::TargetBatcher;
 use super::params::AlignmentParams;
 
 use std::time::Instant;
-use tracing::{info, trace};
+use pyo3::{pyclass, pymethods, PyResult};
+use tracing::{error, info, trace, warn};
+use crate::python::AlignmentBatchView;
+use crate::sequence::iupac::Iupac;
+use crate::storage::reader::SequenceBatchDescr;
 
 type SequenceSend = Producer<SequenceRingBatch>;
 type SequenceRecv = Consumer<SequenceRingBatch>;
@@ -43,9 +47,7 @@ macro_rules! engine_spawn_thread {
 
 #[pyclass]
 pub struct HybridEngine {
-    sequence_producer: SequenceSend,
-    sequence_consumer: SequenceRecv,
-    alignment_producer: AlignmentSend,
+    sequence_producer:  SequenceSend,
     alignment_consumer: AlignmentRecv
 }
 
@@ -82,9 +84,7 @@ impl HybridEngine {
         // drop(alignment_producer);
 
         Self {
-            sequence_producer, 
-            sequence_consumer,
-            alignment_producer, 
+            sequence_producer,
             alignment_consumer
         }
     }
@@ -205,66 +205,84 @@ fn th_miner_cuda(pipeline: AlignmentParams, input: SequenceRecv, output: Alignme
 #[pymethods]
 impl HybridEngine {
 
-    // TargetBatcher -> send -> SequenceRingBatch
-    pub fn send(&mut self, batcher: &TargetBatcher) {
+    // Send TargetBatcher to engine
+
+    pub fn send(&mut self, batcher: &TargetBatcher) -> PyResult<()> {
+
+        // Wait for an empty buffer
         let mut batch = self.sequence_producer.acquire();
-        // Fill
-        output.commit(batch);
+        if batcher.get_window_count() != batch.len() {
+            warn!("received batcher window count does not match buffer size");
+        }
+
+        let input = batch.iupac_mut();
+        let mut offset = 0;
+
+        // Copy all window keys inside the SequenceRingBatch
+        // NOTE: I don't think this needs further optimization
+        for window in batcher.get_window_keys() {
+
+            let window_len = window.len();
+            assert!(offset + window_len <= input.len());
+
+            // SAFETY: We know that the window key contains valid IUPAC bytes
+            let window_iupac: &[Iupac] = unsafe {
+                std::slice::from_raw_parts(
+                    window.as_ptr() as *const Iupac,
+                    window.len()
+                )
+            };
+
+            input[offset .. offset + window_len]
+                .copy_from_slice(window_iupac);
+
+            offset += window_len;
+        }
+
+        // Generate sequence ids
+        (0..batcher.get_window_count()).for_each(|i| {
+            batch.ids_mut()[i] = i as u32;
+        });
+
+        // Send the filled buffer
+        self.sequence_producer.commit_with_descriptor(batch, SequenceBatchDescr {
+            sequence_count: batcher.get_window_count(),
+            sequence_len: 30, // TODO,
+            global_offset: 0,
+            batcher_id: Some(batcher.id()),
+        });
+
+        info!("sent batcher window keys (size = {})", batcher.get_window_count());
+        Ok(())
+
     }
 
-    pub fn receive(&mut self, batcher: &mut TargetBatcher) {
-        if let Some(batch) = input.recv() {
-            // TODO: Add alignments to TargetBatcher
-            input.finish(batch);
+
+    /// Retrieve alignments from engine.
+    pub fn receive_blocking(&mut self) -> PyResult<AlignmentBatchView> {
+        if let Some(batch) = self.alignment_consumer.recv() {
+            return Ok(AlignmentBatchView::new(batch));
+            // NOTE: This is called on python object drop
+            // self.alignment_consumer.finish(batch);
+        }
+        Ok(AlignmentBatchView::empty())
+    }
+
+
+    /// Retrieve alignments from engine
+    pub fn receive(&mut self) -> PyResult<AlignmentBatchView> {
+        match self.alignment_consumer.try_recv() {
+            Err(e) => {
+                error!("tried to receive alignment batch: {}", e);
+                Ok(AlignmentBatchView::empty())
+            },
+            Ok(batch) => match batch {
+                Some(batch) => Ok(AlignmentBatchView::new(batch)),
+                None => {
+                    trace!("alignment batch not yet available");
+                    Ok(AlignmentBatchView::empty())
+                }
+            }
         }
     }
 }
-
-/*
-/// Thread responsible for DEBUG mining: just prints sequences that would be mined.
-#[tracing::instrument(skip_all)]
-fn th_miner_debug_print_windows(alignment: AlignmentParams, input: WindowRecv) {
-    info!("DEBUG miner started (printing unique windows)");
-
-    let mut batch_idx = 0usize;
-
-    while let Some(wbatch) = input.recv() {
-        batch_idx += 1;
-
-        info!(
-            "received window batch #{batch_idx} (windows={}, occs={})",
-            wbatch.windows_len(),
-            wbatch.occ_len()
-        );
-
-        let slen = wbatch.descriptor.sequence_len;
-        let windows = wbatch.windows_iupac();
-
-        // Optional: cap printing to avoid flooding logs for huge batches
-        let max_print = alignment.debug_max_windows_to_print.unwrap_or(50);
-        let n = wbatch.windows_len().min(max_print);
-
-        for w in 0..n {
-            let start = w * slen;
-            let end = start + slen;
-            let seq_slice = &windows[start..end];
-
-            // Convert to string for debug
-            let seq_string: String = seq_slice.iter().map(|b| b.to_utf8()).collect();
-
-            println!("[BATCH {batch_idx}] window_id={w} seq={seq_string}");
-        }
-
-        if wbatch.windows_len() > n {
-            println!(
-                "[BATCH {batch_idx}] ... (printed {n}/{})",
-                wbatch.windows_len()
-            );
-        }
-
-        input.finish(wbatch);
-    }
-
-    info!("DEBUG miner closed");
-}
-*/

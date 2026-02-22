@@ -84,6 +84,9 @@ pub struct SequenceBatchDescr {
     pub sequence_count: usize,
     pub sequence_len: usize,
     pub global_offset: usize,
+
+    /// ID of the target batcher
+    pub batcher_id: Option<usize>,
 }
 
 /// Iterate over batches of sequences in a file
@@ -163,6 +166,7 @@ impl BinarySequenceBatchReader {
             global_offset: idx * self.batch_size,
             sequence_count: real_count,
             sequence_len: self.sequence_len,
+            batcher_id: None,
         }
     }
 

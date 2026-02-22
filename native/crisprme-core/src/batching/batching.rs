@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
 use crate::crispr::{pam, guide};
 use crate::sequence::{scanner, iupac};
 
@@ -45,9 +46,14 @@ pub struct FeedStatus {
     pub stats: BatcherStats,
 }
 
+static TARGET_BATCHER_NEXT_ID: AtomicUsize = AtomicUsize::new(0);
+
 /// TargetBatcher class
 #[pyclass]
 pub struct TargetBatcher {
+
+    id: usize,
+
     // config
     size: usize,
     right: bool,
@@ -93,6 +99,7 @@ impl TargetBatcher {
         }
 
         Ok(Self {
+            id: TARGET_BATCHER_NEXT_ID.fetch_add(1, Ordering::SeqCst),
             size,
             right,
             threads,
@@ -249,6 +256,20 @@ impl TargetBatcher {
 }
 
 impl TargetBatcher {
+
+    pub fn id(&self) -> usize {
+        self.id
+    }
+
+    pub fn get_window_count(&self) -> usize {
+        self.map.len()
+    }
+
+    // TODO: Check if this is the best way to do it
+    pub fn get_window_keys(&self) -> impl Iterator<Item=&WindowKey> {
+        self.map.keys()
+    }
+
     /// Convert the current batch (unique windows + occurrences) into a `WindowBatch`
     /// and clear internal state.
     pub fn flush_to_batch(&mut self) -> WindowBatch {

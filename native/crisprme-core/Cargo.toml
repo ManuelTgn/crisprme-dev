@@ -31,11 +31,11 @@ tracing = "0.1.41"
 cxx = "1.0.194"
 
 # --- Python extension layer ---
-pyo3 = { version = "0.21", features = ["extension-module", "abi3-py310"] }
+pyo3 = { version = "0.21.2", features = ["extension-module"] }
 
 [build-dependencies]
-pyo3-build-config = "0.21"
 cxx-build = { version = "1.0.194" }
+pyo3-build-config = "0.21.2"
 
 [features]
 # default = ["cuda"]

@@ -238,6 +238,10 @@ impl AlignmentRingBatch {
         }
     }
 
+    pub fn id(&self) -> usize {
+        self.descriptor.alignment_count
+    }
+
     #[inline(always)]
     pub fn sync_gpu_to_cpu(&mut self, bytes: Option<usize>) {
         self.lease.sync_gpu_to_cpu(bytes);

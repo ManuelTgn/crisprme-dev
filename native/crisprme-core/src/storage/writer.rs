@@ -9,6 +9,7 @@ use crate::alignment::alignment::Alignment;
 #[derive(Clone, Debug, Default)]
 pub struct AlignmentBatchDescr {
     pub alignment_count: usize,
+    pub batcher_id: Option<usize>,
 }
 
 /// Multithread alignment writer

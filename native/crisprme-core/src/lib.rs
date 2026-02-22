@@ -8,12 +8,13 @@ mod sequence;
 mod batching;
 mod storage;
 mod engine;
+pub mod python;
 
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
 use pyo3::PyResult;
 
-use crate::batching::batcher::{TargetBatcher, FeedStatus, BatcherStats};
+use crate::batching::batching::{TargetBatcher, FeedStatus, BatcherStats};
 
 
 /// Finds all potential target candidates (CRISPR gRNAs) within a given sequence.
@@ -52,7 +53,6 @@ pub fn extract_targets_rs(
     sequence::scanner::scan_targets(sequence, &pat, size, right, threads)
         .map_err(|e| PyErr::new::<PyValueError, _>(e))
 }
-
 
 /// Defines the Python module structure and exposes Rust functions
 #[pymodule]

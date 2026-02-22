@@ -141,6 +141,7 @@ impl CigarxOp {
 /// - `push()` appends an operation to the end.
 /// - `pop()` removes the last appended operation.
 /// - `operations()` iterates from the first pushed to the last pushed.
+#[repr(C)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Cigarx<T: Hash> {
     storage: T,
