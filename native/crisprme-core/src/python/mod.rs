@@ -3,6 +3,7 @@ use std::ptr;
 use pyo3::{ffi, pyclass, pymethods, PyRef, PyResult};
 use pyo3::exceptions::{PyBufferError, PyValueError};
 use pyo3::ffi::Py_buffer;
+use tracing::{info, trace};
 use crate::alignment::alignment::Alignment;
 use crate::memory::batch::AlignmentRingBatch;
 
@@ -19,6 +20,15 @@ impl AlignmentBatchView {
 
     pub fn empty() -> Self {
         Self { inner: None }
+    }
+}
+
+impl Drop for AlignmentBatchView {
+    fn drop(&mut self) {
+        if let Some(inner) = self.inner.take() {
+            trace!("Dropping python alignment-view");
+            drop(inner);
+        }
     }
 }
 
