@@ -1,9 +1,11 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use crate::crispr::{pam, guide};
+use crate::memory::batch::AlignmentRingBatch;
 use crate::sequence::{scanner, iupac};
 
 use ahash::AHashMap;
 
+use crossbeam_channel::Receiver;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
@@ -62,6 +64,9 @@ pub struct TargetBatcher {
     max_unique: usize,
     overlap_left: usize,
 
+    // Stream of completed alignment batches
+    alignment_rx: Option<Receiver<AlignmentRingBatch>>,
+
     // parsed PAM
     pam: pam::ParsedPAM,
 
@@ -100,6 +105,7 @@ impl TargetBatcher {
 
         Ok(Self {
             id: TARGET_BATCHER_NEXT_ID.fetch_add(1, Ordering::SeqCst),
+            alignment_rx: None,
             size,
             right,
             threads,
@@ -270,6 +276,10 @@ impl TargetBatcher {
         self.map.keys()
     }
 
+    pub fn extract_alignment_rx(&mut self) -> Option<Receiver<AlignmentRingBatch>> {
+        self.alignment_rx.take()
+    }
+
     /// Convert the current batch (unique windows + occurrences) into a `WindowBatch`
     /// and clear internal state.
     pub fn flush_to_batch(&mut self) -> WindowBatch {
@@ -304,6 +314,10 @@ impl TargetBatcher {
     fn clear_batch(&mut self) {
         self.map.clear();
         self.hits_in_batch = 0;
+    }
+
+    pub fn set_alignment_stream(&mut self, rx: Receiver<AlignmentRingBatch>) {
+        self.alignment_rx = Some(rx);
     }
 }
 

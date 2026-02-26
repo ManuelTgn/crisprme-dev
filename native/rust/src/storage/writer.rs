@@ -4,12 +4,16 @@ use std::path::Path;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 
+use crossbeam_channel::Sender;
+
 use crate::alignment::alignment::Alignment;
+use crate::memory::batch::AlignmentRingBatch;
 
 #[derive(Clone, Debug, Default)]
 pub struct AlignmentBatchDescr {
     pub alignments_count: usize,
-    pub batcher_id: Option<usize>,
+    pub output_tx: Option<Sender<AlignmentRingBatch>>,
+    pub batcher_id: usize,
 }
 
 /// Multithread alignment writer

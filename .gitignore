@@ -238,3 +238,6 @@ Cargo.lock
 **/*.so
 **/*.dylib
 **/*.dll
+
+# pytest files
+.pytest_cache/

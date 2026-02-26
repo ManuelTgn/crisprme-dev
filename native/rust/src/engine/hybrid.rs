@@ -36,6 +36,7 @@
 // - Completely removes unused mine_and_expand_pass() to avoid warnings/confusion.
 // - Keeps bindings import only for shutdown in Drop (as requested).
 
+use std::collections::HashMap;
 use std::thread::JoinHandle;
 use crate::bindings;
 use crate::alignment::alignment::Alignment;
@@ -125,6 +126,7 @@ pub struct HybridEngine {
     threads: Vec<JoinHandle<()>>
 }
 
+#[pymethods]
 impl HybridEngine {
 
     /// Construct and start the engine.
@@ -136,7 +138,17 @@ impl HybridEngine {
     /// # Ring buffer sizing
     /// - Sequence ring: 6 slots × `sequence_batch_size × (sequence_len + 4)` bytes.
     /// - Alignment ring: 6 slots × `alignment_batch_size × size_of::<Alignment>()` bytes.
+    #[new]
     pub fn new(params: AlignmentParams) -> Self {
+
+        // Initialize tracing subscriber for logging
+        tracing_subscriber::fmt()
+            .compact()
+            .with_target(false)
+            .with_thread_ids(true)
+            .with_max_level(tracing::Level::TRACE)
+            .init();
+
         info!("running alignment (DEBUG): {params:#?}");
 
         // Window ring
@@ -162,12 +174,96 @@ impl HybridEngine {
             output = alignment_producer.clone()
         );
 
+        // Spawn aggregator
+        engine_spawn_thread!(
+            &mut threads,
+            th_aggregator,
+            alignment = params.clone(),
+            rx = alignment_consumer.clone()
+        );
+
         Self {
             params,
             sequence_producer: Some(sequence_producer),
             alignment_consumer,
             threads
         }
+    }
+
+    /// Send a batch of sequences to the miner thread for alignment.
+    pub fn send(&mut self, batcher: &mut TargetBatcher) -> PyResult<()> {
+
+        // Try to get sequence producer, can fail on mid-shutdown
+        let producer = self.sequence_producer.as_mut()
+            .ok_or_else(|| PyBufferError::new_err("engine is not online"))?;
+
+        // Wait for an empty buffer
+        let mut batch = producer.acquire();
+
+        if batcher.get_window_count() != batch.len() {
+            warn!("received batcher window count does not match buffer size");
+        }
+
+        let input = batch.iupac_mut();
+        let mut offset = 0;
+
+        // Copy all window keys inside the SequenceRingBatch
+        // NOTE: I don't think this needs further optimization
+        for window in batcher.get_window_keys() {
+
+            let window_len = window.len();
+            assert!(offset + window_len <= input.len());
+
+            // SAFETY: We know that the window key contains valid IUPAC bytes
+            let window_iupac: &[Iupac] = unsafe {
+                std::slice::from_raw_parts(
+                    window.as_ptr() as *const Iupac,
+                    window.len()
+                )
+            };
+
+            input[offset .. offset + window_len]
+                .copy_from_slice(window_iupac);
+
+            offset += window_len;
+        }
+
+        // Generate sequence ids
+        (0..batcher.get_window_count()).for_each(|i| {
+            batch.ids_mut()[i] = i as u32;
+        });
+
+        // Create alignment stream
+        let (reply_tx, reply_rx) = crossbeam::channel::unbounded();
+        batcher.set_alignment_stream(reply_rx);
+
+        // Send the filled buffer
+        producer.commit_with_descriptor(batch, SequenceBatchDescr {
+            sequence_count: batcher.get_window_count(),
+            sequence_len: self.params.sequence_len,
+            output_tx: Some(reply_tx),
+            batcher_id: batcher.id(),
+            global_offset: 0,
+        });
+
+        info!("sent batcher window keys (size = {})", batcher.get_window_count());
+        Ok(())
+    }
+
+
+    /// Retrieve the next alignment batch, blocking until one is available.
+    pub fn receive_blocking(&mut self, batcher: &mut TargetBatcher) -> PyResult<Vec<AlignmentBatchView>> {
+        if let Some(rx) = batcher.extract_alignment_rx() {
+            trace!("waiting for alignment batches from batcher {}", batcher.id());
+            return rx.iter()
+                .map(|batch| {
+                    assert_eq!(batch.descriptor.batcher_id, batcher.id(), "received batch for wrong batcher");
+                    Ok(AlignmentBatchView::new(batch))
+                })
+                .collect();
+        }
+        warn!("no alignment stream available for batcher {}, returning empty result", batcher.id());
+        Ok(vec![])
     }
 }
 
@@ -256,7 +352,10 @@ fn th_miner_cuda(pipeline: AlignmentParams, input: SequenceRecv, output: Alignme
                 output.commit_with_descriptor(alignments, AlignmentBatchDescr {
                     batcher_id: batch.descriptor.batcher_id,
                     alignments_count,
+                    // Only signal completion on the last batch of the negative strand to avoid triggering early finalization in the consumer
+                    output_tx: None,
                 });
+
                 if complete {
                     break;
                 }
@@ -300,6 +399,12 @@ fn th_miner_cuda(pipeline: AlignmentParams, input: SequenceRecv, output: Alignme
                 alignments.replace_pos_by_id(&batch);
                 output.commit_with_descriptor(alignments, AlignmentBatchDescr {
                     batcher_id: batch.descriptor.batcher_id,
+                    // NOTE: This can signal to the consumer that this is the last batch for this window batch, 
+                    // so it can trigger any necessary finalization steps
+                    output_tx: match complete {
+                        true  => batch.descriptor.output_tx.take(),
+                        false => None,
+                    },
                     alignments_count,
                 });
 
@@ -325,117 +430,32 @@ fn th_miner_cuda(pipeline: AlignmentParams, input: SequenceRecv, output: Alignme
     info!("closed, total mined: {} (positive and negative)", total_mined);
 }
 
-#[pymethods]
-impl HybridEngine {
+/// Aggregates alignment batches and forward them to the source TargetBatcher.
+#[tracing::instrument(skip_all)]
+fn th_aggregator(_pipeline: AlignmentParams, rx: AlignmentRecv) {
 
-    /// Send a batch of query sequences to the alignment engine.
-    ///
-    /// Acquires the next free [`SequenceRingBatch`] slot (blocking if the ring
-    /// is full), copies all window keys from `batcher` into it, assigns
-    /// sequential IDs, then commits the slot for the miner thread to consume.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`PyBufferError`] if the engine has already been shut down
-    /// (i.e. [`Drop`] has been called and `sequence_producer` is `None`).
-    ///
-    /// # Panics
-    ///
-    /// Panics if any individual window key would write beyond the allocated
-    /// IUPAC buffer (`offset + window_len > input.len()`).
-    pub fn send(&mut self, batcher: &TargetBatcher) -> PyResult<()> {
+    let mut map: HashMap<usize, Vec<AlignmentRingBatch>> = HashMap::new();
+    while let Some(mut batch) = rx.recv() {
 
-        // Try to get sequence producer, can fail on mid-shutdown
-        let producer = self.sequence_producer.as_mut()
-            .ok_or_else(|| PyBufferError::new_err("engine is not online"))?;
+        let tx = batch.descriptor.output_tx.take();
+        let batcher_id = batch.descriptor.batcher_id;
 
-        // Wait for an empty buffer
-        let mut batch = producer.acquire();
+        trace!("received batch to aggregate (target_batcher: {})", batcher_id);
 
-        if batcher.get_window_count() != batch.len() {
-            warn!("received batcher window count does not match buffer size");
-        }
+        // Add batch to the corresponding batcher aggregate 
+        map.entry(batcher_id)
+            .or_default()
+            .push(batch);
 
-        let input = batch.iupac_mut();
-        let mut offset = 0;
+        // If there is a transmitter, this means that this is the last batch of the window batch, 
+        // so we can trigger the finalization of the target batcher and submit all results
+        if let Some(tx) = tx {
+            let aggregates = map.remove(&batcher_id)
+                .expect("alignment batch without aggregate");
 
-        // Copy all window keys inside the SequenceRingBatch
-        // NOTE: I don't think this needs further optimization
-        for window in batcher.get_window_keys() {
-
-            let window_len = window.len();
-            assert!(offset + window_len <= input.len());
-
-            // SAFETY: We know that the window key contains valid IUPAC bytes
-            let window_iupac: &[Iupac] = unsafe {
-                std::slice::from_raw_parts(
-                    window.as_ptr() as *const Iupac,
-                    window.len()
-                )
-            };
-
-            input[offset .. offset + window_len]
-                .copy_from_slice(window_iupac);
-
-            offset += window_len;
-        }
-
-        // Generate sequence ids
-        (0..batcher.get_window_count()).for_each(|i| {
-            batch.ids_mut()[i] = i as u32;
-        });
-
-        // Send the filled buffer
-        producer.commit_with_descriptor(batch, SequenceBatchDescr {
-            sequence_count: batcher.get_window_count(),
-            sequence_len: self.params.sequence_len,
-            global_offset: 0,
-            batcher_id: Some(batcher.id()),
-        });
-
-        info!("sent batcher window keys (size = {})", batcher.get_window_count());
-        Ok(())
-    }
-
-
-    /// Retrieve the next alignment batch, blocking until one is available.
-    ///
-    /// Returns an [`AlignmentBatchView`] wrapping the ring buffer slot.
-    /// The slot is **not** returned to the ring until the view is dropped, so
-    /// callers should avoid holding onto it longer than necessary to prevent
-    /// stalling the miner thread.
-    ///
-    /// Returns an empty view if the alignment ring has been closed (engine
-    /// is shutting down and all results have been consumed).
-    pub fn receive_blocking(&mut self) -> PyResult<AlignmentBatchView> {
-        if let Some(batch) = self.alignment_consumer.recv() {
-            return Ok(AlignmentBatchView::new(batch));
-            // NOTE: This is called on python object drop
-            // self.alignment_consumer.finish(batch);
-        }
-        Ok(AlignmentBatchView::empty())
-    }
-
-
-    /// Attempt to retrieve the next alignment batch without blocking.
-    ///
-    /// Returns an empty [`AlignmentBatchView`] immediately if no batch is
-    /// currently available, rather than waiting.  Suitable for polling loops
-    /// where the caller cannot afford to block the GIL.
-    ///
-    /// Errors from the ring (e.g. a poisoned state) are logged and converted
-    /// to an empty view rather than propagated.
-    pub fn receive(&mut self) -> PyResult<AlignmentBatchView> {
-        match self.alignment_consumer.try_recv() {
-            Err(e) => {
-                error!("tried to receive alignment batch: {}", e);
-                Ok(AlignmentBatchView::empty())
-            },
-            Ok(batch) => match batch {
-                Some(batch) => Ok(AlignmentBatchView::new(batch)),
-                None => {
-                    trace!("alignment batch not yet available");
-                    Ok(AlignmentBatchView::empty())
+            for inner in aggregates {
+                if let Err(e) = tx.send(inner) {
+                    error!("failed to send alignment batch to batcher: {}", e);
                 }
             }
         }

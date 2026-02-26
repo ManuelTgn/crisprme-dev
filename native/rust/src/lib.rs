@@ -14,7 +14,7 @@ use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
 use pyo3::PyResult;
 
-use crate::batching::batching::{TargetBatcher, FeedStatus, BatcherStats};
+use crate::{alignment::thresholds::Thresholds, batching::batching::{BatcherStats, FeedStatus, TargetBatcher}, crispr::guide::Guide, engine::{hybrid::HybridEngine, params::AlignmentParams}};
 
 
 /// Finds all potential target candidates (CRISPR gRNAs) within a given sequence.
@@ -63,6 +63,10 @@ fn _crisprme2_native(_py: Python, m : &PyModule) -> PyResult<()> {
     m.add_class::<TargetBatcher>()?;
     m.add_class::<FeedStatus>()?;
     m.add_class::<BatcherStats>()?;
+    m.add_class::<HybridEngine>()?;
+    m.add_class::<AlignmentParams>()?;
+    m.add_class::<Thresholds>()?;
+    m.add_class::<Guide>()?;
     
     Ok(())
 }

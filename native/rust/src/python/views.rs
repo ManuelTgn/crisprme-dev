@@ -163,7 +163,7 @@ impl AlignmentBatchView {
             return Err(PyBufferError::new_err("buffer is read-only"));
         }
 
-        if (slf.inner.is_none()) {
+        if slf.inner.is_none() {
             return Err(PyBufferError::new_err("view is empty"));
         }
 
@@ -248,7 +248,7 @@ impl SequenceBatchView {
     ///
     /// Will expose a 1-D array of `u8` IUPAC bytes with format `"B"` once
     /// the sequence ring batch layout is finalised.
-    unsafe fn __getbuffer__(slf: PyRef<'_, Self>, view: *mut Py_buffer, flags: c_int) -> PyResult<()> {
+    unsafe fn __getbuffer__(_slf: PyRef<'_, Self>, _view: *mut Py_buffer, _flags: c_int) -> PyResult<()> {
         unimplemented!()
     }
 }

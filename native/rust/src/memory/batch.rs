@@ -186,7 +186,7 @@ impl SequenceRingBatch {
 
 /// View into a batch of alignments inside a ring buffer
 pub struct AlignmentRingBatch {
-    descriptor: AlignmentBatchDescr,
+    pub descriptor: AlignmentBatchDescr,
     lease: RingSlotLease,
 }
 

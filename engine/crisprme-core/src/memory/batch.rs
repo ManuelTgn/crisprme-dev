@@ -234,13 +234,6 @@ impl AlignmentRingBatch {
             align.id = ids[align.id as usize];
         }
     }
-
-    pub fn replace_pos_by_id(&mut self, batch: &SequenceRingBatch) {
-        let ids = batch.ids();
-        for align in self.alignments_mut() {
-            align.id = ids[align.id as usize];
-        }
-    }
 }
 
 impl RingAdapter for AlignmentRingBatch {
