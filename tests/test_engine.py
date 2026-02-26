@@ -57,7 +57,18 @@ def test_target_batcher():
 
 def test_pipeline():
     
-    batcher = native.TargetBatcher(
+    batcher_A = native.TargetBatcher(
+        pam_seq="NNN",
+        guide_seq="NNNNNNNNNNN",
+        size=30,
+        right=True,
+        threads=4,
+        batch_hits=40,
+        max_unique=10,
+        overlap_left=40
+    )
+
+    batcher_B = native.TargetBatcher(
         pam_seq="NNN",
         guide_seq="NNNNNNNNNNN",
         size=30,
@@ -77,7 +88,7 @@ def test_pipeline():
         guide=native.Guide("NNNNNN")
     ))
 
-    def check_alignment_result(result):
+    def check_alignment_result(result, batcher):
         assert isinstance(result, native.AlignmentBatchView)
         assert result.batcher_id() == batcher.id
 
@@ -104,11 +115,11 @@ def test_pipeline():
         print(np_arr)
 
     # First send and receive 
-    engine.send(batcher)
-    for result in engine.receive_blocking(batcher):
-        check_alignment_result(result)
+    engine.send(batcher_B)
+    for result in engine.receive_blocking(batcher_B):
+        check_alignment_result(result, batcher_B)
 
     # Second send and receive to check if the engine can be reused
-    engine.send(batcher)
-    for result in engine.receive_blocking(batcher):
-        check_alignment_result(result)
+    engine.send(batcher_A)
+    for result in engine.receive_blocking(batcher_A):
+        check_alignment_result(result, batcher_A)
