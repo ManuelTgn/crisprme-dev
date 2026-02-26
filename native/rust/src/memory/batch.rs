@@ -239,7 +239,7 @@ impl AlignmentRingBatch {
     }
 
     pub fn id(&self) -> usize {
-        self.descriptor.alignments_count
+        self.descriptor.batcher_id
     }
 
     #[inline(always)]

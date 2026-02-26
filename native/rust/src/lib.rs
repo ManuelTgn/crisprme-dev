@@ -14,7 +14,7 @@ use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
 use pyo3::PyResult;
 
-use crate::{alignment::thresholds::Thresholds, batching::batching::{BatcherStats, FeedStatus, TargetBatcher}, crispr::guide::Guide, engine::{hybrid::HybridEngine, params::AlignmentParams}};
+use crate::{alignment::thresholds::Thresholds, batching::batching::{BatcherStats, FeedStatus, TargetBatcher}, crispr::guide::Guide, engine::{hybrid::HybridEngine, params::AlignmentParams}, python::views::AlignmentBatchView};
 
 
 /// Finds all potential target candidates (CRISPR gRNAs) within a given sequence.
@@ -54,11 +54,23 @@ pub fn extract_targets_rs(
         .map_err(|e| PyErr::new::<PyValueError, _>(e))
 }
 
+#[pyfunction]
+pub fn initialize_engine_logger() {
+    tracing_subscriber::fmt()
+            .compact()
+            .with_target(false)
+            .with_thread_ids(true)
+            .with_max_level(tracing::Level::TRACE)
+            .init();
+}
+
 /// Defines the Python module structure and exposes Rust functions
 #[pymodule]
 fn _crisprme2_native(_py: Python, m : &PyModule) -> PyResult<()> {
     // add the top-level function to the Python module
     // m.add_function(wrap_pyfunction!(extract_targets_rs, m)?)?;
+
+    m.add_function(wrap_pyfunction!(initialize_engine_logger, m)?)?;
 
     m.add_class::<TargetBatcher>()?;
     m.add_class::<FeedStatus>()?;
@@ -67,6 +79,7 @@ fn _crisprme2_native(_py: Python, m : &PyModule) -> PyResult<()> {
     m.add_class::<AlignmentParams>()?;
     m.add_class::<Thresholds>()?;
     m.add_class::<Guide>()?;
+    m.add_class::<AlignmentBatchView>()?;
     
     Ok(())
 }

@@ -126,6 +126,14 @@ impl AlignmentBatchView {
         Ok(self.inner.is_some())
     }
 
+    /// Return the number of alignments in this batch.
+    fn size(&self) -> PyResult<usize> {
+        match &self.inner {
+            None => Err(PyValueError::new_err("View is empty")),
+            Some(inner) => Ok(inner.len())
+        }
+    }
+
     /// Implement the Python buffer protocol, exposing the alignment array as
     /// a flat, read-only `memoryview`.
     ///

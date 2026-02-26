@@ -140,15 +140,7 @@ impl HybridEngine {
     /// - Alignment ring: 6 slots × `alignment_batch_size × size_of::<Alignment>()` bytes.
     #[new]
     pub fn new(params: AlignmentParams) -> Self {
-
-        // Initialize tracing subscriber for logging
-        tracing_subscriber::fmt()
-            .compact()
-            .with_target(false)
-            .with_thread_ids(true)
-            .with_max_level(tracing::Level::TRACE)
-            .init();
-
+        
         info!("running alignment (DEBUG): {params:#?}");
 
         // Window ring

@@ -54,6 +54,7 @@ static TARGET_BATCHER_NEXT_ID: AtomicUsize = AtomicUsize::new(0);
 #[pyclass]
 pub struct TargetBatcher {
 
+    #[pyo3(get)]
     id: usize,
 
     // config
