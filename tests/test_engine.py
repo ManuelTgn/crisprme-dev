@@ -2,6 +2,7 @@
 import crisprme2._crisprme2_native as native
 import crisprme2
 
+import numpy as np
 import pytest
 import time
 
@@ -81,15 +82,29 @@ def test_pipeline():
         assert result.batcher_id() == batcher.id
 
         view = memoryview(result)
+        print(view.shape, view.format, view.strides, view.nbytes)
 
         # Check memory layout of the result
         assert view.format == 'QBxxxxxxxIBBxx'
         assert view.shape == (result.size(),)
         assert view.strides == (24,) # 24 bytes between alignments
 
+        dt = np.dtype([
+            ('cigarx_storage', np.uint64, 1),
+            ('cigarx_bits',    np.uint8,  1),
+            ('_pad_0',         np.uint8,  7),
+            ('id',             np.uint32, 1),
+            ('offset',         np.uint8,  1),
+            ('strand',         np.uint8,  1),
+            ('_pad_1',         np.uint8,  2)
+        ])
+
+        np_arr = np.frombuffer(view, dtype=dt)
+        assert np_arr.shape == (result.size(),)
+        print(np_arr)
+
     # First send and receive 
     engine.send(batcher)
-    time.sleep(2)
     for result in engine.receive_blocking(batcher):
         check_alignment_result(result)
 
