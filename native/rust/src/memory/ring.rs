@@ -1,5 +1,6 @@
 use crossbeam::channel::SendError;
 use std::ops::{Deref, DerefMut};
+use crossbeam_channel::TryRecvError;
 use tracing::{error, trace, warn};
 
 // use crate::bindings;
@@ -203,6 +204,19 @@ impl<A: RingAdapter> Producer<A> {
             .expect("unable to send buffer to ring consumer");
     }
 
+    // Send a buffer to the consumers
+    #[tracing::instrument(name = "ring", skip_all)]
+    pub fn commit_with_descriptor(&self, adapter: A, descr: A::Descr) {
+        trace!("committing buffer to ring");
+
+        let (_descr, mut lease) = adapter.detach();
+        let slot = lease.slot.take().unwrap();
+        lease.used = true;
+        self.consumer_tx
+            .send((descr, slot))
+            .expect("unable to send buffer to ring consumer");
+    }
+
     /// Close the channel, no more items will be produced
     pub fn close(self) {
         drop(self.producer_tx);
@@ -239,7 +253,6 @@ impl<A: RingAdapter> Consumer<A> {
     #[tracing::instrument(name = "ring", skip_all)]
     pub fn recv(&self) -> Option<A> {
         trace!("receiving buffer from ring");
-
         let result = self.consumer_rx.recv();
         match result {
             // Channel closed
@@ -252,6 +265,25 @@ impl<A: RingAdapter> Consumer<A> {
                 },
                 descr,
             )),
+        }
+    }
+
+    /// Get a buffer and metadata ready to be processed
+    #[tracing::instrument(name = "ring", skip_all)]
+    pub fn try_recv(&self) -> Result<Option<A>, TryRecvError> {
+        trace!("receiving buffer from ring");
+        let result = self.consumer_rx.try_recv();
+        match result {
+            // Channel closed
+            Err(e) => Err(e),
+            Ok((descr, slot)) => Ok(Some(A::attach(
+                RingSlotLease {
+                    drop: self.producer_tx.clone(),
+                    slot: Some(slot),
+                    used: false,
+                },
+                descr,
+            ))),
         }
     }
 

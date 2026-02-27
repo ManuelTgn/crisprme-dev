@@ -1,3 +1,5 @@
+use pyo3::{pyclass, pymethods};
+
 use crate::sequence::iupac::Iupac;
 
 /// A CRISPR guide sequence encoded as IUPAC 4-bit masks.
@@ -28,6 +30,7 @@ use crate::sequence::iupac::Iupac;
 /// - **lossy**: map invalid ASCII to `N` (wildcard), useful for robustness in pipelines
 #[repr(transparent)]
 #[derive(Clone, PartialEq, Eq, Default)]
+#[pyclass]
 pub struct Guide(Vec<Iupac>);
 
 impl Guide {
@@ -128,6 +131,14 @@ impl Guide {
     #[inline]
     pub fn iter(&self) -> std::slice::Iter<'_, Iupac> {
         self.0.iter()
+    }
+}
+
+#[pymethods]
+impl Guide {
+    #[new]
+    pub fn new(s: &str) -> Self {
+        Self::from_ascii_bytes_lossy(s.as_bytes())
     }
 }
 

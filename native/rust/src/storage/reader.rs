@@ -4,9 +4,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::fs::File;
 
+use crossbeam_channel::Sender;
+
 use crate::sequence::iupac::Iupac;
 use crate::memory::arena::{ArenaBox, Memory};
-use crate::memory::batch::SequenceRingBatch;
+use crate::memory::batch::{AlignmentRingBatch, SequenceRingBatch};
 
 /// Iterate over all ids arrays present in the binary file
 pub struct BinaryPositionReader<'mem, R: Read> {
@@ -84,6 +86,10 @@ pub struct SequenceBatchDescr {
     pub sequence_count: usize,
     pub sequence_len: usize,
     pub global_offset: usize,
+
+    /// Connection to output target batcher
+    pub output_tx: Option<Sender<AlignmentRingBatch>>,
+    pub batcher_id: usize,
 }
 
 /// Iterate over batches of sequences in a file
@@ -163,6 +169,8 @@ impl BinarySequenceBatchReader {
             global_offset: idx * self.batch_size,
             sequence_count: real_count,
             sequence_len: self.sequence_len,
+            batcher_id: usize::MAX,
+            output_tx: None,
         }
     }
 
