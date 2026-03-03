@@ -1,17 +1,16 @@
 """ """
 
-from .bedfile import AnnotationBed, AnnotationGff
+from .crisprme_core import FeatureRegistry
+from .bedfile import AnnotationBed
 
-from typing import Union
+from typing import List, Tuple
 
 
-def annotate_target(
-    annotation_file: Union[AnnotationBed, AnnotationGff],
-    contig: str,
-    start: int,
-    stop: int,
-) -> str:
-    annotation = annotation_file.fetch_features(contig, start, stop)
-    if annotation is None:
-        return "NA"
-    return annotation
+# NOTE: targets_batch will be a list of views for each alignment to annotate
+#           the views will point to contig, start/stop position of the target
+def annotate(
+    annotation: AnnotationBed,
+    registry: FeatureRegistry,
+    targets_batch: List[Tuple[str, int, int]],
+) -> List[bytes]:
+    return registry.annotate_batch(annotation, targets_batch)

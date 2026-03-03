@@ -8,6 +8,8 @@ mod sequence;
 mod batching;
 mod storage;
 mod engine;
+mod error;
+mod annotation;
 pub mod python;
 
 use pyo3::prelude::*;
