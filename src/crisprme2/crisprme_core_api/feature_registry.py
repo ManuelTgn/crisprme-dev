@@ -2,11 +2,15 @@
 
 from ..bedfile import AnnotationBed
 from ..logger import CrisprmeLoggers
-from .crisprme_api_error import Crisprme2AnnotationError
+from .crisprme_api_error import Crisprme2AnnotationError, Crisprme2AlignmentError
 
-from .._crisprme2_native import PyRegistry
+try:  # import rust API modules
+    from .._crisprme2_native import PyRegistry as RustFeatureRegistry
+except ImportError:
+    # fallback for development/testing
+    RustFeatureRegistry = None
 
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 import os
 
@@ -15,8 +19,17 @@ class FeatureRegistry:
 
     def __init__(self, path: str, loggers: CrisprmeLoggers) -> None:
         self._loggers = loggers  # store loggers
+        if RustFeatureRegistry is None:
+            self._loggers.errorlog.log_raise_exception(
+                "Rust FeatureRegistry not exposed to python",
+                os.EX_CANTCREAT,
+                ValueError,
+            )
+        # load annotation features and register action on log
+        self._loggers.basiclog.info(f"Loading features from {path}")
         try:  # initialize rust-based feature registry
-            self._registry = PyRegistry(path)
+            self._path = path
+            self._registry = RustFeatureRegistry(path)
             self._num_features = self._registry.num_features()
         except Exception as e:
             loggers.errorlog.log_raise_exception(
@@ -24,6 +37,20 @@ class FeatureRegistry:
                 os.EX_IOERR,
                 Crisprme2AnnotationError,
             )
+        self._loggers.verboselog.info(
+            f"FeatureRegistry initialized with {self._num_features} unique features"
+        )
+
+    @property
+    def path(self) -> str:
+        return self._path
+
+    @property
+    def num_features(self) -> int:
+        return self._num_features
+
+    def _get_feature_id(self, feature_name: str) -> Optional[int]:
+        return self._registry.get_feature_id(feature_name)
 
     def annotate_batch(
         self, annotation: AnnotationBed, targets: List[Tuple[str, int, int]]
@@ -42,26 +69,8 @@ class FeatureRegistry:
                 continue
             # convert feature names to ids using rust registry
             features_ids = [
-                _get_feature_id(self._registry, f, self._loggers) for f in features
+                fid for f in features if (fid := self._get_feature_id(f)) is not None
             ]
             hits_per_target.append(features_ids)
         # rust parallel batch annotation
         return self._registry.annotate_batch(hits_per_target)
-
-    @property
-    def num_features(self) -> int:
-        return self._num_features
-
-
-def _get_feature_id(
-    registry: PyRegistry, feature: str, loggers: CrisprmeLoggers
-) -> int:
-    # recover feature id in current registry
-    fid = registry.get_feature_id(feature)
-    if fid is None:
-        loggers.errorlog.log_raise_exception(
-            f"Feature '{feature}' not found in registry",
-            os.EX_DATAERR,
-            Crisprme2AnnotationError,
-        )
-    return fid

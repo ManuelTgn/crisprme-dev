@@ -1,6 +1,6 @@
 """ """
 
-from .crisprme_core import FeatureRegistry
+from .crisprme_core_api import FeatureRegistry
 from .bedfile import AnnotationBed
 
 from typing import List, Tuple
