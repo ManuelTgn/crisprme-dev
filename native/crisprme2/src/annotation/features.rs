@@ -67,7 +67,7 @@ impl FeatureRegistry {
             }
         }
 
-        Ok( Self { features, feature_to_id })
+        Ok( Self { features, feature_to_id: features_to_id })
     }
 
     #[inline(always)]

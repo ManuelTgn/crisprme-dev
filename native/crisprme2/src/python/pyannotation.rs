@@ -5,6 +5,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
 
+/*
 /// Python wrapper around FeatureRegistry
 /// 
 /// Exposes only safe operations needed for annotation
@@ -69,4 +70,4 @@ impl PyRegistry {
             .collect())
     }
 }
-
+*/

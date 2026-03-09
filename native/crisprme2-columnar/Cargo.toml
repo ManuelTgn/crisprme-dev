@@ -1,0 +1,10 @@
+[package]
+name = "columnar"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+columnar-derive = { path = "../crisprme2-derive" }
+bytemuck = { version = "1.25.0", features = ["derive"] }
+pyo3 = { version = "0.28.2", optional = true }
+crossbeam = "0.8.4"

@@ -33,7 +33,9 @@ tracing = "0.1.41"
 cxx = "1.0.194"
 
 # --- Python extension layer ---
-pyo3 = { version = "0.21.2", features = ["extension-module"] }
+pyo3 = { version = "0.28.2", features = ["extension-module"] }
+polars = "0.53.0"
+polars-arrow = "0.53.0"
 
 [build-dependencies]
 cxx-build = { version = "1.0.194" }

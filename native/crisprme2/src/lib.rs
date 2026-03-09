@@ -9,6 +9,7 @@ mod batching;
 mod storage;
 mod engine;
 mod error;
+mod model;
 mod annotation;
 pub mod python;
 
@@ -68,20 +69,25 @@ pub fn initialize_engine_logger() {
 
 /// Defines the Python module structure and exposes Rust functions
 #[pymodule]
-fn _crisprme2_native(_py: Python, m : &PyModule) -> PyResult<()> {
-    // add the top-level function to the Python module
-    // m.add_function(wrap_pyfunction!(extract_targets_rs, m)?)?;
+pub mod _crisprme2_native {
+    use super::*;
 
-    m.add_function(wrap_pyfunction!(initialize_engine_logger, m)?)?;
+    #[pymodule_init]
+    fn _crisprme2_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
+        // add the top-level function to the Python module
+        // m.add_function(wrap_pyfunction!(extract_targets_rs, m)?)?;
 
-    m.add_class::<TargetBatcher>()?;
-    m.add_class::<FeedStatus>()?;
-    m.add_class::<BatcherStats>()?;
-    m.add_class::<HybridEngine>()?;
-    m.add_class::<AlignmentParams>()?;
-    m.add_class::<Thresholds>()?;
-    m.add_class::<Guide>()?;
-    m.add_class::<AlignmentBatchView>()?;
-    
-    Ok(())
+        //m.add_function(wrap_pyfunction!(initialize_engine_logger, m)?)?;
+
+        m.add_class::<TargetBatcher>()?;
+        m.add_class::<FeedStatus>()?;
+        m.add_class::<BatcherStats>()?;
+        m.add_class::<HybridEngine>()?;
+        m.add_class::<AlignmentParams>()?;
+        m.add_class::<Thresholds>()?;
+        m.add_class::<Guide>()?;
+        m.add_class::<AlignmentBatchView>()?;
+        
+        Ok(())
+    }
 }
