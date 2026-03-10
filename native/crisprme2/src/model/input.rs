@@ -53,7 +53,7 @@ pub mod occurences {
 pub struct SeqBatchMetadata {
 
     /// Length of the sequences
-    pub seq_len: u32,
+    pub seq_len: usize,
 
     /// Guide used for the alignment process
     pub guide: Guide,

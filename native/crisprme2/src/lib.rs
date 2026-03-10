@@ -71,15 +71,27 @@ pub fn initialize_engine_logger() {
 /// Defines the Python module structure and exposes Rust functions
 #[pymodule]
 pub mod _crisprme2_native {
+    use columnar::ext::pyo3::PyColumnView;
+
+    use crate::{model::alignment::aligned::PyAlignmentBatch, pipeline::{PyPipeline, *}};
     use super::*;
 
     #[pymodule_init]
     fn _crisprme2_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
+        
         // add the top-level function to the Python module
         // m.add_function(wrap_pyfunction!(extract_targets_rs, m)?)?;
 
         //m.add_function(wrap_pyfunction!(initialize_engine_logger, m)?)?;
 
+        // Allows python to create a new pipeline
+        m.add_function(wrap_pyfunction!(create_pipeline, m)?)?;
+
+        m.add_class::<PyAlignmentBatch>()?;
+        m.add_class::<PyColumnView>()?;
+        m.add_class::<PyPipeline>()?;
+
+        /*
         m.add_class::<TargetBatcher>()?;
         m.add_class::<FeedStatus>()?;
         m.add_class::<BatcherStats>()?;
@@ -88,7 +100,8 @@ pub mod _crisprme2_native {
         m.add_class::<Thresholds>()?;
         m.add_class::<Guide>()?;
         m.add_class::<AlignmentBatchView>()?;
-        
+        */
+
         Ok(())
     }
 }

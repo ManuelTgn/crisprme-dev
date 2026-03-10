@@ -1,3 +1,6 @@
+use std::ffi::CStr;
+
+use columnar::ext::pyo3::PyBufferFormat;
 use columnar::macros::Columnar;
 use columnar::pool::BatchRef;
 use crate::crispr::guide::Guide;
@@ -66,6 +69,7 @@ pub mod aligned {
 
     /// Definition of a complete alignment
     #[derive(Debug, Columnar)]
+    #[columnar(pyclass = "PyAlignmentBatch")]
     pub struct Alignment {
 
         /// Unique identifier for this particular alignment
@@ -93,6 +97,13 @@ pub mod aligned {
         #[columnar(group)]
         pub scores: [f32; ALIGN_MAX_SCORES],
     }
+}
+
+/// Inform columnar that iupac characters are just u8 in python
+impl PyBufferFormat for Iupac {
+    const FORMAT: &'static CStr = unsafe {
+        CStr::from_bytes_with_nul_unchecked("B\0".as_bytes())
+    };
 }
 
 /// Metadata for a batch of mined alignments

@@ -14,6 +14,15 @@ pub struct AlignmentSimpleResolve {
     arena: Arena,
 }
 
+impl AlignmentSimpleResolve {
+    pub fn new(pool: Arc<Pool<ResolvedSchema>>, memory: usize) -> Self {
+        Self {
+            arena: Arena::with_capacity(memory),
+            pool
+        }
+    }
+}
+
 impl Stage for AlignmentSimpleResolve {
 
     type Input  = BatchMut<MinedSchema, MinedBatchMetadata>;
@@ -169,7 +178,7 @@ mod tests {
 
         let seqs_ref = seqs
             .with_metadata(SeqBatchMetadata { 
-                seq_len: cigarx.len() as u32, 
+                seq_len: cigarx.len(), 
                 guide, 
                 occurences: vec![] 
             })

@@ -14,9 +14,18 @@ pub struct AlignmentBroadcast {
     arena: Arena,
 }
 
+impl AlignmentBroadcast {
+    pub fn new(pool: Arc<Pool<AlignmentSchema>>, memory: usize) -> Self {
+        Self {
+            arena: Arena::with_capacity(memory),
+            pool
+        }
+    }
+}
+
 impl Stage for AlignmentBroadcast {
 
-    type Input  = BatchRef<ResolvedSchema, ResolvedBatchMetadata>;
+    type Input  = BatchMut<ResolvedSchema, ResolvedBatchMetadata>;
     type Output = BatchMut<AlignmentSchema, ()>;
 
     fn process<E>(&mut self, input: Self::Input, emitter: &mut E) -> Result<(), StageError>
@@ -141,8 +150,7 @@ mod tests {
         );
 
         let input = resolved
-            .with_metadata(ResolvedBatchMetadata { occurences: vec![occ.freeze()] })
-            .freeze();
+            .with_metadata(ResolvedBatchMetadata { occurences: vec![occ.freeze()] });
 
         let (mut tx, rx) = connector_mut::<AlignmentSchema, ()>(1);
         stage.process(input, &mut tx).unwrap();
@@ -200,8 +208,7 @@ mod tests {
         );
 
         let input = resolved
-            .with_metadata(ResolvedBatchMetadata { occurences: vec![occ.freeze()] })
-            .freeze();
+            .with_metadata(ResolvedBatchMetadata { occurences: vec![occ.freeze()] });
 
         let (mut tx, rx) = connector_mut::<AlignmentSchema, ()>(16);
         stage.process(input, &mut tx).unwrap();
@@ -270,8 +277,7 @@ mod tests {
         let input = resolved
             .with_metadata(ResolvedBatchMetadata { 
                 occurences: vec![occ_a.freeze(), occ_b.freeze()] 
-            })
-            .freeze();
+            });
 
         let (mut tx, rx) = connector_mut::<AlignmentSchema, ()>(16);
         stage.process(input, &mut tx).unwrap();
