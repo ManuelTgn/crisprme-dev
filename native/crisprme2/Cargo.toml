@@ -11,6 +11,8 @@ name = "_crisprme2_native"
 crate-type = ["cdylib"]
 
 [dependencies]
+columnar = { path = "../crisprme2-columnar" }
+
 ahash = "0.8"
 bincode = "1.3"
 bump-scope = "1.3.0"

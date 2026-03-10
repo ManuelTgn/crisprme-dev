@@ -10,6 +10,7 @@ mod storage;
 mod engine;
 mod error;
 mod model;
+mod pipeline;
 mod annotation;
 pub mod python;
 

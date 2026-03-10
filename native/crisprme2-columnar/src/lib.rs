@@ -44,6 +44,7 @@ pub mod macros {
 pub mod buffer;
 pub mod pool;
 pub mod pipeline;
+pub mod arena;
 
 /// Optional extension modules (feature-gated).
 pub mod ext;
