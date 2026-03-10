@@ -62,7 +62,7 @@ impl ByteBuffer for PoolSlotLease {
 /// Call [`freeze`](BatchMut::freeze) to convert into a shared [`BatchRef`].
 pub struct BatchMut<S: Schema, M> {
     buffer: ColumnarBuffer<S, PoolSlotLease>,
-    metadata: M,
+    pub metadata: M,
 }
 
 impl<S: Schema, M: std::fmt::Debug> std::fmt::Debug for BatchMut<S, M> {
@@ -88,10 +88,12 @@ impl<S: Schema, M> DerefMut for BatchMut<S, M> {
 
 impl<S: Schema, M> BatchMut<S, M> {
 
+    /*
     /// Get a reference to the metadata.
     pub fn metadata(&self) -> &M {
         &self.metadata
     }
+     */
 
     /// Replace the metadata, keeping the same buffer.
     pub fn with_metadata<M2>(self, metadata: M2) -> BatchMut<S, M2> {
@@ -382,7 +384,7 @@ mod test {
         });
 
         let batch = batch.with_metadata(7u32);
-        assert_eq!(*batch.metadata(), 7u32);
+        assert_eq!(batch.metadata, 7u32);
 
         // Data survived metadata change
         let (ids,): (&[u32],) = batch.columns((src::schema::id,));

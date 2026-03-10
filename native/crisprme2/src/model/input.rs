@@ -2,7 +2,7 @@ use columnar::{macros::Columnar, pool::BatchRef};
 use crate::{crispr::guide::Guide, sequence::iupac::Iupac};
 
 /// Maximum length of a sequence
-pub const SEQ_MAX_LEN: usize = 30;
+pub const SEQ_MAX_LEN: usize = 26;
 
 /// Type that encodes an occurrence (contig_id, position, strand)
 pub type Occurrence = u64;
@@ -49,7 +49,7 @@ pub mod occurences {
 }
 
 /// Metadata for a batch of sequences
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SeqBatchMetadata {
 
     /// Length of the sequences

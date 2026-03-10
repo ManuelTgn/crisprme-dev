@@ -1,10 +1,11 @@
 use columnar::macros::Columnar;
 use columnar::pool::BatchRef;
-use crate::model::input::{SeqBatchMetadata, SeqId, SeqOccSchema};
+use crate::crispr::guide::Guide;
+use crate::model::input::{SeqBatchMetadata, SeqId, SeqOccSchema, occurences, sequences};
 use crate::sequence::iupac::Iupac;
 
 /// Max length of the resolved guides and sequence
-pub const ALIGN_RESOLVED_MAX_LEN: usize = 30;
+pub const ALIGN_RESOLVED_MAX_LEN: usize = 26;
 /// Maximum number of features of an alignment
 pub const ALIGN_MAX_FEATURES: usize = 10;
 /// Maximum number of scores of an alignment
@@ -15,6 +16,8 @@ pub type AlignmentId = u32;
 
 pub mod mined {
     use columnar::buffer::Schema;
+    use crate::{alignment::cigarx::Cigarx, model::cigarx::Cigarx64};
+
     use super::*;
 
     /// Definition of a mined alignment
@@ -24,6 +27,8 @@ pub mod mined {
         /// Unique identifier of the source sequence
         pub seq_id: SeqId,
 
+        /// Cigarx that represents the alignment
+        pub cigarx: Cigarx64,
         /// Offset from the start of the sequence
         pub offset: u8,
     }
@@ -93,7 +98,8 @@ pub mod aligned {
 /// Metadata for a batch of mined alignments
 #[derive(Debug)]
 pub struct MinedBatchMetadata {
-    pub sequences: SeqBatchMetadata,
+    /// Source sequence batch
+    pub sequences: BatchRef<sequences::SeqSchema, SeqBatchMetadata>,
 }
 
 /// Metadata for a batch of resolved alignments
