@@ -28,6 +28,7 @@ impl Stage for MineScanner {
         use crate::model::input::sequences::schema as ss;
         use crate::model::alignment::mined::schema as ms;
 
+        println!("[MineScanner] received buffer");
         let (seq_ids, seq_contents) = input.columns((ss::id, ss::content));
         let guide = input.metadata.guide.as_slice();
 
@@ -46,7 +47,7 @@ impl Stage for MineScanner {
                     for i in 0..rows {
 
                         mined_seq_ids[i] = seq_ids[i];
-                        mined_offsets[i] = (i % 4) as u8;
+                        mined_offsets[i] = i as u8;
 
                         let mut cigarx = Cigarx64::default();
                         for j in 0..guide.len() {
@@ -63,6 +64,7 @@ impl Stage for MineScanner {
             );
 
             remaining -= result.len();
+            println!("[MineScanner] submitted output buffer with {} rows", result.len());
             emitter.emit(result.with_metadata(
                 MinedBatchMetadata { 
                     sequences: input.clone() 

@@ -45,8 +45,12 @@ impl Stage for AlignmentBroadcast {
             for (i, id) in seq_ids.iter().enumerate() { 
                 index[*id as usize] = i as u32; 
             }
-            
-            for batch in &input.metadata.occurences {
+
+            let occurence_count = input.metadata.occurences.len();
+            println!("[Broadcast] received buffer with {occurence_count} attached occurences");
+
+            for (i, batch) in input.metadata.occurences.iter().enumerate() {
+                println!("[Broadcast] processing attached batch {i} with {} rows", batch.len());
 
                 let (occ_seq_ids, occ_occurences) = batch.columns((os::seq_id, os::occurence));
                 let (res_rguides, res_rseqs, res_resolved_lens, res_offsets) = 
@@ -88,6 +92,7 @@ impl Stage for AlignmentBroadcast {
                         });
 
                     remaining -= result.len();
+                    println!("[Broadcast] submitted output buffer with {} rows", result.len());
                     emitter.emit(result)?;
                 }
             }

@@ -36,6 +36,7 @@ impl Stage for AlignmentSimpleResolve {
         use crate::model::alignment::resolved::schema as rs;
         use crate::model::input::sequences::schema    as ss;
 
+        println!("[SimpleResolve] received buffer");
         let source_seq_batch = &input.metadata.sequences;
         let guide = &source_seq_batch.metadata.guide;
 
@@ -109,6 +110,7 @@ impl Stage for AlignmentSimpleResolve {
                     });
 
                 remaining -= result.len();
+                println!("[SimpleResolve] submitted output buffer with {} rows", result.len());
                 emitter.emit(result.with_metadata(
                     ResolvedBatchMetadata {
                         occurences: source_seq_batch.metadata.occurences.clone()
