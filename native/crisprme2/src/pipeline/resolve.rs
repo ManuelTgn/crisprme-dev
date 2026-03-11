@@ -36,7 +36,7 @@ impl Stage for AlignmentSimpleResolve {
         use crate::model::alignment::resolved::schema as rs;
         use crate::model::input::sequences::schema    as ss;
 
-        let _span = tracing::debug_span!("simple-resolve")
+        let _span = tracing::debug_span!("alignment-simple-resolve")
             .entered();
 
         let source_seq_batch = &input.metadata.sequences;

@@ -152,20 +152,20 @@ pub fn create_pipeline(py: Python<'_>, transform: Py<PyAny>) -> PyResult<PyPipel
     let mut pipeline = Pipeline::new(());
     py.detach(|| {
 
-        pipeline.stage("mine", 4, inseq_rx, mined_tx, move |_ctx| {
+        pipeline.stage("mine", 1, inseq_rx, mined_tx, move |_ctx| {
             MineScanner::new(mined.clone())
         });
 
-        pipeline.stage("resolve", 4, mined_rx, rslvd_tx, move |_ctx| {
+        pipeline.stage("resolve", 1, mined_rx, rslvd_tx, move |_ctx| {
             AlignmentSimpleResolve::new(resolved.clone(), 1024 * 1024 * 10)
         });
 
-        pipeline.stage("broadcast", 4, rslvs_rx, align_tx, move |_ctx| {
+        pipeline.stage("broadcast", 1, rslvs_rx, align_tx, move |_ctx| {
             AlignmentBroadcast::new(aligned.clone(), 1024 *1024 * 20)
         });
     });
     
-    pipeline.stage("transform", 4, align_rx, mutat_tx, move |_ctx| {
+    pipeline.stage("transform", 1, align_rx, mutat_tx, move |_ctx| {
         let t = Python::try_attach(|py| transform.clone_ref(py));
         AlignmentPythonTransform::new(t.unwrap())
     });

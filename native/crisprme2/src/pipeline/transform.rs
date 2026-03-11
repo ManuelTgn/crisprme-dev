@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use columnar::{pipeline::{Emit, Stage, StageError}, pool::BatchMut};
 use pyo3::{Py, PyAny, Python};
 
@@ -23,7 +25,14 @@ impl Stage for AlignmentPythonTransform {
     where
         E: Emit<Self::Output> 
     {
-        let py_batch = PyAlignmentBatch { batch: Some(input) };
+        let _span = tracing::debug_span!("alignment-python-transform")
+            .entered();
+
+        let py_batch = PyAlignmentBatch { 
+            batch: Some(input) 
+        };
+
+        let start = Instant::now();
         let result = Python::attach(|py| {
                 let py_batch = Py::new(py, py_batch)
                     .expect("unable to attach buffer to python");
@@ -36,7 +45,9 @@ impl Stage for AlignmentPythonTransform {
                 inner.batch.take().unwrap()
             });
 
-        emitter.emit(result)?;
-        Ok(())
+        tracing::debug!("python took {:.2} (s) to process {} rows",
+            start.elapsed().as_secs_f32(), result.len());
+
+        emitter.emit(result)
     }
 }

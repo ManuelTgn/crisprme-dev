@@ -36,6 +36,9 @@ impl Stage for AlignmentBroadcast {
         use crate::model::alignment::resolved::schema as rs;
         use crate::model::alignment::aligned::schema  as bs;
 
+        let _span = tracing::debug_span!("alignment-broadcast")
+            .entered();
+
         self.arena.scoped(|m| {
         
             // Map from seq_id to index inside the input batch
@@ -47,16 +50,17 @@ impl Stage for AlignmentBroadcast {
             }
 
             let occurence_count = input.metadata.occurences.len();
-            println!("[Broadcast] received buffer with {occurence_count} attached occurences");
+            tracing::debug!("broadcast {} rows to {} occurence batches", 
+                input.len(), occurence_count);
 
             for (i, batch) in input.metadata.occurences.iter().enumerate() {
-                println!("[Broadcast] processing attached batch {i} with {} rows", batch.len());
 
                 let (occ_seq_ids, occ_occurences) = batch.columns((os::seq_id, os::occurence));
                 let (res_rguides, res_rseqs, res_resolved_lens, res_offsets) = 
                     input.columns((rs::rguide, rs::rseq, rs::resolved_len, rs::offset));
 
                 let mut remaining = batch.len();
+                tracing::debug!("{} rows to emit in total", remaining);
                 while remaining > 0 {
 
                     // Acquire a new result batch
@@ -92,8 +96,9 @@ impl Stage for AlignmentBroadcast {
                         });
 
                     remaining -= result.len();
-                    println!("[Broadcast] submitted output buffer with {} rows", result.len());
                     emitter.emit(result)?;
+                    tracing::debug!("emit alignment batch with {} rows ({}/{} remaining)", 
+                        rows, remaining, batch.len());
                 }
             }
 
