@@ -43,7 +43,7 @@ impl Stage for AlignmentBroadcast {
             let mut index = m.alloc_slice_fill(input.len(), 0u32);
             let (seq_ids,) = input.columns((resolved::schema::seq_id,));
             for (i, id) in seq_ids.iter().enumerate() { 
-                index[*id as usize] = i as u32; 
+                index[*id as usize] = i as u32;
             }
 
             let occurence_count = input.metadata.occurences.len();

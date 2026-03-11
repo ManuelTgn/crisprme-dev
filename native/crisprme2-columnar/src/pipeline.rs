@@ -17,9 +17,6 @@ pub struct StageError;
 
 /// Object that emits T
 pub trait Emit<T> {
-
-    // fn acquire(&mut self)
-
     fn emit(&mut self, item: T) -> Result<(), StageError>;
 }
 

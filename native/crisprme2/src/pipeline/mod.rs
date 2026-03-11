@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use columnar::{buffer::Schema, pipeline::Pipeline, pool::{BatchMut, BatchRef, ConnectorRx, ConnectorTx, Pool, connector_mut, connector_ref}};
+use columnar::{arena::Arena, buffer::Schema, pipeline::Pipeline, pool::{BatchMut, BatchRef, ConnectorRx, ConnectorTx, Pool, connector_mut, connector_ref}};
 use pyo3::{Py, PyAny, PyResult, Python, pyclass, pyfunction, pymethods};
 
-use crate::{crispr::guide::Guide, model::{alignment::{AlignmentSchema, MinedBatchMetadata, MinedSchema, ResolvedBatchMetadata, ResolvedSchema, aligned::PyAlignmentBatch}, input::{SeqBatchMetadata, SeqOccSchema, SeqSchema, occurence}}, pipeline::{broadcast::AlignmentBroadcast, resolve::AlignmentSimpleResolve, scanner::MineScanner, transform::AlignmentPythonTransform}, sequence::sequence::Sequence};
+use crate::{batching::batching::TargetBatcher, crispr::guide::Guide, model::{alignment::{AlignmentSchema, MinedBatchMetadata, MinedSchema, ResolvedBatchMetadata, ResolvedSchema, aligned::PyAlignmentBatch}, input::{SeqBatchMetadata, SeqOccSchema, SeqSchema, occurence}}, pipeline::{broadcast::AlignmentBroadcast, resolve::AlignmentSimpleResolve, scanner::MineScanner, transform::AlignmentPythonTransform}, sequence::{iupac::Iupac, sequence::Sequence}};
 
 
 pub mod broadcast;
@@ -32,7 +32,7 @@ impl PyPipeline {
     }
 
     // Example submit
-    fn submit(&mut self, py: Python<'_>) {
+    fn submit_example(&mut self, py: Python<'_>) {
         println!("Submitting new sequence batch...");
 
         use crate::model::input::sequences::schema  as ss;
@@ -152,29 +152,29 @@ pub fn create_pipeline(py: Python<'_>, transform: Py<PyAny>) -> PyResult<PyPipel
     let mut pipeline = Pipeline::new(());
     py.detach(|| {
 
-        pipeline.stage("mine", 1, inseq_rx, mined_tx, move |_ctx| {
+        pipeline.stage("mine", 4, inseq_rx, mined_tx, move |_ctx| {
             MineScanner::new(mined.clone())
         });
 
-        pipeline.stage("resolve", 1, mined_rx, rslvd_tx, move |_ctx| {
+        pipeline.stage("resolve", 4, mined_rx, rslvd_tx, move |_ctx| {
             AlignmentSimpleResolve::new(resolved.clone(), 1024 * 1024 * 10)
         });
 
-        pipeline.stage("broadcast", 1, rslvs_rx, align_tx, move |_ctx| {
+        pipeline.stage("broadcast", 4, rslvs_rx, align_tx, move |_ctx| {
             AlignmentBroadcast::new(aligned.clone(), 1024 *1024 * 20)
         });
     });
     
-    pipeline.stage("transform", 1, align_rx, mutat_tx, move |_ctx| {
+    pipeline.stage("transform", 4, align_rx, mutat_tx, move |_ctx| {
         let t = Python::try_attach(|py| transform.clone_ref(py));
         AlignmentPythonTransform::new(t.unwrap())
     });
 
     Ok(PyPipeline {
-        inseq_tx: Some(inseq_tx), 
-        mutat_rx, 
-        sequences, 
-        occurences, 
+        inseq_tx: Some(inseq_tx),
+        mutat_rx,
+        sequences,
+        occurences,
         pipeline
     })
 }
