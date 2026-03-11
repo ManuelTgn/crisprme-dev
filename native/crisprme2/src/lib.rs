@@ -82,7 +82,8 @@ pub mod _crisprme2_native {
         // add the top-level function to the Python module
         // m.add_function(wrap_pyfunction!(extract_targets_rs, m)?)?;
 
-        //m.add_function(wrap_pyfunction!(initialize_engine_logger, m)?)?;
+        // Create logger for the engine
+        m.add_function(wrap_pyfunction!(initialize_engine_logger, m)?)?;
 
         // Allows python to create a new pipeline
         m.add_function(wrap_pyfunction!(create_pipeline, m)?)?;

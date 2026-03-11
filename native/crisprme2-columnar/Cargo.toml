@@ -4,15 +4,18 @@ version = "0.0.0"
 edition = "2024"
 
 [features]
+tracing = [ "dep:tracing" ]
 pyo3 = [ "dep:pyo3" ]
 
 [dependencies]
 columnar-derive = { path = "../crisprme2-derive" }
+
 bytemuck = { version = "1.25.0", features = ["derive"] }
-pyo3 = { version = "0.28.2", optional = true }
 bump-scope = "2.2.0"
 crossbeam = "0.8.4"
 
+tracing = { version = "0.1.44", optional = true }
+pyo3 = { version = "0.28.2", optional = true }
 
 # Re-export the derive macro
 [package.metadata]

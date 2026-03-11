@@ -11,7 +11,7 @@ name = "_crisprme2_native"
 crate-type = ["cdylib"]
 
 [dependencies]
-columnar = { path = "../crisprme2-columnar", features = [ "pyo3" ] }
+columnar = { path = "../crisprme2-columnar", features = [ "pyo3", "tracing" ] }
 
 ahash = "0.8"
 bincode = "1.3"

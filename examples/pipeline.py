@@ -5,23 +5,25 @@ import time
 def myfunc(batch: native.PyAlignmentBatch):
     print(f"transform: {np.asarray(batch["offset"])}")
 
-class Scorer:
-    def __init__():
-        pass
-    def __call__(batch):
-        pass
+#class Scorer:
+#    def __init__():
+#        pass
+#    def __call__(batch):
+#        pass
 
-class Annotator:
-    def __init__():
-        pass
-    def __call__(batch):
-        pass
+#class Annotator:
+#    def __init__():
+#        pass
+#    def __call__(batch):
+#        pass
 
-scorer = Scorer(.....)
-pipeline = native.create_pipeline(transform=scorer, scores=[...], annotators=[...])
-pipeline.submit_example() # make error visible
+#scorer = Scorer(.....)
+#pipeline = native.create_pipeline(transform=scorer, scores=[...], annotators=[...])
 # add target batcher source
 #pipeline.submit(batcher)
+native.initialize_engine_logger()
+pipeline = native.create_pipeline(transform=myfunc)
+pipeline.submit_example() # make error visible
 pipeline.close() # make error visible
 
 complete = False

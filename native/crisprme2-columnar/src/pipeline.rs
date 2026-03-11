@@ -139,28 +139,58 @@ impl<C: Send + Sync + 'static> Pipeline<C> {
         R: Recv<S::Input>  + Send + Clone + 'static,
         F: Fn(Arc<C>) -> S + Send + Sync  + 'static,
     {
+        #[cfg(feature = "tracing")]
+        tracing::debug!(stage = name, workers, "registering stage");
+
         let mut handles = Vec::with_capacity(workers);
 
         let metrics = Arc::new(StageMetrics::default());
-        for _ in 0..workers {
+        for worker_id in 0..workers {
             let metrics = metrics.clone();
 
             let mut worker_emit = emit.clone();
             let mut worker_recv = recv.clone();
 
             let mut worker_stage = stage(self.ctx.clone());
+            let worker_name = name.to_owned();
+
+            #[cfg(feature = "tracing")]
+            let parent = tracing::Span::current();
+
             handles.push(std::thread::spawn(move || {
+
+                #[cfg(feature = "tracing")]
+                let _worker_span = {
+                    let this_name = worker_name.clone();
+                    tracing::debug_span!(
+                        parent: &parent, 
+                        "worker", 
+                        stage = this_name, 
+                        worker_id
+                    ).entered()
+                };
+
+                let worker_start = Instant::now();
                 while let Some(input) = worker_recv.recv() {
-                    let start = Instant::now();
 
+                    let instant = Instant::now();
                     let result = worker_stage.process(input, &mut worker_emit);
+                    let elapsed = instant.elapsed();
 
-                    metrics.processing_ns.fetch_add(start.elapsed().as_nanos() as u64, Ordering::Relaxed);
+                    metrics.processing_ns.fetch_add(elapsed.as_nanos() as u64, Ordering::Relaxed);
                     metrics.items_processed.fetch_add(1, Ordering::Relaxed);
-                    if result.is_err() {
-                        break;
-                    }
+
+                    #[cfg(feature = "tracing")] 
+                    tracing::debug!("took {} (μs) to process batch", 
+                        elapsed.as_micros());
+
+                    if result.is_err() { break; }
                 }
+
+                #[cfg(feature = "tracing")]
+                tracing::debug!("exit after {:.2} (s)", 
+                    worker_start.elapsed().as_secs_f32());
+
             }));
         }
 

@@ -36,9 +36,14 @@ impl Stage for AlignmentSimpleResolve {
         use crate::model::alignment::resolved::schema as rs;
         use crate::model::input::sequences::schema    as ss;
 
-        println!("[SimpleResolve] received buffer");
+        let _span = tracing::debug_span!("simple-resolve")
+            .entered();
+
         let source_seq_batch = &input.metadata.sequences;
         let guide = &source_seq_batch.metadata.guide;
+
+        tracing::debug!("resolving {} rows with guide {}", 
+            input.len(), guide);
 
         let (sequences,) = source_seq_batch.columns((ss::content,));
         let (mined_seq_ids, mined_offsets, mined_cigarxs) = 
@@ -110,7 +115,7 @@ impl Stage for AlignmentSimpleResolve {
                     });
 
                 remaining -= result.len();
-                println!("[SimpleResolve] submitted output buffer with {} rows", result.len());
+                tracing::debug!("emit resolved chunk with {} rows", input.len());
                 emitter.emit(result.with_metadata(
                     ResolvedBatchMetadata {
                         occurences: source_seq_batch.metadata.occurences.clone()
