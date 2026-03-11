@@ -54,7 +54,7 @@ setup(
     rust_extensions=[
         RustExtension(
             "crisprme2._crisprme2_native",      # Python module path
-            "native/rust/Cargo.toml",           # path to your Rust crate
+            "native/crisprme2/Cargo.toml",      # path to your Rust crate
             binding=Binding.PyO3,
             debug=False,
         ),
