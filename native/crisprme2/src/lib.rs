@@ -58,30 +58,24 @@ pub fn extract_targets_rs(
 /// Defines the Python module structure and exposes Rust functions
 #[pymodule]
 pub mod _crisprme2_native {
-    use std::array;
 
     use columnar::{
         memory::CHUNK_SIZE,
         pipeline::{Driven, Pipeline, PipelineHandle},
         MemoryPool,
     };
+    use itertools::izip;
     use pyo3::{
-        pyclass, pyfunction, pymethods,
-        types::{PyAnyMethods, PyList},
-        Bound, PyResult, Python,
+        Bound, Py, PyResult, Python, pyclass, pyfunction, pymethods, types::{PyAnyMethods, PyList}
     };
 
     use crate::{
-        crispr::guide::Guide,
-        model::{
+        crispr::guide::Guide, model::{
             alignment::AlignmentFrame,
-            input::{SeqBatch, SeqFrame, SeqOccFrame},
-        },
-        pipeline::{
-            stage::miner::Miner, sink::NullSink, stage::broadcast::Broadcast, stage::resolve::Resolver,
-            stage::transform::PyTransform,
-        },
-        sequence::iupac::Iupac,
+            input::{SEQ_MAX_LEN, SeqBatch, SeqFrame, SeqOccFrame}, occurence::Occurence,
+        }, pipeline::{
+            sink::NullSink, stage::{broadcast::Broadcast, miner::Miner, resolve::Resolver, transform::PyTransform}
+        }, sequence::iupac::Iupac
     };
 
     /*
@@ -124,7 +118,13 @@ pub mod _crisprme2_native {
     pub use columnar::python::PyBuffer;
 
     #[pymodule_export]
+    pub use crate::batching::batching::TargetBatcher;
+
+    #[pymodule_export]
     pub use crate::pipeline::stage::transform::PyAlignmentBatch;
+
+    #[pymodule_export]
+    pub use crate::extract_targets_rs;
 
     #[pyfunction]
     pub fn init_tracing() {
@@ -150,7 +150,7 @@ pub mod _crisprme2_native {
     impl PyPipeline {
         fn send_debug_data(&mut self, py: Python<'_>) -> PyResult<()> {
 
-            const ROWS: usize = 500_000;
+            const ROWS: usize = 10;
 
             let seq_len: usize = 24;
             let iupacs: [Iupac; 4] = [
@@ -185,6 +185,61 @@ pub mod _crisprme2_native {
                     .send(SeqBatch {
                         seq_len,
                         guide: Guide::new("GATTACAGATTACA"),
+                        sequences: seqs,
+                        occurences: occs,
+                    })
+                    .unwrap();
+            });
+
+            Ok(())
+        }
+
+        /// Submit the content of a TargetBatcher
+        pub fn submit(&mut self, py: Python<'_>, batcher: &mut TargetBatcher) -> PyResult<()> {
+
+            assert!(batcher.get_sequence_len() <= SEQ_MAX_LEN,
+                "window sequence should fit inside a SeqFrame");
+
+            // Create compact representation
+            let batch = batcher.flush_to_batch();
+
+            // Copy sequences
+            let mut seqs = SeqFrame::alloc(&self.pool, batch.len());
+            seqs.with_cols(|mut cols| {
+                for (i, content) in cols.content.iter_mut().enumerate() {
+                    // Copy content to frame
+                    let window = &batch.windows[i];
+                    for j in 0..window.len() {
+                        content[j] = Iupac::new(window[j]);
+                    }
+                }
+            });
+
+            // Copy occurences
+            let total_occs = batch.occs.iter().map(|o| o.len()).sum();
+            let mut occs = SeqOccFrame::alloc(&self.pool, total_occs);
+            occs.with_cols(|mut cols| {
+
+                let iter = izip!(
+                    cols.seq_row_idx.iter_mut(),
+                    cols.occurence.iter_mut(),
+                    batch.occs.iter()
+                        .flat_map(|s| s.iter())
+                );
+
+                // Copy content into frame
+                for (i, (dst_seq_id, dst_occ, src_occ)) in iter.enumerate() {
+                    *dst_seq_id = i as u32;
+                    *dst_occ = Occurence(*src_occ);
+                }
+            });
+
+            // Release GIL while sending so pipeline workers can acquire it
+            py.detach(|| {
+                self.input
+                    .send(SeqBatch {
+                        seq_len: batcher.get_sequence_len(),
+                        guide: batcher.get_guide(),
                         sequences: seqs,
                         occurences: occs,
                     })

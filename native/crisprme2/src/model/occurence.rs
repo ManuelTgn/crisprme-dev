@@ -3,7 +3,7 @@ use bytemuck::{Pod, Zeroable};
 
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy)]
-pub struct Occurence(u64);
+pub struct Occurence(pub u64);
 
 impl Occurence {
     pub fn new(contig: u32, position: u32, strand: u8) -> Self {
