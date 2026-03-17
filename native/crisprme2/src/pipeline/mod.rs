@@ -1,16 +1,13 @@
 use std::sync::Arc;
 
-use columnar::{arena::Arena, buffer::Schema, pipeline::Pipeline, pool::{BatchMut, BatchRef, ConnectorRx, ConnectorTx, Pool, connector_mut, connector_ref}};
-use pyo3::{Py, PyAny, PyResult, Python, pyclass, pyfunction, pymethods};
-
-use crate::{batching::batching::TargetBatcher, crispr::guide::Guide, model::{alignment::{AlignmentSchema, MinedBatchMetadata, MinedSchema, ResolvedBatchMetadata, ResolvedSchema, aligned::PyAlignmentBatch}, input::{SeqBatchMetadata, SeqOccSchema, SeqSchema, occurence}}, pipeline::{broadcast::AlignmentBroadcast, resolve::AlignmentSimpleResolve, scanner::MineScanner, transform::AlignmentPythonTransform}, sequence::{iupac::Iupac, sequence::Sequence}};
-
-
-pub mod broadcast;
+pub mod merge;
 pub mod resolve;
 pub mod transform;
-pub mod scanner;
+pub mod miner;
 
+pub mod sink;
+
+/*
 #[pyclass]
 pub struct PyPipeline {
 
@@ -178,3 +175,4 @@ pub fn create_pipeline(py: Python<'_>, transform: Py<PyAny>) -> PyResult<PyPipel
         pipeline
     })
 }
+ */

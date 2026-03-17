@@ -18,9 +18,6 @@ use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
 use pyo3::PyResult;
 
-use crate::{alignment::thresholds::Thresholds, batching::batching::{BatcherStats, FeedStatus, TargetBatcher}, crispr::guide::Guide, engine::{hybrid::HybridEngine, params::AlignmentParams}, python::views::AlignmentBatchView};
-
-
 /// Finds all potential target candidates (CRISPR gRNAs) within a given sequence.
 ///
 /// This function converts the input sequence and PAM into IUPAC bitmasks and performs a
@@ -58,19 +55,17 @@ pub fn extract_targets_rs(
         .map_err(|e| PyErr::new::<PyValueError, _>(e))
 }
 
-#[pyfunction]
-pub fn initialize_engine_logger() {
-    tracing_subscriber::fmt()
-            .compact()
-            .with_target(false)
-            .with_thread_ids(true)
-            .with_max_level(tracing::Level::TRACE)
-            .init();
-}
-
 /// Defines the Python module structure and exposes Rust functions
 #[pymodule]
 pub mod _crisprme2_native {
+    use std::array;
+
+    use columnar::{MemoryPool, memory::CHUNK_SIZE, pipeline::{Driven, Pipeline, PipelineHandle}};
+    use pyo3::{Bound, PyResult, Python, pyclass, pyfunction, pymethods, types::{PyAnyMethods, PyList}};
+
+    use crate::{crispr::guide::Guide, model::{alignment::AlignmentFrame, input::{SeqBatch, SeqFrame, SeqOccFrame}}, pipeline::{merge::MergeJoinSorted, miner::Miner, resolve::Resolver, sink::NullSink, transform::PyTransform}, sequence::iupac::Iupac};
+
+    /*
     use columnar::ext::pyo3::PyColumnView;
 
     use crate::{model::alignment::aligned::PyAlignmentBatch, pipeline::{PyPipeline, *}};
@@ -103,5 +98,126 @@ pub mod _crisprme2_native {
         */
 
         Ok(())
+    }
+    */
+
+    pub use columnar::python::PyBuffer;
+    pub use crate::pipeline::transform::PyAlignment;
+
+    #[pyfunction]
+    pub fn initialize_engine_logger() {
+        tracing_subscriber::fmt()
+                .compact()
+                .with_target(false)
+                .with_thread_ids(true)
+                .with_max_level(tracing::Level::TRACE)
+                .init();
+    }
+
+    #[pyclass]
+    struct PyPipeline {
+
+        // Pipeline memory pool
+        pool: MemoryPool,
+
+        // Input sender (Option so we can drop it explicitly to signal EOF)
+        input: Driven<SeqBatch>,
+        handle: PipelineHandle
+    }
+
+    #[pymethods]
+    impl PyPipeline {
+
+        fn send_debug_data(&mut self, py: Python<'_>) -> PyResult<()> {
+
+            const ROWS: usize = 50_000;
+
+            let iupacs: [Iupac; 4] = [
+                Iupac::from_utf8('A'),
+                Iupac::from_utf8('C'),
+                Iupac::from_utf8('T'),
+                Iupac::from_utf8('G')
+            ];
+
+            let mut seqs = SeqFrame::alloc(&self.pool, ROWS);
+            let mut occs = SeqOccFrame::alloc(&self.pool, ROWS * 3);
+
+            // Create debug sequences
+            seqs.with_cols(|mut cols| {
+                for (i, (id, content)) in 
+                    cols.id.iter_mut().zip(cols.content.iter_mut()).enumerate() 
+                {
+                    *id = i as u32;
+                    *content = array::from_fn(|j| 
+                        iupacs[(i + j) % 4])
+                }
+            });
+
+            // Create debug occurences
+            occs.with_cols(|mut cols| {
+                for (i, seq_id) in cols.seq_id.iter_mut().enumerate() {
+                    *seq_id = (i / 3) as u32;
+                }
+            });
+
+            // Release GIL while sending so pipeline workers can acquire it
+            py.detach(|| {
+                self.input.send(
+                    SeqBatch { 
+                        seq_len: 24, 
+                        guide: Guide::new("GATTACA"), 
+                        sequences: seqs, 
+                        occurences: occs 
+                    }
+                ).unwrap();
+            });
+
+            Ok(())
+        }
+
+        /// Close the input and wait for all pipeline workers to finish.
+        /// Must be called explicitly: dropping PyPipeline from Python will deadlock
+        /// because worker threads need the GIL to call Python transforms.
+        fn close(&mut self, py: Python<'_>) {
+            self.input.close();
+            py.detach(|| { // Release GIL so worker threads can finish their Python calls
+                self.handle.join();
+            });
+        }
+    }
+
+    /// Create a driven pipeline with transforms
+    #[pyfunction]
+    fn pipeline<'py>(transforms: Bound<'py, PyList>) -> PyResult<PyPipeline> {
+
+        let pool = MemoryPool::new(CHUNK_SIZE * 1000, |_, _| { });
+        let (input, pipeline) = Pipeline::driven(10);
+
+        let mut pipeline = pipeline
+            .stage(2, |pool, _| Miner::new(pool))
+            .stage(2, |pool, _| Resolver::new(pool))
+            .stage(2, |pool, _| MergeJoinSorted::new(pool));
+
+        // Add all transform stages
+        println!("adding transform stages: ");
+        for elem in transforms {
+            println!("\t{:?}", elem.get_type()
+                .getattr("__name__")
+                .unwrap());
+
+            let transform = elem.unbind();
+            pipeline = pipeline.stage_once(|_| PyTransform::new(transform))
+        }
+
+        // Add sink stage
+        let pipeline = pipeline.sink(2, |_, _| NullSink::<AlignmentFrame>::new());
+        println!("pipeline ready!");
+
+        let handle = pipeline.execute(&pool, 10);
+        Ok(PyPipeline {
+            handle,
+            input,
+            pool
+        })
     }
 }

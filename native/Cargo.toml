@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
-    "crisprme2-columnar",
-    "crisprme2-derive", 
+    "columnar",
+    "columnar_derive", 
     "crisprme2",
 ]

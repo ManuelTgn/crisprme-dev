@@ -31,20 +31,18 @@ const IUPAC_LOOKUP_TABLE: [u8; 256] = {
         };
     }
     
-    // Standard Bases
     set_iupac!(b'A', 0b0001);
     set_iupac!(b'C', 0b0010);
     set_iupac!(b'G', 0b0100);
     set_iupac!(b'T', 0b1000);
     
-    // Ambiguity Codes (R, Y, S, W, K, M, B, D, H, V)
     set_iupac!(b'R', 0b0101); // A or G
     set_iupac!(b'Y', 0b1010); // C or T
     set_iupac!(b'S', 0b0110); // G or C
     set_iupac!(b'W', 0b1001); // A or T
     set_iupac!(b'K', 0b1100); // G or T
     set_iupac!(b'M', 0b0011); // A or C
-    
+
     set_iupac!(b'B', 0b1110); // C, G, or T (Not A)
     set_iupac!(b'D', 0b1101); // A, G, or T (Not C)
     set_iupac!(b'H', 0b1011); // A, C, or T (Not G)

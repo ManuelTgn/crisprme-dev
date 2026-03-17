@@ -1,42 +1,106 @@
-use columnar::{pipeline::{Emit, Stage, StageError}, pool::BatchMut};
-use pyo3::{Py, PyAny, Python};
+use std::array;
 
-use crate::model::alignment::{AlignmentSchema, aligned::PyAlignmentBatch};
+use columnar::{memory::region_min_size, pipeline::{Emit, Stage, StageError}, python::PyBuffer};
+use pyo3::{Py, PyAny, PyResult, Python, pyclass, pymethods};
 
-/// Modifies an alignment batch using python
-pub struct AlignmentPythonTransform {
-    transform: Py<PyAny>,
+use crate::model::alignment::AlignmentFrame;
+
+#[pyclass(unsendable)]
+pub struct PyAlignment {
+
+    offset: PyBuffer,
+    rguide: PyBuffer,
+    rseq:   PyBuffer,
+
+    features: [PyBuffer; 10],
+    scores:   [PyBuffer; 4],
 }
 
-impl AlignmentPythonTransform {
+#[pymethods]
+impl PyAlignment {
+
+    fn offset(&self) -> PyResult<PyBuffer> { Ok(self.offset) }
+    fn rguide(&self) -> PyResult<PyBuffer> { Ok(self.rguide) }
+    fn rseq(&self)   -> PyResult<PyBuffer> { Ok(self.rseq)   }
+
+    fn feature(&self, idx: usize) -> PyResult<PyBuffer> { Ok(self.features[idx]) }
+    fn score(&self, idx: usize)   -> PyResult<PyBuffer> { Ok(self.scores[idx])   }
+
+}
+
+/// Applies a transformation using a python callable
+pub struct PyTransform(Py<PyAny>);
+impl PyTransform {
     pub fn new(transform: Py<PyAny>) -> Self {
-        Self { transform }
+        Self(transform)
     }
 }
 
-impl Stage for AlignmentPythonTransform {
+impl Stage for PyTransform {
+    type I = AlignmentFrame;
+    type O = AlignmentFrame;
 
-    type Input  = BatchMut<AlignmentSchema, ()>;
-    type Output = BatchMut<AlignmentSchema, ()>;
+    fn name() -> &'static str { "PyTransform" }
+    fn process(&mut self, mut input: Self::I, emitter: &impl Emit<Self::O>) -> Result<(), StageError> {
+        input.with_cols(|mut cols| {
 
-    fn process<E>(&mut self, input: Self::Input, emitter: &mut E) -> Result<(), StageError>
-    where
-        E: Emit<Self::Output> 
-    {
-        let py_batch = PyAlignmentBatch { batch: Some(input) };
-        let result = Python::attach(|py| {
-                let py_batch = Py::new(py, py_batch)
-                    .expect("unable to attach buffer to python");
+            // Size of smallest continous memory region
+            let stride = region_min_size(&[
+                cols.rguide.row_bytes(),
+                cols.rseq.row_bytes(),
+                cols.features.row_bytes(),
+                cols.offset.row_bytes(),
+                cols.scores.row_bytes()
+            ]);
 
-                self.transform.call1(py, (&py_batch,))
-                    .expect("unable to call transform function on batch");
+            let mut features: [_; 10] = cols.features.split();
+            let mut scores:   [_;  4] = cols.scores.split();
 
-                // Take the batch back after callback returns
-                let mut inner = py_batch.borrow_mut(py);
-                inner.batch.take().unwrap()
-            });
+            let mut row = 0;
+            let total_rows = cols.seq_id.rows();
+            while row < total_rows {
+                let len = stride.min(total_rows - row);
 
-        emitter.emit(result)?;
-        Ok(())
+                // Get continous regions of memory, read-only
+                
+                let slice_offset = cols.offset.slice(row, len);
+                let slice_rguide = cols.rguide.slice(row, len);
+                let slice_rseq   = cols.rseq.slice(row, len);
+
+                // Get continous regions of memory, mutable
+
+                let mut slice_features: Vec<_> = features.iter_mut().map(|s| s.slice_mut(row, len) ).collect();
+                let mut slice_scores: Vec<_> = scores.iter_mut().map(|s| s.slice_mut(row, len) ).collect();
+
+                // Create PyBuffer for all regions
+
+                let offset = unsafe { PyBuffer::from_slice(slice_offset) };
+                let rguide = unsafe { PyBuffer::from_array(slice_rguide) };
+                let rseq   = unsafe { PyBuffer::from_array(slice_rseq)   };
+
+                let features = array::from_fn(|i| unsafe { PyBuffer::from_slice_mut(slice_features[i]) });
+                let scores   = array::from_fn(|i| unsafe { PyBuffer::from_slice_mut(slice_scores[i])   });
+
+                println!("sending slice of size {} to python", len);
+                Python::attach(|py| {
+
+                    let input = PyAlignment {
+                        offset,
+                        rguide,
+                        rseq,
+                        features,
+                        scores,
+                    };
+
+                    self.0.call1(py, (input,))
+                        .expect("python transform object caused an error");
+                });
+
+                row += len;
+            }
+        });
+
+        // Forward
+        emitter.emit(input)
     }
 }

@@ -1,9 +1,70 @@
-use std::sync::Arc;
+use columnar::{MemoryPool, pipeline::{Emit, Stage, StageError}, Share};
+use itertools::izip;
 
-use columnar::{pipeline::{Emit, Stage, StageError}, pool::{BatchMut, BatchRef, Pool}};
+use crate::model::{alignment::{SeqMinedBatch, SeqMinedFrame}, cigarx::{Cigarx, Cigarx64, CigarxOp}, input::SeqBatch};
 
-use crate::model::{alignment::{MinedBatchMetadata, MinedSchema}, cigarx::{Cigarx, Cigarx64, CigarxOp}, input::{SeqBatchMetadata, SeqSchema}};
+/// Fake miner for now, it only checks for match/mismatch
+pub struct Miner { pool: MemoryPool }
 
+impl Miner {
+    pub fn new(pool: &MemoryPool) -> Self {
+        Self { pool: pool.clone() }
+    }
+}
+
+impl Stage for Miner {
+
+    type I = SeqBatch;
+    type O = SeqMinedBatch;
+
+    fn name() -> &'static str { "Miner" }
+    fn process(&mut self, mut input: Self::I, emitter: &impl Emit<Self::O>) -> Result<(), StageError> {
+        
+        let mut sequences  = input.sequences.share();
+        let mut occurences = input.occurences.share();
+
+        input.sequences.with_cols(|cols| {
+            let rows = cols.id.rows();
+
+            let mut mined = SeqMinedFrame::alloc(&self.pool, rows);
+            mined.with_cols(|mut mined| {
+                let zipped = izip!(
+                    cols.id.iter(),
+                    cols.content.iter(),
+                    mined.seq_id.iter_mut(),
+                    mined.cigarx.iter_mut(),
+                    mined.offset.iter_mut()
+                );
+
+                for (id, sequence, mined_seq_id, cigarx, offset) in zipped {
+                    
+                    *cigarx = Cigarx64::default();
+                    *mined_seq_id = *id;
+                    *offset = 69;
+
+                    for j in 0..input.guide.len() {
+                        if sequence[j].matches(input.guide[j]) {
+                            cigarx.push(CigarxOp::Match);
+                        } else {
+                            cigarx.push(CigarxOp::Mismatch);
+                        }
+                    }
+                }
+
+            });
+
+            emitter.emit(SeqMinedBatch {
+                guide: input.guide.clone(),
+                sequences: sequences.share(),
+                occurences: occurences.share(),
+                mined,
+            })
+        })
+    }
+}
+
+
+/*
 /// Fake miner for now, it only checks for match/mismatch
 pub struct MineScanner {
     /// Pool for buffers of mined schema
@@ -74,3 +135,4 @@ impl Stage for MineScanner {
         Ok(())
     }
 }
+ */
