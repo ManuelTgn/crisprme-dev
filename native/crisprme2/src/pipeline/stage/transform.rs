@@ -6,8 +6,9 @@ use pyo3::{Py, PyAny, PyResult, Python, pyclass, pymethods};
 use crate::model::alignment::AlignmentFrame;
 
 #[pyclass(unsendable)]
-pub struct PyAlignment {
+pub struct PyAlignmentBatch {
 
+    seq_id: PyBuffer,
     offset: PyBuffer,
     rguide: PyBuffer,
     rseq:   PyBuffer,
@@ -17,8 +18,9 @@ pub struct PyAlignment {
 }
 
 #[pymethods]
-impl PyAlignment {
+impl PyAlignmentBatch {
 
+    fn seq_id(&self) -> PyResult<PyBuffer> { Ok(self.seq_id) }
     fn offset(&self) -> PyResult<PyBuffer> { Ok(self.offset) }
     fn rguide(&self) -> PyResult<PyBuffer> { Ok(self.rguide) }
     fn rseq(&self)   -> PyResult<PyBuffer> { Ok(self.rseq)   }
@@ -57,12 +59,13 @@ impl Stage for PyTransform {
             let mut scores:   [_;  4] = cols.scores.split();
 
             let mut row = 0;
-            let total_rows = cols.seq_id.rows();
+            let total_rows = cols.occurence.rows();
             while row < total_rows {
                 let len = stride.min(total_rows - row);
 
                 // Get continous regions of memory, read-only
                 
+                let slice_seq_id = cols.seq_row_idx.slice(row, len);
                 let slice_offset = cols.offset.slice(row, len);
                 let slice_rguide = cols.rguide.slice(row, len);
                 let slice_rseq   = cols.rseq.slice(row, len);
@@ -74,6 +77,7 @@ impl Stage for PyTransform {
 
                 // Create PyBuffer for all regions
 
+                let seq_id = unsafe { PyBuffer::from_slice(slice_seq_id) };
                 let offset = unsafe { PyBuffer::from_slice(slice_offset) };
                 let rguide = unsafe { PyBuffer::from_array(slice_rguide) };
                 let rseq   = unsafe { PyBuffer::from_array(slice_rseq)   };
@@ -81,10 +85,11 @@ impl Stage for PyTransform {
                 let features = array::from_fn(|i| unsafe { PyBuffer::from_slice_mut(slice_features[i]) });
                 let scores   = array::from_fn(|i| unsafe { PyBuffer::from_slice_mut(slice_scores[i])   });
 
-                println!("sending slice of size {} to python", len);
+                tracing::debug!("running python transform");
                 Python::attach(|py| {
 
-                    let input = PyAlignment {
+                    let input = PyAlignmentBatch {
+                        seq_id,
                         offset,
                         rguide,
                         rseq,

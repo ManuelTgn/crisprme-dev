@@ -14,11 +14,12 @@ use std::{mem::ManuallyDrop, sync::{Arc, Weak}, time::Instant};
 pub const CHUNK_SIZE: usize = 65536;
 
 /// Maximum alowed seconds before `try_acquire_spinning` fails
-pub const QUEUE_ACQUIRE_MAX_SECS: f32 = 3.0;
+pub const QUEUE_ACQUIRE_MAX_SECS: f32 = 1.0;
 
 #[derive(Debug)]
 pub enum MemoryError {
-    MaximumTriesReached
+    MaximumTriesReached,
+    OutOfMemory
 }
 
 /// Raw backing storage for one chunk, cache-line aligned.
@@ -84,8 +85,13 @@ impl ChunkArray {
         let chunks_count = used_bytes.div_ceil(CHUNK_SIZE);
         let mut chunks = Vec::with_capacity(chunks_count);
         for _ in 0..chunks_count {
-            chunks.push(pool.acquire_spinning());
+            // Get chunk without considering backpressure
+            chunks.push(pool.acquire()
+                .ok_or(MemoryError::OutOfMemory)?);
         }
+
+        tracing::debug!("ChunkArray with {} chunks ({} bytes not used)",
+            chunks_count, chunks_count * CHUNK_SIZE - used_bytes);
 
         Ok(Self { chunks, len: used_bytes })
     }
@@ -240,7 +246,7 @@ impl MemoryPool {
     pub fn try_acquire_spinning(&self) -> Result<Chunk, MemoryError> {
 
         // Busy loop for some tries
-        for _ in 0..10_000 {
+        for _ in 0..100 {
             if let Some(chunk) = self.acquire() {
                 return Ok(chunk);
             }

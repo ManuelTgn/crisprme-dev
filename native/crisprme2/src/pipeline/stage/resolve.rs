@@ -1,22 +1,16 @@
 
-use std::collections::HashMap;
-
 use columnar::{MemoryPool, pipeline::{Emit, Stage, StageError}};
 use itertools::izip;
 use crate::model::{alignment::{SeqMinedBatch, SeqResolvedBatch, SeqResolvedFrame}, cigarx::{Cigarx, CigarxOp}};
 
 /// Resolve mined alignments using the present cigarx
 pub struct Resolver {
-    map: HashMap<u32, (usize, usize)>,
     pool: MemoryPool,
 }
 
 impl Resolver {
     pub fn new(pool: &MemoryPool) -> Self {
-        Self { 
-            pool: pool.clone(),
-            map: HashMap::new()
-        }
+        Self { pool: pool.clone() }
     }
 }
 
@@ -27,28 +21,23 @@ impl Stage for Resolver {
 
     fn name() -> &'static str { "Resolver" }
     fn process(&mut self, mut input: Self::I, emitter: &impl Emit<Self::O>) -> Result<(), StageError> {
-        
-        // Create a map from seq_id to position in memory
-        // TODO: We can store this at the beginning of the pipeline (?)
-        input.sequences.with_cols(|cols| {
-            self.map.clear();
-            for (i, seq_id) in cols.id.iter().enumerate() {
-                self.map.insert(*seq_id, 
-                    cols.content.index(i));
-            }
-        });
+
+        let guide = input.guide.as_slice();
 
         // mined --1:1--> resolved
-        let guide = input.guide.as_slice();
         input.sequences.with_cols(|sequences| {
             input.mined.with_cols(|mut mined| {
 
-                let rows = mined.seq_id.rows();
+                let source_seq_count = sequences.content.rows();
+                let rows = mined.seq_row_idx.rows();
+
+                tracing::info!("received {} rows to resolve", rows);
+
                 let mut resolved = SeqResolvedFrame::empty();
                 resolved.with_cols(|mut resolved| {
 
                     // Share columns (seq_id, offset)
-                    resolved.seq_id.shared(&mut mined.seq_id);
+                    resolved.seq_row_idx.shared(&mut mined.seq_row_idx);
                     resolved.offset.shared(&mut mined.offset);
 
                     // Allocate columns (rguide, rseq)
@@ -57,7 +46,7 @@ impl Stage for Resolver {
 
                     // Zipped iterator over all used columns
                     let zipper = izip!(
-                        resolved.seq_id.iter(),
+                        resolved.seq_row_idx.iter(),
                         resolved.rguide.iter_mut(),
                         resolved.rseq.iter_mut(),
                         mined.cigarx.iter(),
@@ -65,11 +54,11 @@ impl Stage for Resolver {
                     );
 
                     // Resolve the guide and sequence
-                    for (seq_id, rguide, rseq, cigarx, offset) in zipper {
+                    for (seq_row_idx, rguide, rseq, cigarx, offset) in zipper {
 
                         // Indirect look-up to sequence content
-                        let (seq_chunk, seq_offset) = self.map[seq_id];
-                        let sequence = sequences.content.get_fast(seq_chunk, seq_offset);
+                        // NOTE: it should be fast enough
+                        let sequence = sequences.content.get(*seq_row_idx as usize);
 
                         let mut gpos = 0usize;
                         let mut spos = *offset as usize;  // start at alignment position in sequence
@@ -104,6 +93,7 @@ impl Stage for Resolver {
                 });
 
                 emitter.emit(SeqResolvedBatch { 
+                    source_seq_count,
                     occurences: input.occurences, 
                     resolved
                 })

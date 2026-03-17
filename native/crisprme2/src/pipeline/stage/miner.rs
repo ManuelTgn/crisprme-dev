@@ -1,5 +1,6 @@
 use columnar::{MemoryPool, pipeline::{Emit, Stage, StageError}, Share};
 use itertools::izip;
+use rand::Rng;
 
 use crate::model::{alignment::{SeqMinedBatch, SeqMinedFrame}, cigarx::{Cigarx, Cigarx64, CigarxOp}, input::SeqBatch};
 
@@ -24,26 +25,32 @@ impl Stage for Miner {
         let mut occurences = input.occurences.share();
 
         input.sequences.with_cols(|cols| {
-            let rows = cols.id.rows();
+
+            let rows = cols.content.rows();
+            tracing::info!("received {} rows to mine", rows);
 
             let mut mined = SeqMinedFrame::alloc(&self.pool, rows);
             mined.with_cols(|mut mined| {
                 let zipped = izip!(
-                    cols.id.iter(),
                     cols.content.iter(),
-                    mined.seq_id.iter_mut(),
+                    mined.seq_row_idx.iter_mut(),
                     mined.cigarx.iter_mut(),
                     mined.offset.iter_mut()
                 );
 
-                for (id, sequence, mined_seq_id, cigarx, offset) in zipped {
-                    
+                for (sequence, mined_seq_row, cigarx, offset) in zipped {
+                     
+                    *mined_seq_row = rand::rng().random_range(0..rows) as u32;
+
                     *cigarx = Cigarx64::default();
-                    *mined_seq_id = *id;
-                    *offset = 69;
+                    *offset = 2;
 
                     for j in 0..input.guide.len() {
-                        if sequence[j].matches(input.guide[j]) {
+                        if j % 3 == 0 {
+                            cigarx.push(CigarxOp::Deletion);
+                        } else if j % 5 == 0 {
+                            cigarx.push(CigarxOp::Insertion);
+                        } else if sequence[j].matches(input.guide[j]) {
                             cigarx.push(CigarxOp::Match);
                         } else {
                             cigarx.push(CigarxOp::Mismatch);

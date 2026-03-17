@@ -3,18 +3,16 @@ use columnar::{Columnar, Schema};
 use crate::{crispr::guide::Guide, sequence::iupac::Iupac};
 use crate::model::occurence::Occurence;
 
-/// Maximum length of a sequence
-pub const SEQ_MAX_LEN: usize = 26;
+/// Maximum length of a sequence.
+/// Must be a power of 2 so that sizeof([Iupac; SEQ_MAX_LEN]) divides CHUNK_SIZE (65536) evenly.
+pub const SEQ_MAX_LEN: usize = 32;
 
-/// Type that defines the unique sequence Id
-pub type SeqId = u32;
+/// Type that defines the unique sequence row inside a SeqFrame
+pub type SeqRowIdx = u32;
 
 /// Definition of a single unique sequence
 #[derive(Debug, Columnar)]
 pub struct Seq {
-
-    /// Unique identifier for this particular sequence
-    pub id: SeqId,
     /// IUPAC elements that compose the sequence
     pub content: [Iupac; SEQ_MAX_LEN],
 }
@@ -23,8 +21,8 @@ pub struct Seq {
 #[derive(Debug, Columnar)]
 pub struct SeqOcc {
 
-    /// Identifier for the owning sequence
-    pub seq_id: SeqId,
+    /// Identifier for the owning sequence row
+    pub seq_row_idx: SeqRowIdx,
     /// Where this sequence occures, packed (contig_id, position, strand)
     pub occurence: Occurence,
 }

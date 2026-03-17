@@ -5,7 +5,7 @@ use columnar::python::PyBufferFormat;
 
 use crate::crispr::guide::Guide;
 use crate::model::cigarx::Cigarx64;
-use crate::model::input::{SeqBatch, SeqFrame, SeqId, SeqOccFrame};
+use crate::model::input::{SeqBatch, SeqFrame, SeqRowIdx, SeqOccFrame};
 use crate::model::occurence::Occurence;
 use crate::sequence::iupac::Iupac;
 
@@ -15,8 +15,8 @@ pub const ALIGN_RESOLVED_MAX_LEN: usize = 32;
 /// Definition of a mined alignment
 #[derive(Debug, Columnar)]
 pub struct SeqMined {
-    /// Unique identifier of the source sequence
-    pub seq_id: SeqId,
+    /// Index of the source sequence in SeqFrame
+    pub seq_row_idx: SeqRowIdx,
     /// Cigarx that represents the alignment
     pub cigarx: Cigarx64,
     /// Offset from the start of the sequence
@@ -26,8 +26,8 @@ pub struct SeqMined {
 /// Definition of a resolved alignment
 #[derive(Debug, Columnar)]
 pub struct SeqResolved {
-    /// Unique identifier of the source sequence
-    pub seq_id: SeqId,
+    /// Index of the source sequence in SeqFrame
+    pub seq_row_idx: SeqRowIdx,
     /// Resolved guide
     pub rguide: [u8; ALIGN_RESOLVED_MAX_LEN],
     /// Resolved sequence
@@ -40,8 +40,7 @@ pub struct SeqResolved {
 #[derive(Debug, Columnar)]
 pub struct Alignment {
 
-    /// Unique identifier of the source sequence
-    pub seq_id: SeqId,
+    pub seq_row_idx: SeqRowIdx,
 
     /// Resolved guide
     pub rguide: [u8; ALIGN_RESOLVED_MAX_LEN],
@@ -80,6 +79,10 @@ pub struct SeqMinedBatch {
 
 pub struct SeqResolvedBatch {
 
+    /// The number of sequences that were present at the beginning
+    /// of the pipeline, we know that any seq_row_idx < source_seq_count
+    pub source_seq_count: usize,
+
     pub occurences: SeqOccFrame,
     pub resolved: SeqResolvedFrame,
 }
@@ -87,18 +90,3 @@ pub struct SeqResolvedBatch {
 pub struct AlignmentBatch {
     content: AlignmentFrame
 }
-/*
-/// Metadata for a batch of mined alignments
-#[derive(Debug)]
-pub struct MinedBatchMetadata {
-    /// Source sequence batch
-    pub sequences: BatchRef<sequences::SeqSchema, SeqBatchMetadata>,
-}
-
-/// Metadata for a batch of resolved alignments
-#[derive(Debug)]
-pub struct ResolvedBatchMetadata {
-    /// All occurences of the resolved sequences
-    pub occurences: Vec<BatchRef<SeqOccSchema, ()>>,
-}
- */

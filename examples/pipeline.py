@@ -1,31 +1,61 @@
-import crisprme2._crisprme2_native as native
+import crisprme2._crisprme2_native as nat
 import numpy as np
 import time
 
-def myfunc(batch: native.PyAlignmentBatch):
-    print(f"transform: {np.asarray(batch["offset"])}")
-
 class Scorer:
-    def __init__():
-        pass
-    def __call__(batch):
-        pass
+    def __init__(self, score: int, value: float):
+        self.score = score
+        self.value = value
 
-class Annotator:
-    def __init__():
-        pass
-    def __call__(batch):
-        pass
+    def __call__(self, batch: nat.PyAlignmentBatch):
+        scores = np.asarray(batch.score(self.score))
+        scores[:] = self.value
 
-scorer = Scorer(.....)
-pipeline = native.create_pipeline(transform=scorer, scores=[...], annotators=[...])
-pipeline.submit_example() # make error visible
-# add target batcher source
-#pipeline.submit(batcher)
-pipeline.close() # make error visible
 
-complete = False
-while not complete:
-    complete, result = pipeline.receive() # make error visible
-    if not complete:
-        print(np.asarray(result["offset"]))
+class Printer:
+    def __call__(self, batch: nat.PyAlignmentBatch):
+        print("--- batch ---------------------------\n")
+
+        self.print_simple_debug("seq_id", batch.seq_id())
+        self.print_simple_debug("offset", batch.offset())
+
+        self.print_str_debug("rguide", 32, batch.rguide())
+        self.print_str_debug("rseq",   32, batch.rseq())
+
+        self.print_simple_debug("score0", batch.score(0))
+        self.print_simple_debug("score1", batch.score(1))
+        self.print_simple_debug("score2", batch.score(2))
+        self.print_simple_debug("score3", batch.score(3))
+
+    def print_str_debug(self, name: str, len: int, view):
+        array = np.asarray(view)
+        print(f"+ {name} {array.shape}\n")
+        for s in array.view(f'S{len}'):
+            print(f"  {str(s)}")
+        print()
+
+    def print_simple_debug(self, name: str, view):
+        array = np.asarray(view)
+        print(f"+ {name} {array.shape}\n")
+        print(" ", array)
+        print()
+
+
+
+nat.init_tracing()
+pipeline = nat.pipeline(
+    transforms = [
+        Scorer(0, 2),
+        Scorer(1, 7),
+        #Printer(),
+    ]
+)
+
+pipeline.send_debug_data()
+time.sleep(0.1)
+pipeline.send_debug_data()
+time.sleep(0.1)
+pipeline.send_debug_data()
+
+# We must close the pipeline at the end
+pipeline.close()
