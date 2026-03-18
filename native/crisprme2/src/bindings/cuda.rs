@@ -47,7 +47,7 @@ pub fn memcpy_to_gpu<T>(cpu: *const T, gpu: *mut T, len: usize) {
     unsafe {
         ffi::memcpy_to_gpu(gpu as *mut u8, cpu as *const u8, bytes as u64);
     }
-    info!("memcpy CPU -> GPU [{}ms]", 
+    tracing::trace!("memcpy CPU -> GPU [{}ms]", 
         now.elapsed().as_millis());
 }
 
@@ -58,7 +58,7 @@ pub fn memcpy_to_cpu<T>(cpu: *mut T, gpu: *const T, len: usize) {
     unsafe {
         ffi::memcpy_to_cpu(gpu as *const u8, cpu as *mut u8, bytes as u64);
     }
-    info!("memcpy CPU <- GPU [{}ms]", 
+    tracing::trace!("memcpy CPU <- GPU [{}ms]", 
         now.elapsed().as_millis());
 }
 

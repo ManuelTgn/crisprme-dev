@@ -1,7 +1,7 @@
-use crate::model::{
+use crate::{model::{
     alignment::{SeqMinedBatch, SeqResolvedBatch, SeqResolvedFrame},
     cigarx::{Cigarx, CigarxOp},
-};
+}, sequence::sequence::Sequence};
 use columnar::{
     pipeline::{Emit, Stage, StageError},
     MemoryPool,
@@ -76,12 +76,12 @@ impl Stage for Resolver {
                                     gpos += 1;
                                     spos += 1;
                                 }
-                                CigarxOp::Deletion => {
+                                CigarxOp::Insertion => {
                                     rguide[opos] = b'-';
                                     rseq[opos] = sequence[spos].to_ascii();
                                     spos += 1;
                                 }
-                                CigarxOp::Insertion => {
+                                CigarxOp::Deletion => {
                                     rguide[opos] = guide[gpos].to_ascii();
                                     rseq[opos] = b'-';
                                     gpos += 1;
@@ -93,6 +93,16 @@ impl Stage for Resolver {
                         // Null-terminate both resolved arrays
                         rguide[opos] = 0;
                         rseq[opos] = 0;
+
+                        {
+                            let rg = rguide.split(|&b| b == 0).next().unwrap();
+                            let rs = rseq.split(|&b| b == 0).next().unwrap();
+                            tracing::debug!("resolved {:?}:{:?} with cigarx {:?}", 
+                                str::from_utf8(rg).unwrap(), 
+                                str::from_utf8(rs).unwrap(), 
+                                cigarx);
+                        }
+
                     }
                 });
 

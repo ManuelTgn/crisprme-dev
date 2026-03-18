@@ -18,20 +18,46 @@
 //! - `Guide` bytes match the CUDA side layout/encoding
 
 use crate::{
-    crispr::guide::Guide,
-    alignment::thresholds::Thresholds,
-    memory::batch::{AlignmentRingBatch, SequenceRingBatch},
+    alignment::thresholds::Thresholds, bindings::miner::ffi::{MinerConfig, MinerInput}, crispr::guide::Guide, memory::batch::{AlignmentRingBatch, SequenceRingBatch}
 };
 
 
 #[cxx::bridge(namespace = "cuda::miner")]
 mod ffi {
+
     /// Output of the mining operation.
     struct MinerOutput {
         /// Number of alignments written into the provided output buffer.
-        alignments_count: usize,
+        pub alignments_count: usize,
         /// Whether the miner has completed processing for the current stream/batch sequence.
-        finish: bool,
+        pub finish: bool,
+    }
+
+    /// Configuration for the miner
+    struct MinerConfig {
+        // Guide to use
+        pub guide: *const u8,
+        // Size of the guide and sequences
+        pub glen: u32,
+        pub slen: u32,
+        // Thresholds
+        pub ggap: u32,
+        pub sgap: u32,
+        pub mism: u32,
+    }
+
+    /// Input for the miner
+    struct MinerInput {
+        // Sequences to be mined, as [[Iupac; N]]
+        pub sequences: *const u8,
+        // Number of sequences
+        pub seq_count: u32,
+        // Output columns (Cigarx64, SeqRowIdx, u8)
+        pub cigarx: *mut u64,
+        pub index:  *mut u32,
+        pub offset: *mut u8,
+        // Result buffer capacity
+        pub capacity: u32,
     }
 
     unsafe extern "C++" {
@@ -39,77 +65,54 @@ mod ffi {
 
         fn initialize(device: u32);
 
-        unsafe fn pre_mine(
-            guide: *const u8,
-            glen: u32,
-            slen: u32,
-            ggap: u32,
-            sgap: u32,
-            mism: u32,
-            strand: u8,
-        );
+        fn prepare(config: MinerConfig);
 
-        unsafe fn mine(
-            batch: *const u8,
-            batch_size: u32,
-            alignments: *mut u8,
-            capacity: u32,
-        ) -> MinerOutput;
+        fn launch(input: MinerInput) -> MinerOutput;
 
         fn post_mine();
+
         fn shutdown(device: u32);
     }
 }
-
 
 /// Initialize CUDA miner state for a given device.
 pub fn initialize(device: u32) {
     ffi::initialize(device);
 }
 
-
 /// Configure miner parameters for the next sequence batches.
-///
-/// `seq_len` is the per-target sequence length in the batch buffer.
-pub fn pre_mine(guide: &Guide, seq_len: usize, thresholds: &Thresholds, strand: u8) {
-    // If these can ever exceed u32, fail loudly.
-    assert!(guide.len() <= u32::MAX as usize);
-    assert!(seq_len <= u32::MAX as usize);
-
-    unsafe {
-        ffi::pre_mine(
-            guide.as_ptr() as *const u8,
-            guide.len() as u32,
-            seq_len as u32,
-            thresholds.qgap,
-            thresholds.tgap,
-            thresholds.mism,
-            strand,
-        );
-    }
+pub fn prepare(guide: &Guide, seq_len: usize, thresholds: &Thresholds) {
+    ffi::prepare(
+        MinerConfig {
+            guide: guide.as_ptr() as *const u8,
+            glen: guide.len() as u32,
+            slen: seq_len as u32,
+            ggap: thresholds.qgap,
+            sgap: thresholds.tgap,
+            mism: thresholds.mism,
+        }
+    );
 }
 
+/// Mina a batch of sequences and write alignments into `alignments`.
+pub fn mine(
+    sequences: *const u8, seq_count: u32, 
+    cigarx: *mut u64, index: *mut u32, offset: *mut u8,
+    capacity: u32
+) -> (bool, usize) {
 
-/// Mine a batch of sequences and write alignments into `alignments`.
-///
-/// Returns `true` when the CUDA miner signals completion for the current stream.
-pub fn mine(batch: &SequenceRingBatch, alignments: &mut AlignmentRingBatch) -> bool {
-    assert!(batch.len() <= u32::MAX as usize);
-    assert!(alignments.capacity() <= u32::MAX as usize);
-
-    let output = unsafe {
-        ffi::mine(
-            batch.gpu_ptr(),
-            batch.len() as u32,
-            alignments.gpu_ptr_mut(),
-            alignments.capacity() as u32,
-        )
-    };
-
-    alignments.set_len(output.alignments_count);
-    output.finish
+    let output = ffi::launch(
+        MinerInput {
+            sequences,
+            seq_count,
+            cigarx,
+            index,
+            offset,
+            capacity,
+        }
+    );
+    (output.finish, output.alignments_count)
 }
-
 
 /// Finalize miner state after finishing all batches for the current guide.
 pub fn post_mine() {

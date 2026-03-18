@@ -44,7 +44,7 @@ class Printer:
 
 nat.init_tracing()
 pipeline = nat.pipeline(
-    chunks = 100,
+    chunks = 1000,
     transforms = [
         Scorer(0, 2),
         Scorer(1, 7),
@@ -52,11 +52,13 @@ pipeline = nat.pipeline(
     ]
 )
 
-pipeline.send_debug_data()
-time.sleep(0.1)
-pipeline.send_debug_data()
-time.sleep(0.1)
-pipeline.send_debug_data()
+pipeline.send_debug_minable_data()
+
+#pipeline.send_debug_data()
+#time.sleep(0.1)
+#pipeline.send_debug_data()
+#time.sleep(0.1)
+#pipeline.send_debug_data()
 
 # We must close the pipeline at the end
 pipeline.close()

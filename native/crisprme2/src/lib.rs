@@ -70,49 +70,13 @@ pub mod _crisprme2_native {
     };
 
     use crate::{
-        bindings::cuda, crispr::guide::Guide, model::{
+        alignment::thresholds::Thresholds, bindings::cuda, crispr::guide::Guide, model::{
             alignment::AlignmentFrame,
             input::{SEQ_MAX_LEN, SeqBatch, SeqFrame, SeqOccFrame}, occurence::Occurence,
         }, pipeline::{
-            sink::NullSink, stage::{broadcast::Broadcast, miner::Miner, resolve::Resolver, transform::PyTransform}
-        }, sequence::iupac::Iupac
+            sink::NullSink, stage::{broadcast::Broadcast, miner::{GpuMiner, Miner}, resolve::Resolver, transform::PyTransform}
+        }, sequence::{iupac::Iupac, sequence::Sequence}
     };
-
-    /*
-    use columnar::ext::pyo3::PyColumnView;
-
-    use crate::{model::alignment::aligned::PyAlignmentBatch, pipeline::{PyPipeline, *}};
-    use super::*;
-
-    #[pymodule_init]
-    fn _crisprme2_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
-
-        // add the top-level function to the Python module
-        // m.add_function(wrap_pyfunction!(extract_targets_rs, m)?)?;
-
-        //m.add_function(wrap_pyfunction!(initialize_engine_logger, m)?)?;
-
-        // Allows python to create a new pipeline
-        m.add_function(wrap_pyfunction!(create_pipeline, m)?)?;
-
-        m.add_class::<PyAlignmentBatch>()?;
-        m.add_class::<PyColumnView>()?;
-        m.add_class::<PyPipeline>()?;
-
-        /*
-        m.add_class::<TargetBatcher>()?;
-        m.add_class::<FeedStatus>()?;
-        m.add_class::<BatcherStats>()?;
-        m.add_class::<HybridEngine>()?;
-        m.add_class::<AlignmentParams>()?;
-        m.add_class::<Thresholds>()?;
-        m.add_class::<Guide>()?;
-        m.add_class::<AlignmentBatchView>()?;
-        */
-
-        Ok(())
-    }
-    */
 
     #[pymodule_export]
     pub use columnar::python::PyBuffer;
@@ -133,7 +97,7 @@ pub mod _crisprme2_native {
             .with_target(false)
             .with_file(false)
             .with_thread_ids(false)
-            .with_max_level(tracing::Level::DEBUG)
+            .with_max_level(tracing::Level::INFO)
             .init();
     }
 
@@ -149,6 +113,47 @@ pub mod _crisprme2_native {
 
     #[pymethods]
     impl PyPipeline {
+
+        fn send_debug_minable_data(&mut self, py: Python<'_>) -> PyResult<()> {
+
+            const ROWS: usize = 500;
+
+            let mut seqs = SeqFrame::alloc(&self.pool, ROWS);
+            let mut occs = SeqOccFrame::alloc(&self.pool, ROWS * 3);
+
+            // Create debug sequence
+            let sequence = Sequence::from_utf8("GATTACAGATTACA");
+            seqs.with_cols(|mut cols| {
+                for content in cols.content.iter_mut() {
+                    for j in 0..sequence.len() {
+                        content[j] = sequence[j];
+                    }
+                }
+            });
+
+            // Create debug occurences
+            occs.with_cols(|mut cols| {
+                for (i, seq_idx) in cols.seq_row_idx.iter_mut().enumerate() {
+                    *seq_idx = (i % 3) as u32;
+                }
+            });
+
+            // Release GIL while sending so pipeline workers can acquire it
+            py.detach(|| {
+                self.input
+                    .send(SeqBatch {
+                        thresholds: Thresholds::new(1, 1, 1),
+                        seq_len: sequence.len(),
+                        guide: Guide::new("GATTACA"),
+                        sequences: seqs,
+                        occurences: occs,
+                    })
+                    .unwrap();
+            });
+
+            Ok(())
+        }
+
         fn send_debug_data(&mut self, py: Python<'_>) -> PyResult<()> {
 
             const ROWS: usize = 10;
@@ -184,6 +189,7 @@ pub mod _crisprme2_native {
             py.detach(|| {
                 self.input
                     .send(SeqBatch {
+                        thresholds: Thresholds::new(1, 1, 1),
                         seq_len,
                         guide: Guide::new("GATTACAGATTACA"),
                         sequences: seqs,
@@ -239,6 +245,7 @@ pub mod _crisprme2_native {
             py.detach(|| {
                 self.input
                     .send(SeqBatch {
+                        thresholds: Thresholds::new(1, 1, 1),
                         seq_len: batcher.get_sequence_len(),
                         guide: batcher.get_guide(),
                         sequences: seqs,
@@ -276,7 +283,7 @@ pub mod _crisprme2_native {
         let (input, pipeline) = Pipeline::driven(10);
 
         let mut pipeline = pipeline
-            .stage(2, |pool, _| Miner::new(pool))
+            .stage(1, |pool, _| GpuMiner::new(pool, 1000, 32, 1_000_000, 0))
             .stage(2, |pool, _| Resolver::new(pool))
             .stage(2, |pool, _| Broadcast::new(pool));
 

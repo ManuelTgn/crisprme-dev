@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,7 +29,7 @@ pub trait Cigarx {
 /// Cigarx implemented as u64 with sentinel bit, 
 /// it supports up to 31 cigarx operations
 #[repr(transparent)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct Cigarx64(u64);
 
 unsafe impl bytemuck::Pod for Cigarx64 { }
@@ -106,5 +108,13 @@ impl Iterator for Cigarx64Iter {
                 _ => CigarxOp::Insertion
             })
         }
+    }
+}
+
+impl Debug for Cigarx64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_list()
+            .entries(self.iter())
+            .finish()
     }
 }

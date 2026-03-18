@@ -54,6 +54,9 @@ pub trait Stage: Send + 'static {
     // Get name of the stage
     fn name() -> &'static str;
 
+    /// Called by the running thread before start
+    fn initialize(&mut self) { }
+
     /// Transform one input item, emitting zero or more outputs via `emitter`.
     fn process(&mut self, input: Self::I, emitter: &impl Emit<Self::O>) -> Result<(), StageError>;
 
@@ -223,6 +226,7 @@ impl<T: Send + 'static> Pipeline<T> {
                     let src = src_rx.clone();
                     let dst = tx.clone();
                     handles.push(std::thread::spawn(move || {
+                        stage.initialize();
                         stage.run(src, dst).unwrap();
                     }));
                 }
@@ -251,6 +255,7 @@ impl<T: Send + 'static> Pipeline<T> {
 
                 let mut stage = f(pool);
                 handles.push(std::thread::spawn(move || {
+                    stage.initialize();
                     stage.run(src_rx, tx).unwrap();
                 }));
 

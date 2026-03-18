@@ -1,5 +1,6 @@
 use columnar::{Columnar, Schema};
 
+use crate::alignment::thresholds::Thresholds;
 use crate::{crispr::guide::Guide, sequence::iupac::Iupac};
 use crate::model::occurence::Occurence;
 
@@ -34,6 +35,9 @@ pub struct SeqBatch {
     pub seq_len: usize,
     /// Guide used for the alignment process
     pub guide: Guide,
+
+    /// Thresholds to use to mine this batch
+    pub thresholds: Thresholds,
 
     /// All sequences of this batch
     pub sequences: SeqFrame,

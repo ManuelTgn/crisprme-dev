@@ -13,9 +13,8 @@ const BRIDGES: &[&str] = &[
 /// Cuda source code
 const CUDA_SRC: &[&str] = &[
     "src/cuda/driver.cu",
-    //"src/cuda/miners/warp_reg_stack.cu",
-    "src/cuda/miners/warp_reg_stack_nopam.cu",
-    //"src/cuda/miners/shared_stack.cu"
+    // Miner implementation
+    "src/cuda/miners/warp_reg_stack_nopam_columnar.cu",
 ];
 
 fn build_on_change(folder: &str) {
