@@ -90,7 +90,7 @@ impl ChunkArray {
                 .ok_or(MemoryError::OutOfMemory)?);
         }
 
-        tracing::debug!("ChunkArray with {} chunks ({} bytes not used)",
+        tracing::trace!("ChunkArray with {} chunks ({} bytes not used)",
             chunks_count, chunks_count * CHUNK_SIZE - used_bytes);
 
         Ok(Self { chunks, len: used_bytes })
@@ -207,6 +207,7 @@ pub struct MemoryPool {
 impl MemoryPool {
 
     /// Allocate `bytes / CHUNK_SIZE` chunks, calling `visitor` for each one
+    #[tracing::instrument(name = "memory:pool:new", skip_all)]
     pub fn new<V>(bytes: usize, visitor: V) -> Self
     where
         V: Fn(*const u8, usize)

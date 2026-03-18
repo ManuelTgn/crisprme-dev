@@ -24,4 +24,12 @@ namespace cuda {
     void memcpy_to_cpu(const u8* gpu, u8* cpu, u64 bytes) {
         cudaMemcpy((void*)cpu, (const void*)gpu, bytes, cudaMemcpyDeviceToHost);
     }
+
+    void pin(const u8* ptr, u64 bytes) {
+        CUDA_CHECK(cudaHostRegister((void*)ptr, bytes, 0));
+    }
+
+    void unpin(const u8* ptr) {
+        CUDA_CHECK(cudaHostUnregister((void*)ptr));
+    }
 }

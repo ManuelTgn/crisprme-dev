@@ -70,7 +70,7 @@ pub mod _crisprme2_native {
     };
 
     use crate::{
-        crispr::guide::Guide, model::{
+        bindings::cuda, crispr::guide::Guide, model::{
             alignment::AlignmentFrame,
             input::{SEQ_MAX_LEN, SeqBatch, SeqFrame, SeqOccFrame}, occurence::Occurence,
         }, pipeline::{
@@ -129,10 +129,11 @@ pub mod _crisprme2_native {
     #[pyfunction]
     pub fn init_tracing() {
         tracing_subscriber::fmt()
-            .compact()
+            //.compact()
             .with_target(false)
-            .with_thread_ids(true)
-            .with_max_level(tracing::Level::INFO)
+            .with_file(false)
+            .with_thread_ids(false)
+            .with_max_level(tracing::Level::DEBUG)
             .init();
     }
 
@@ -263,11 +264,17 @@ pub mod _crisprme2_native {
 
     /// Create a driven pipeline with transforms
     #[pyfunction]
-    fn pipeline<'py>(transforms: Bound<'py, PyList>) -> PyResult<PyPipeline> {
-        let pool = MemoryPool::new(CHUNK_SIZE * 10_000, |_, _| {});
+    fn pipeline<'py>(chunks: usize, transforms: Bound<'py, PyList>) -> PyResult<PyPipeline> {
+        
+        // Create memory pool and pin all chunks for DMA from GPU
+        let pool = MemoryPool::new(CHUNK_SIZE * chunks, |ptr, bytes| {
+            tracing::trace!("pinning chunk (ptr = {:?}, bytes = {})", ptr, bytes);
+            cuda::pin(ptr, bytes);
+        });
+        
+        tracing::info!("building pipeline...");
         let (input, pipeline) = Pipeline::driven(10);
 
-        tracing::info!("building pipeline...");
         let mut pipeline = pipeline
             .stage(2, |pool, _| Miner::new(pool))
             .stage(2, |pool, _| Resolver::new(pool))

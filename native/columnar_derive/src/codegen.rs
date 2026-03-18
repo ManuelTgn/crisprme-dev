@@ -13,8 +13,6 @@ pub fn generate(ir: &SchemaIR) -> TokenStream {
     let schema = generate_schema(ir, total_slots);
     let cols = generate_cols(ir, total_slots);
 
-    //let pyclass = generate_pyclass(ir);
-
     quote! {
         #schema
         #cols
@@ -48,10 +46,6 @@ fn generate_schema(ir: &SchemaIR, total_slots: usize) -> TokenStream {
             const SLOTS: usize = #total_slots;
         }
     }
-}
-
-fn generate_pyclass(_ir: &SchemaIR) -> TokenStream {
-    unimplemented!()
 }
 
 fn generate_cols(ir: &SchemaIR, total_slots: usize) -> TokenStream {

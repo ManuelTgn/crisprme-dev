@@ -43,6 +43,8 @@ impl Stage for PyTransform {
     type O = AlignmentFrame;
 
     fn name() -> &'static str { "PyTransform" }
+
+    #[tracing::instrument(name = "pipeline:py_transform", skip_all)]
     fn process(&mut self, mut input: Self::I, emitter: &impl Emit<Self::O>) -> Result<(), StageError> {
         input.with_cols(|mut cols| {
 

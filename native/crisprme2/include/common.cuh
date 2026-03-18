@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <stdio.h>
 
 using u64 = uint64_t;
 using u32 = uint32_t;

@@ -19,6 +19,8 @@ impl Stage for Miner {
     type O = SeqMinedBatch;
 
     fn name() -> &'static str { "Miner" }
+
+    #[tracing::instrument(name = "pipeline:miner", skip_all)]
     fn process(&mut self, mut input: Self::I, emitter: &impl Emit<Self::O>) -> Result<(), StageError> {
         
         let mut sequences  = input.sequences.share();

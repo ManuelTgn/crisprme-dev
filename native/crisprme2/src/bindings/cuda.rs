@@ -23,6 +23,8 @@ mod ffi {
         unsafe fn free(memory: *mut u8);
         unsafe fn memcpy_to_gpu(gpu: *mut u8, cpu: *const u8, bytes: u64);
         unsafe fn memcpy_to_cpu(gpu: *const u8, cpu: *mut u8, bytes: u64);
+        unsafe fn pin(ptry: *const u8, bytes: u64);
+        unsafe fn unpin(ptry: *const u8);
     }
 }
 
@@ -58,4 +60,18 @@ pub fn memcpy_to_cpu<T>(cpu: *mut T, gpu: *const T, len: usize) {
     }
     info!("memcpy CPU <- GPU [{}ms]", 
         now.elapsed().as_millis());
+}
+
+#[tracing::instrument(name = "cuda")]
+pub fn pin(memory: *const u8, bytes: usize) {
+    unsafe {
+        ffi::pin(memory, bytes as u64);
+    }
+}
+
+#[tracing::instrument(name = "cuda")]
+pub fn unpin(memory: *const u8) {
+    unsafe {
+        ffi::unpin(memory);
+    }
 }
