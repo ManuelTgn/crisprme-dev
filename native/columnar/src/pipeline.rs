@@ -10,27 +10,33 @@
 use std::thread::JoinHandle;
 use crossbeam::channel::{Receiver, Sender, TrySendError, bounded};
 use metrics::{counter, histogram};
+use thiserror::Error;
 use crate::MemoryPool;
 
 /// Error returned when a stage fails or a channel is disconnected.
-#[derive(Debug)]
-pub struct StageError;
+#[derive(Error, Debug)]
+pub enum PipelineError {
+    #[error("Channel error")]
+    ChannelError,
+    #[error("Channel disconnected")]
+    Disconnect
+}
 
 /// Sink for items produced by a [`Stage`]. Wraps crossbeam send errors.
 pub trait Emit<T> {
-    fn emit(&self, item: T) -> Result<(), StageError>;
+    fn emit(&self, item: T) -> Result<(), PipelineError>;
 }
 
 impl<T> Emit<T> for Sender<T> {
 
-    fn emit(&self, item: T) -> Result<(), StageError> {
+    fn emit(&self, item: T) -> Result<(), PipelineError> {
         if let Err(e) = self.try_send(item) {
             match e {
-                TrySendError::Disconnected(_) => return Err(StageError),
+                TrySendError::Disconnected(_) => return Err(PipelineError::Disconnect),
                 TrySendError::Full(item) => {
                     counter!("pipeline.backpressure").increment(1);
                     self.send(item)
-                        .map_err(|_| StageError)?;
+                        .map_err(|_| PipelineError::ChannelError)?;
                 },
             }
         }
@@ -58,10 +64,10 @@ pub trait Stage: Send + 'static {
     fn initialize(&mut self) { }
 
     /// Transform one input item, emitting zero or more outputs via `emitter`.
-    fn process(&mut self, input: Self::I, emitter: &impl Emit<Self::O>) -> Result<(), StageError>;
+    fn process(&mut self, input: Self::I, emitter: &impl Emit<Self::O>) -> Result<(), PipelineError>;
 
     /// Thread entry-point: receives items and calls [`process`](Stage::process) until the channel closes.
-    fn run(&mut self, src: Receiver<Self::I>, dst: impl Emit<Self::O>) -> Result<(), StageError> {
+    fn run(&mut self, src: Receiver<Self::I>, dst: impl Emit<Self::O>) -> Result<(), PipelineError> {
         while let Ok(item) = src.recv() {
             counter!("pipeline.items", "stage" => Self::name()).increment(1);
 
@@ -74,7 +80,7 @@ pub trait Stage: Send + 'static {
     }
 
     /// Called once after the input channel closes. Override to flush or release resources.
-    fn shutdown(&mut self) -> Result<(), StageError> { Ok(()) }
+    fn shutdown(&mut self) -> Result<(), PipelineError> { Ok(()) }
 
 }
 
@@ -89,10 +95,10 @@ pub trait Source: Send + 'static {
     fn name() -> &'static str;
 
     /// Produce the next item, or `None` to signal exhaustion.
-    fn next(&mut self) -> Result<Option<Self::O>, StageError>;
+    fn next(&mut self) -> Result<Option<Self::O>, PipelineError>;
 
     /// Thread entry-point: calls [`next`](Source::next) until it returns `None` or an error.
-    fn run(&mut self, dst: impl Emit<Self::O>) -> Result<(), StageError> {
+    fn run(&mut self, dst: impl Emit<Self::O>) -> Result<(), PipelineError> {
         while let Ok(Some(item)) = self.next() {
             counter!("pipeline.items", "stage" => Self::name()).increment(1);
 
@@ -105,7 +111,7 @@ pub trait Source: Send + 'static {
     }
 
     /// Called once after the last item has been emitted.
-    fn shutdown(&mut self) -> Result<(), StageError> { Ok(()) }
+    fn shutdown(&mut self) -> Result<(), PipelineError> { Ok(()) }
 
 }
 
@@ -120,7 +126,7 @@ pub trait Sink: Send + 'static {
     fn name() -> &'static str;
 
     /// Thread entry-point: receives items and calls [`consume`](Sink::consume) until the channel closes.
-    fn run(&mut self, src: Receiver<Self::I>) -> Result<(), StageError> {
+    fn run(&mut self, src: Receiver<Self::I>) -> Result<(), PipelineError> {
         while let Ok(item) = src.recv() {
             counter!("pipeline.items", "stage" => Self::name()).increment(1);
 
@@ -134,10 +140,10 @@ pub trait Sink: Send + 'static {
     }
 
     /// Process one item from the pipeline's output.
-    fn consume(&mut self, item: Self::I) -> Result<(), StageError>;
+    fn consume(&mut self, item: Self::I) -> Result<(), PipelineError>;
 
     /// Called once after the input channel closes.
-    fn shutdown(&mut self) -> Result<(), StageError> { Ok(()) }
+    fn shutdown(&mut self) -> Result<(), PipelineError> { Ok(()) }
 }
 
 // =============================================================================
@@ -335,11 +341,11 @@ impl Drop for PipelineHandle {
 pub struct Driven<T>(Option<Sender<T>>);
 impl<T: Send> Driven<T> {
 
-    pub fn send(&self, item: T) -> Result<(), StageError> {
+    pub fn send(&self, item: T) -> Result<(), PipelineError> {
         self.0.as_ref()
             .expect("pipeline was closed")
             .send(item)
-            .map_err(|_e| StageError)
+            .map_err(|_e| PipelineError::ChannelError)
     }
 
     // Close the pipeline
@@ -363,7 +369,7 @@ mod test {
 
         fn name() -> &'static str { "SourceStage" }
 
-        fn next(&mut self) -> Result<Option<Self::O>, StageError> {
+        fn next(&mut self) -> Result<Option<Self::O>, PipelineError> {
             if self.0 == 0 { return Ok(None); }
             else { self.0 -= 1; }
             Ok(Some(self.0))
@@ -376,7 +382,7 @@ mod test {
 
         fn name() -> &'static str { "SinkStage" }
 
-        fn consume(&mut self, _item: Self::I) -> Result<(), StageError> {
+        fn consume(&mut self, _item: Self::I) -> Result<(), PipelineError> {
             Ok(())
         }
     }
@@ -388,7 +394,7 @@ mod test {
 
         fn name() -> &'static str { "DoubleStage" }
 
-        fn process(&mut self, input: Self::I, emitter: &impl Emit<Self::O>) -> Result<(), StageError> {
+        fn process(&mut self, input: Self::I, emitter: &impl Emit<Self::O>) -> Result<(), PipelineError> {
             emitter.emit(input * 2)
         }
     }

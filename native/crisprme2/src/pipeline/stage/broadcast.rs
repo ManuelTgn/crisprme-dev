@@ -1,6 +1,6 @@
 
 use columnar::{
-    Column, MemoryPool, pipeline::{Emit, Stage, StageError}
+    Column, MemoryPool, pipeline::{Emit, Stage, PipelineError}
 };
 use itertools::izip;
 
@@ -108,7 +108,7 @@ impl Stage for Broadcast {
     fn name() -> &'static str { "Broadcast" }
 
     #[tracing::instrument(name = "pipeline:broadcast", skip_all)]
-    fn process(&mut self, mut input: Self::I, emitter: &impl Emit<Self::O>) -> Result<(), StageError> {
+    fn process(&mut self, mut input: Self::I, emitter: &impl Emit<Self::O>) -> Result<(), PipelineError> {
 
         if self.table.len() < input.source_seq_count {
             self.table.resize(input.source_seq_count, (0, 0));

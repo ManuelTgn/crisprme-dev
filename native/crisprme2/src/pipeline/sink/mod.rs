@@ -1,5 +1,5 @@
 use std::marker::PhantomData;
-use columnar::pipeline::{Sink, StageError};
+use columnar::pipeline::{Sink, PipelineError};
 
 /// A Sink that does nothing, it just consumes output
 pub struct NullSink<T>(PhantomData<T>);
@@ -17,7 +17,7 @@ where
     type I = T;
 
     fn name() -> &'static str { "NullSink" }
-    fn consume(&mut self, _item: Self::I) -> Result<(), StageError> {
+    fn consume(&mut self, _item: Self::I) -> Result<(), PipelineError> {
         Ok(())
     }
 }

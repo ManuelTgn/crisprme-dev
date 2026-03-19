@@ -1,5 +1,5 @@
 use bytemuck::Pod;
-use columnar::{MemoryPool, pipeline::{Emit, Stage, StageError}, Share};
+use columnar::{MemoryPool, pipeline::{Emit, Stage, PipelineError}, Share};
 use crossbeam_channel::Receiver;
 use itertools::izip;
 use rand::Rng;
@@ -27,7 +27,7 @@ impl Stage for Miner {
     fn name() -> &'static str { "Miner" }
 
     #[tracing::instrument(name = "pipeline:miner", skip_all)]
-    fn process(&mut self, mut input: Self::I, emitter: &impl Emit<Self::O>) -> Result<(), StageError> {
+    fn process(&mut self, mut input: Self::I, emitter: &impl Emit<Self::O>) -> Result<(), PipelineError> {
         
         let mut sequences  = input.sequences.share();
         let mut occurences = input.occurences.share();
@@ -177,7 +177,7 @@ impl Stage for GpuMiner {
     }
 
     #[tracing::instrument(name = "pipeline:gpu_miner", skip_all)]
-    fn process(&mut self, mut input: Self::I, emitter: &impl Emit<Self::O>) -> Result<(), StageError> {
+    fn process(&mut self, mut input: Self::I, emitter: &impl Emit<Self::O>) -> Result<(), PipelineError> {
 
         // Allocated GPU buffers
         let buffers = self.buffers.as_mut().expect("Miner buffers not allocated!");
@@ -271,7 +271,7 @@ impl Stage for GpuMiner {
         )
     }
 
-    fn shutdown(&mut self) -> Result<(), StageError> {
+    fn shutdown(&mut self) -> Result<(), PipelineError> {
         bindings::miner::shutdown(self.gpu);
         Ok(())
     }

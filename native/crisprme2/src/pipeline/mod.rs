@@ -4,7 +4,7 @@ pub mod stage;
 
 #[cfg(test)]
 pub mod test {
-    use columnar::{MemoryPool, memory::CHUNK_SIZE, pipeline::{Emit, StageError}};
+    use columnar::{MemoryPool, memory::CHUNK_SIZE, pipeline::{Emit, PipelineError}};
     use std::cell::RefCell;
 
     /// Creates a memory pool sized for use in unit tests.
@@ -26,7 +26,7 @@ pub mod test {
     }
 
     impl<T> Emit<T> for Collector<T> {
-        fn emit(&self, item: T) -> Result<(), StageError> {
+        fn emit(&self, item: T) -> Result<(), PipelineError> {
             self.0.borrow_mut().push(item);
             Ok(())
         }

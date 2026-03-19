@@ -1,6 +1,6 @@
 use std::array;
 
-use columnar::{memory::region_min_size, pipeline::{Emit, Stage, StageError}, python::PyBuffer};
+use columnar::{memory::region_min_size, pipeline::{Emit, Stage, PipelineError}, python::PyBuffer};
 use pyo3::{Py, PyAny, PyResult, Python, pyclass, pymethods};
 
 use crate::model::alignment::AlignmentFrame;
@@ -45,7 +45,7 @@ impl Stage for PyTransform {
     fn name() -> &'static str { "PyTransform" }
 
     #[tracing::instrument(name = "pipeline:py_transform", skip_all)]
-    fn process(&mut self, mut input: Self::I, emitter: &impl Emit<Self::O>) -> Result<(), StageError> {
+    fn process(&mut self, mut input: Self::I, emitter: &impl Emit<Self::O>) -> Result<(), PipelineError> {
         input.with_cols(|mut cols| {
 
             // Size of smallest continous memory region

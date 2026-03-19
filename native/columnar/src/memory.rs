@@ -7,6 +7,7 @@
 
 use bytemuck::Pod;
 use crossbeam::queue::ArrayQueue;
+use thiserror::Error;
 use tracing::{Level, error, span};
 use std::{mem::ManuallyDrop, sync::{Arc, Weak}, time::Instant};
 
@@ -16,9 +17,11 @@ pub const CHUNK_SIZE: usize = 65536;
 /// Maximum alowed seconds before `try_acquire_spinning` fails
 pub const QUEUE_ACQUIRE_MAX_SECS: f32 = 1.0;
 
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum MemoryError {
+    #[error("Memory pool allocator reached maximum allowed seconds per allocation request")]
     MaximumTriesReached,
+    #[error("Memory pool has no available memory left")]
     OutOfMemory
 }
 

@@ -3,7 +3,7 @@ use crate::{model::{
     cigarx::{Cigarx, CigarxOp},
 }, sequence::sequence::Sequence};
 use columnar::{
-    pipeline::{Emit, Stage, StageError},
+    pipeline::{Emit, Stage, PipelineError},
     MemoryPool,
 };
 use itertools::izip;
@@ -28,7 +28,7 @@ impl Stage for Resolver {
     }
 
     #[tracing::instrument(name = "pipeline:resolver", skip_all)]
-    fn process(&mut self, mut input: Self::I, emitter: &impl Emit<Self::O>) -> Result<(), StageError> {
+    fn process(&mut self, mut input: Self::I, emitter: &impl Emit<Self::O>) -> Result<(), PipelineError> {
         let guide = input.guide.as_slice();
 
         // mined --1:1--> resolved
