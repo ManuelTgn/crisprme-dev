@@ -8,6 +8,7 @@
 
 #include <cooperative_groups.h>
 #include <cooperative_groups/reduce.h>
+#include <cuda/atomic>
 
 // Bindings of shared Rust/C++ structs
 #include <crisprme-core/src/bindings/miner.rs.h>
@@ -31,6 +32,21 @@ __constant__ u32 SLEN;
 __constant__ u32 GGAP;
 __constant__ u32 SGAP;
 __constant__ u32 MISM;
+
+/// ====================================================================
+/// Checkpoint
+/// ====================================================================
+
+template<typename Storage>
+struct ThreadCheckpoint {
+
+    // Inner state of the miner
+    typename ThreadMiner<Storage>::Inner inner;
+    // Current sequence
+    u32 bseq;
+    // Current offset
+    u8 offset;
+};
 
 /// ====================================================================
 /// Warp intrinsics utils
@@ -74,16 +90,18 @@ __device__ bool warp_any(bool flag)
 
 /// Current write index to alignment buffer
 __device__ u32 write_cursor = 0;
+/// Output buffer is full, ignores cache
+__device__ volatile u32 output_full = 0;
 
 __global__ void kmine(
-    const u8 *__restrict__ sequences, // Input sequences
-    u64 *__restrict__ cigarxs,        // Output cigarx column
-    u32 *__restrict__ indexes,        // Output index column
-    u8 *__restrict__ offsets,         // Output offset column
-    u32 sequence_count,               // Sequence count
-    u32 capacity                      // Output capacity
-)
-{
+    const u8 *__restrict__ sequences,   // Input sequences
+    u64 *__restrict__ cigarxs,          // Output cigarx column
+    u32 *__restrict__ indexes,          // Output index column
+    u8 *__restrict__ offsets,           // Output offset column
+    u32 sequence_count,                 // Sequence count
+    u32 capacity,                       // Output capacity
+    ThreadCheckpoint<u64> *checkpoints  // Per-thread checkpoint state
+) {
     // This warp
     namespace cg = cooperative_groups;
     cg::thread_block_tile<32> warp = cg::tiled_partition<32>(
@@ -92,17 +110,39 @@ __global__ void kmine(
     // Each thread of a warp has it's own stack and counters
     ThreadMiner<u64> miner;
 
-    // TODO: This will be loaded from the state in global memory
-    //       when the resumable kernel feature is done...
-    const auto start_bseq = blockDim.x * blockIdx.x + threadIdx.x;
-    const auto start_sidx = 0;
+    const u32 tid = blockDim.x * blockIdx.x + threadIdx.x;
+    const u32 stride = gridDim.x * blockDim.x;
+
+    // Restore from checkpoint if this thread was interrupted
+    ThreadCheckpoint<u64> cp = checkpoints[tid];
+
+    u32 start_bseq;
+    u8  start_offset;
+
+    if (cp.inner.len > 0)
+    {
+        start_bseq   = cp.bseq;
+        start_offset = cp.offset;
+        miner.mem    = cp.inner;
+    }
+    else
+    {
+        start_bseq   = tid;
+        start_offset = 0;
+    }
 
     /// Process all sequences and starting offset
-    const auto stride = gridDim.x * blockDim.x;
     for (u32 bseq = start_bseq; bseq < sequence_count; bseq += stride)
     {
-        for (u8 offset = start_sidx; offset <= (SLEN - GLEN + GGAP); offset += 1)
+        for (u8 offset = start_offset; offset <= (SLEN - GLEN + GGAP); offset += 1)
         {
+            // Check if another thread signalled output full
+            if (output_full)
+            {
+                checkpoints[tid] = { miner.mem, bseq, offset };
+                return;
+            }
+
             // Initialize stack for this sequence if not already done
             if (miner.mem.len == 0)
             {
@@ -143,8 +183,6 @@ __global__ void kmine(
                 // Some thread has a solution
                 if (warp.any(inside_thresholds && is_complete))
                 {
-                    // Cigarx64 cigarx = miner.cigarx();
-
                     // Add solution to alignment batch
                     if (inside_thresholds && is_complete)
                     {
@@ -162,7 +200,13 @@ __global__ void kmine(
                         }
                         else
                         {
-                            assert(false && "ERR: too many alignments!");
+                            // Output buffer is full — clamp cursor and signal
+                            atomicMin(&write_cursor, capacity);
+                            atomicExch((u32*)&output_full, 1);
+                            // Save state without advancing so this result
+                            // is re-discovered on the next launch
+                            checkpoints[tid] = { miner.mem, bseq, offset };
+                            return;
                         }
                     }
                 }
@@ -193,6 +237,9 @@ __global__ void kmine(
             }
         }
     }
+
+    // Thread completed all work — clear checkpoint
+    checkpoints[tid].inner.len = 0;
 }
 
 /// ====================================================================
@@ -204,9 +251,13 @@ namespace cuda::miner
 {
     const u32 ZERO = 0;
 
+    // Persistent checkpoint buffer across launches within a prepare/post_mine session
+    static ThreadCheckpoint<u64>* d_checkpoints = nullptr;
+    static u32 checkpoint_capacity = 0;
+
     void initialize(u32 device)
     {
-        // Make all CUDA calls locat to the calling thread
+        // Make all CUDA calls local to the calling thread
         CUDA_CHECK(cudaSetDevice(device));
     }
 
@@ -216,8 +267,9 @@ namespace cuda::miner
         // Copy guide to constant memory
         CUDA_CHECK(cudaMemcpyToSymbol(GUIDE, config.guide, config.glen, 0, cudaMemcpyHostToDevice));
 
-        // Reset write cursors
+        // Reset write cursor and output_full flag
         CUDA_CHECK(cudaMemcpyToSymbol(write_cursor, &ZERO, sizeof(u32), 0, cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpyToSymbol(output_full,  &ZERO, sizeof(u32), 0, cudaMemcpyHostToDevice));
 
         // Copy thresholds and lengths to constant memory
         CUDA_CHECK(cudaMemcpyToSymbol(SLEN, &config.slen, sizeof(u32), 0, cudaMemcpyHostToDevice));
@@ -232,11 +284,29 @@ namespace cuda::miner
     {
         u32 BLOCK_SIZE = 256;
         u32 BLOCK_COUNT = (input.seq_count + BLOCK_SIZE - 1) / BLOCK_SIZE;
+        u32 TH_COUNT = BLOCK_SIZE * BLOCK_COUNT;
 
-        // Launch kernel and pray
+        // Lazy-allocate checkpoint buffer (persists across launches, freed in post_mine)
+        if (d_checkpoints == nullptr || checkpoint_capacity < TH_COUNT)
+        {
+            printf("allocated CUDA checkpoint buffer (%d bytes)\n", 
+                TH_COUNT * sizeof(ThreadCheckpoint<u64>));
+
+            if (d_checkpoints) 
+                CUDA_CHECK(cudaFree(d_checkpoints));
+
+            CUDA_CHECK(cudaMalloc(&d_checkpoints,    TH_COUNT * sizeof(ThreadCheckpoint<u64>)));
+            CUDA_CHECK(cudaMemset(d_checkpoints,  0, TH_COUNT * sizeof(ThreadCheckpoint<u64>)));
+            checkpoint_capacity = TH_COUNT;
+        }
+
+        // Reset write cursor and output_full flag before each launch
+        CUDA_CHECK(cudaMemcpyToSymbol(write_cursor, &ZERO, sizeof(u32), 0, cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpyToSymbol(output_full,  &ZERO, sizeof(u32), 0, cudaMemcpyHostToDevice));
+
         kmine<<<BLOCK_COUNT, BLOCK_SIZE>>>(
             input.sequences, input.cigarx, input.index, input.offset,
-            input.seq_count, input.capacity);
+            input.seq_count, input.capacity, d_checkpoints);
 
         cudaDeviceSynchronize();
         cudaError_t err = cudaGetLastError();
@@ -246,15 +316,27 @@ namespace cuda::miner
                     __FILE__, __LINE__, cudaGetErrorString(err), err);
         }
 
-        // Get total mined alignments
-        u32 mined = 0;
+        // Read back results
+        u32 mined = 0, full = 0;
         CUDA_CHECK(cudaMemcpyFromSymbol(&mined, write_cursor, sizeof(u32), 0, cudaMemcpyDeviceToHost));
+        CUDA_CHECK(cudaMemcpyFromSymbol(&full,  output_full,  sizeof(u32), 0, cudaMemcpyDeviceToHost));
+
         return MinerOutput{
             mined,
-            true};
+            full == 0};
     }
 
     void post_mine() { }
 
-    void shutdown(u32 device) { }
+    void shutdown(u32 device) 
+    {
+        // Free checkpoint buffer at end of mining session
+        if (d_checkpoints)
+        {
+            printf("free CUDA checkpoint buffer\n");
+            CUDA_CHECK(cudaFree(d_checkpoints));
+            d_checkpoints = nullptr;
+            checkpoint_capacity = 0;
+        }
+    }
 }

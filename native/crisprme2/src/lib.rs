@@ -142,7 +142,7 @@ pub mod _crisprme2_native {
             py.detach(|| {
                 self.input
                     .send(SeqBatch {
-                        thresholds: Thresholds::new(1, 1, 1),
+                        thresholds: Thresholds::new(1, 1, 2),
                         seq_len: sequence.len(),
                         guide: Guide::new("GATTACA"),
                         sequences: seqs,
@@ -189,7 +189,7 @@ pub mod _crisprme2_native {
             py.detach(|| {
                 self.input
                     .send(SeqBatch {
-                        thresholds: Thresholds::new(1, 1, 1),
+                        thresholds: Thresholds::new(1, 1, 2),
                         seq_len,
                         guide: Guide::new("GATTACAGATTACA"),
                         sequences: seqs,
@@ -283,7 +283,7 @@ pub mod _crisprme2_native {
         let (input, pipeline) = Pipeline::driven(10);
 
         let mut pipeline = pipeline
-            .stage(1, |pool, _| GpuMiner::new(pool, 1000, 32, 1_000_000, 0))
+            .stage(1, |pool, _| GpuMiner::new(pool, 100_000, 32, 100_000, 0))
             .stage(2, |pool, _| Resolver::new(pool))
             .stage(2, |pool, _| Broadcast::new(pool));
 

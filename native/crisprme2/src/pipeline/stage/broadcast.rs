@@ -30,12 +30,21 @@ pub struct Broadcast {
     /// Tracks which table slots were written in the current batch for selective reset.
     /// Kept on the struct to avoid per-batch allocation.
     written: Vec<usize>,
+
+    /// Total number of broadcasted items
+    total_broadcasted: usize,
 }
 
 impl Broadcast {
 
     pub fn new(pool: &MemoryPool) -> Self {
-        Self { pool: pool.clone(), table: vec![], flat_rows: vec![], written: vec![] }
+        Self { 
+            pool: pool.clone(),
+            total_broadcasted: 0, 
+            table: vec![], 
+            flat_rows: vec![], 
+            written: vec![] 
+        }
     }
 
     /// Populates `table` and `flat_rows` from the resolved `seq_row_idx` column.
@@ -161,12 +170,18 @@ impl Stage for Broadcast {
                     }
                 });
 
-                tracing::info!("total broadcasted rows: {}", out_rows);
+                tracing::info!("broadcasted rows: {}", out_rows);
+                self.total_broadcasted += out_rows;
 
                 self.reset();
                 emitter.emit(alignment)
             })
         })
+    }
+
+    fn shutdown(&mut self) -> Result<(), PipelineError> {
+        tracing::info!("total broadcasted rows: {}", self.total_broadcasted);
+        Ok(())
     }
 }
 

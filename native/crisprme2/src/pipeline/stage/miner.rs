@@ -208,67 +208,70 @@ impl Stage for GpuMiner {
             }
         });
 
-        // Mine alignments
-        tracing::debug!("running columnar mine kernel");
-        let (finish, mined) = bindings::miner::mine(
-            buffers.src_buffer_seq.dptr as _, 
-            src_seq_count as u32, 
-            buffers.dst_buffer_cigarx.dptr as _,
-            buffers.dst_buffer_idx.dptr as _,
-            buffers.dst_buffer_offset.dptr as _,
-            self.dst_capacity as u32
-        );
+        // Mine alignments in a loop — kernel yields partial results when output buffer is full
+        let mut sequences  = input.sequences.share();
+        let mut occurences = input.occurences.share();
+
+        loop {
+            tracing::debug!("running columnar mine kernel");
+            let (finish, mined_count) = bindings::miner::mine(
+                buffers.src_buffer_seq.dptr as _,
+                src_seq_count as u32,
+                buffers.dst_buffer_cigarx.dptr as _,
+                buffers.dst_buffer_idx.dptr as _,
+                buffers.dst_buffer_offset.dptr as _,
+                self.dst_capacity as u32
+            );
+
+            self.total_mined += mined_count;
+            tracing::debug!("mined {} alignments (finish={})", mined_count, finish);
+
+            // Download results from GPU and emit
+            let mut mined = SeqMinedFrame::alloc(&self.pool, mined_count);
+            mined.with_cols(|mut cols| {
+                let mut offset = 0;
+                for region in cols.cigarx.chunks_mut() {
+                    bindings::cuda::memcpy_to_cpu::<Cigarx64>(
+                        region.as_ptr() as _,
+                        unsafe { buffers.dst_buffer_cigarx.dptr.add(offset) },
+                        region.len()
+                    );
+                    offset += region.len();
+                }
+
+                offset = 0;
+                for region in cols.seq_row_idx.chunks_mut() {
+                    bindings::cuda::memcpy_to_cpu::<SeqRowIdx>(
+                        region.as_ptr() as _,
+                        unsafe { buffers.dst_buffer_idx.dptr.add(offset) },
+                        region.len()
+                    );
+                    offset += region.len();
+                }
+
+                offset = 0;
+                for region in cols.offset.chunks_mut() {
+                    bindings::cuda::memcpy_to_cpu::<u8>(
+                        region.as_ptr() as _,
+                        unsafe { buffers.dst_buffer_offset.dptr.add(offset) },
+                        region.len()
+                    );
+                    offset += region.len();
+                }
+            });
+
+            emitter.emit(SeqMinedBatch {
+                guide: input.guide.clone(),
+                sequences: sequences.share(),
+                occurences: occurences.share(),
+                mined
+            })?;
+
+            if finish { break; }
+        }
 
         bindings::miner::post_mine();
-        self.total_mined += mined;
-
-        // For now we support only single mine output
-        assert_eq!(finish, true);
-
-        // Allocate result and download all data from GPU
-        let mut mined = SeqMinedFrame::alloc(&self.pool, mined);
-        mined.with_cols(|mut cols| {
-            tracing::debug!("downloading columns chunks from GPU");
-
-            let mut offset = 0;
-            for region in cols.cigarx.chunks_mut() {
-                bindings::cuda::memcpy_to_cpu::<Cigarx64>(
-                    region.as_ptr() as _,
-                    unsafe { buffers.dst_buffer_cigarx.dptr.add(offset) },
-                    region.len()
-                );
-                offset += region.len();
-            }
-
-            offset = 0;
-            for region in cols.seq_row_idx.chunks_mut() {
-                bindings::cuda::memcpy_to_cpu::<SeqRowIdx>(
-                    region.as_ptr() as _,
-                    unsafe { buffers.dst_buffer_idx.dptr.add(offset) },
-                    region.len()
-                );
-                offset += region.len();
-            }
-
-            offset = 0;
-            for region in cols.offset.chunks_mut() {
-                bindings::cuda::memcpy_to_cpu::<u8>(
-                    region.as_ptr() as _,
-                    unsafe { buffers.dst_buffer_offset.dptr.add(offset) },
-                    region.len()
-                );
-                offset += region.len();
-            }
-        });
-
-        emitter.emit(
-            SeqMinedBatch { 
-                guide: input.guide, 
-                sequences: input.sequences.share(), 
-                occurences: input.occurences.share(), 
-                mined 
-            }
-        )
+        Ok(())
     }
 
     fn shutdown(&mut self) -> Result<(), PipelineError> {

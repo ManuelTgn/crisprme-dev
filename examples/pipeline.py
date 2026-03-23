@@ -44,7 +44,7 @@ class Printer:
 
 nat.init_tracing()
 pipeline = nat.pipeline(
-    chunks = 1000,
+    chunks = 10_000, # 6 GB
     transforms = [
         Scorer(0, 2),
         Scorer(1, 7),
