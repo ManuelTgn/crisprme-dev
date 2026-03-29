@@ -1,6 +1,8 @@
 use std::marker::PhantomData;
 use columnar::pipeline::{Sink, PipelineError};
 
+pub mod writer;
+
 /// A Sink that does nothing, it just consumes output
 pub struct NullSink<T>(PhantomData<T>);
 

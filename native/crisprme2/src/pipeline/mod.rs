@@ -1,6 +1,7 @@
 
 pub mod sink;
 pub mod stage;
+pub mod source;
 
 #[cfg(test)]
 pub mod test {
