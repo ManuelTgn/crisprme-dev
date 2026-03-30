@@ -74,7 +74,7 @@ pub mod _crisprme2_native {
             alignment::AlignmentFrame,
             input::{SEQ_MAX_LEN, SeqBatch, SeqFrame, SeqOccFrame}, occurence::Occurence,
         }, pipeline::{
-            sink::NullSink, stage::{broadcast::Broadcast, miner::{GpuMiner, Miner}, resolve::Resolver, transform::PyTransform}
+            sink::{NullSink, writer::{CsvWriter, CsvWriterSink}}, stage::{broadcast::Broadcast, miner::{GpuMiner, Miner}, resolve::Resolver, transform::PyTransform}
         }, sequence::{iupac::Iupac, sequence::Sequence}
     };
 
@@ -297,10 +297,17 @@ pub mod _crisprme2_native {
         }
 
         // Add sink stage
-        let pipeline = pipeline.sink(2, |_, _| NullSink::<AlignmentFrame>::new());
+        //let pipeline = pipeline.sink(2, |_, _| NullSink::<AlignmentFrame>::new());
+        let csv_writer = CsvWriter::open("results.csv".into());
+        let pipeline = pipeline.sink(2, {
+            let csv_writer_clone = csv_writer.clone();
+            move |_, _| { 
+                CsvWriterSink::new(&csv_writer_clone)
+            }
+        });
+        
         tracing::info!("pipeline ready!");
-
-        let handle = pipeline.execute(&pool, 10);
+        let handle = pipeline.execute(&pool, 3);
         Ok(PyPipeline {
             handle,
             input,
