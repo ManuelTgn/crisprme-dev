@@ -59,7 +59,7 @@ pub fn extract_targets_rs(
 #[pymodule]
 pub mod _crisprme2_native {
 
-    use std::path::PathBuf;
+    use std::{path::PathBuf, time::Instant};
 
     use columnar::{
         memory::CHUNK_SIZE,
@@ -281,8 +281,16 @@ pub mod _crisprme2_native {
     /// Similar to PyPipeline but with a source stage that reads batches of sequences from disk.
     #[pyclass]
     struct PySourcedPipeline {
+        started_at: Instant,
         handle: PipelineHandle,
         pool: MemoryPool,
+    }
+
+    impl Drop for PySourcedPipeline {
+        fn drop(&mut self) {
+            tracing::info!("pipeline took {:.2} s", 
+                self.started_at.elapsed().as_secs_f32());
+        }
     }
 
     /// Create a driven pipeline with transforms
@@ -351,7 +359,7 @@ pub mod _crisprme2_native {
         });
 
         let seq_path = folder.join("sequences.bin");
-        let pos_path = folder.join("occurences.bin");
+        let pos_path = folder.join("positions.bin");
 
         tracing::info!("building pipeline...");
         let pipeline = Pipeline::source(1, move |pool, _| {
@@ -360,7 +368,7 @@ pub mod _crisprme2_native {
         });
 
         let mut pipeline = pipeline
-            .stage(1, |pool, _| GpuMiner::new(pool, 100_000, 32, 100_000, 0))
+            .stage(1, |pool, _| GpuMiner::new(pool, 500_000, 32, 1_000_000, 0))
             .stage(2, |pool, _| Resolver::new(pool))
             .stage(2, |pool, _| Broadcast::new(pool));
 
@@ -385,6 +393,7 @@ pub mod _crisprme2_native {
         tracing::info!("pipeline ready!");
         let handle = pipeline.execute(&pool, 3);
         Ok(PySourcedPipeline {
+            started_at: Instant::now(),
             handle,
             pool,
         })

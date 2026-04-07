@@ -71,7 +71,7 @@ impl Sink for CsvWriterSink {
             ) {
                 let contig   = (occ.0 >> 33) as u32;
                 let position = ((occ.0 >> 1) & 0xFFFF_FFFF) as u32;
-                let strand    = (occ.0 & 1) as u8;
+                let strand   = (occ.0 & 1) as u8;
 
                 write!(self.buffer, "{},{},{},{}", contig, position, strand, offset).unwrap();
 
@@ -85,6 +85,7 @@ impl Sink for CsvWriterSink {
                     self.buffer.push(b as char);
                 }
 
+                /*
                 for it in &mut feat_iters {
                     write!(self.buffer, ",{}", it.next().unwrap()).unwrap();
                 }
@@ -92,6 +93,7 @@ impl Sink for CsvWriterSink {
                 for it in &mut score_iters {
                     write!(self.buffer, ",{:.6}", it.next().unwrap()).unwrap();
                 }
+                */
 
                 self.buffer.push('\n');
             }

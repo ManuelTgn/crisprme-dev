@@ -198,7 +198,8 @@ impl Stage for GpuMiner {
             
             let mut offset = 0;
             for region in cols.content.chunks() {
-                assert!(offset < self.dst_capacity);
+                assert!(offset < self.src_seq_capacity, "offset is {offset}, but max capacity is {}", self.src_seq_capacity);
+                //tracing::info!("moving {} bytes to src_seq_buffer", region.len() * stride);
                 bindings::cuda::memcpy_to_gpu::<Iupac>(
                     region.as_ptr() as _,
                     unsafe { buffers.src_buffer_seq.dptr.add(offset) },
@@ -225,48 +226,49 @@ impl Stage for GpuMiner {
 
             self.total_mined += mined_count;
             tracing::debug!("mined {} alignments (finish={})", mined_count, finish);
+            if mined_count != 0 {
 
-            // Download results from GPU and emit
-            let mut mined = SeqMinedFrame::alloc(&self.pool, mined_count);
-            mined.with_cols(|mut cols| {
-                let mut offset = 0;
-                for region in cols.cigarx.chunks_mut() {
-                    bindings::cuda::memcpy_to_cpu::<Cigarx64>(
-                        region.as_ptr() as _,
-                        unsafe { buffers.dst_buffer_cigarx.dptr.add(offset) },
-                        region.len()
-                    );
-                    offset += region.len();
-                }
+                // Download results from GPU and emit
+                let mut mined = SeqMinedFrame::alloc(&self.pool, mined_count);
+                mined.with_cols(|mut cols| {
+                    let mut offset = 0;
+                    for region in cols.cigarx.chunks_mut() {
+                        bindings::cuda::memcpy_to_cpu::<Cigarx64>(
+                            region.as_ptr() as _,
+                            unsafe { buffers.dst_buffer_cigarx.dptr.add(offset) },
+                            region.len()
+                        );
+                        offset += region.len();
+                    }
 
-                offset = 0;
-                for region in cols.seq_row_idx.chunks_mut() {
-                    bindings::cuda::memcpy_to_cpu::<SeqRowIdx>(
-                        region.as_ptr() as _,
-                        unsafe { buffers.dst_buffer_idx.dptr.add(offset) },
-                        region.len()
-                    );
-                    offset += region.len();
-                }
+                    offset = 0;
+                    for region in cols.seq_row_idx.chunks_mut() {
+                        bindings::cuda::memcpy_to_cpu::<SeqRowIdx>(
+                            region.as_ptr() as _,
+                            unsafe { buffers.dst_buffer_idx.dptr.add(offset) },
+                            region.len()
+                        );
+                        offset += region.len();
+                    }
 
-                offset = 0;
-                for region in cols.offset.chunks_mut() {
-                    bindings::cuda::memcpy_to_cpu::<u8>(
-                        region.as_ptr() as _,
-                        unsafe { buffers.dst_buffer_offset.dptr.add(offset) },
-                        region.len()
-                    );
-                    offset += region.len();
-                }
-            });
+                    offset = 0;
+                    for region in cols.offset.chunks_mut() {
+                        bindings::cuda::memcpy_to_cpu::<u8>(
+                            region.as_ptr() as _,
+                            unsafe { buffers.dst_buffer_offset.dptr.add(offset) },
+                            region.len()
+                        );
+                        offset += region.len();
+                    }
+                });
 
-            emitter.emit(SeqMinedBatch {
-                guide: input.guide.clone(),
-                sequences: sequences.share(),
-                occurences: occurences.share(),
-                mined
-            })?;
-
+                emitter.emit(SeqMinedBatch {
+                    guide: input.guide.clone(),
+                    sequences: sequences.share(),
+                    occurences: occurences.share(),
+                    mined
+                })?;
+            }
             if finish { break; }
         }
 

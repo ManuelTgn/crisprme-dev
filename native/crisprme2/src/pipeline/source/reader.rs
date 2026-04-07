@@ -9,7 +9,7 @@ use crate::{
     model::{
         input::{SeqBatch, SeqFrame, SeqOccFrame},
         occurence::Occurence,
-    },
+    }, sequence::sequence::Sequence,
 };
 
 /// Allocates and fills a `SeqFrame` with exactly `n` sequences read from the binary stream.
@@ -186,8 +186,17 @@ impl Source for Reader {
             Some(frame) => frame,
         };
         let n_seqs = self.positions.counts.len();
-        let seqs = self.sequences.read(&self.pool, n_seqs)
+        let mut seqs = self.sequences.read(&self.pool, n_seqs)
             .expect("position/sequence count mismatch");
+
+        /*
+        seqs.with_cols(|cols| {
+            for element in cols.content.iter() {
+                let element = Sequence::new(element);
+                println!("{element:?}");
+            }
+        });
+        */
 
         Ok(Some(SeqBatch {
             seq_len: self.sequences.sequence_len,
