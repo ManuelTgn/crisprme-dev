@@ -42,22 +42,16 @@ class Printer:
 
 
 nat.init_tracing()
-pipeline = nat.pipeline(
+pipeline = nat.dataset_pipeline(
+    folder = "examples/data",
+    batch_size = 10_000,
+    guide = nat.Guide("GATTACA"),
+    thresholds = nat.Thresholds(3, 3, 3),
+    sequence_len = 32,
     chunks = 10_000, # 6 GB
     transforms = [
         Scorer(0, 2),
         Scorer(1, 7),
         #Printer(),
-    ]
+    ],
 )
-
-pipeline.send_debug_minable_data()
-
-#pipeline.send_debug_data()
-#time.sleep(0.1)
-#pipeline.send_debug_data()
-#time.sleep(0.1)
-#pipeline.send_debug_data()
-
-# We must close the pipeline at the end
-pipeline.close()

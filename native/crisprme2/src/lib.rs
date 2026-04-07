@@ -59,6 +59,8 @@ pub fn extract_targets_rs(
 #[pymodule]
 pub mod _crisprme2_native {
 
+    use std::path::PathBuf;
+
     use columnar::{
         memory::CHUNK_SIZE,
         pipeline::{Driven, Pipeline, PipelineHandle},
@@ -70,11 +72,11 @@ pub mod _crisprme2_native {
     };
 
     use crate::{
-        alignment::thresholds::Thresholds, bindings::cuda, crispr::guide::Guide, model::{
+        bindings::cuda, model::{
             alignment::AlignmentFrame,
             input::{SEQ_MAX_LEN, SeqBatch, SeqFrame, SeqOccFrame}, occurence::Occurence,
         }, pipeline::{
-            sink::{NullSink, writer::{CsvWriter, CsvWriterSink}}, stage::{broadcast::Broadcast, miner::{GpuMiner, Miner}, resolve::Resolver, transform::PyTransform}
+            sink::{NullSink, writer::{CsvWriter, CsvWriterSink}}, source::reader::Reader, stage::{broadcast::Broadcast, miner::{GpuMiner, Miner}, resolve::Resolver, transform::PyTransform}
         }, sequence::{iupac::Iupac, sequence::Sequence}
     };
 
@@ -89,6 +91,13 @@ pub mod _crisprme2_native {
 
     #[pymodule_export]
     pub use crate::extract_targets_rs;
+
+    #[pymodule_export]
+    pub use crate::crispr::guide::Guide;
+
+    #[pymodule_export]
+    pub use crate::alignment::thresholds::Thresholds;
+
 
     #[pyfunction]
     pub fn init_tracing() {
@@ -269,6 +278,13 @@ pub mod _crisprme2_native {
         }
     }
 
+    /// Similar to PyPipeline but with a source stage that reads batches of sequences from disk.
+    #[pyclass]
+    struct PySourcedPipeline {
+        handle: PipelineHandle,
+        pool: MemoryPool,
+    }
+
     /// Create a driven pipeline with transforms
     #[pyfunction]
     fn pipeline<'py>(chunks: usize, transforms: Bound<'py, PyList>) -> PyResult<PyPipeline> {
@@ -311,6 +327,65 @@ pub mod _crisprme2_native {
         Ok(PyPipeline {
             handle,
             input,
+            pool,
+        })
+    }
+
+
+    /// Create a dataset pipeline that reads batches of sequences from disk, applies transforms, and writes results to disk.
+    #[pyfunction]
+    fn dataset_pipeline<'py>(
+        chunks: usize, 
+        transforms: Bound<'py, PyList>, 
+        folder: PathBuf,
+        batch_size: usize,
+        guide: Guide,
+        thresholds: Thresholds,
+        sequence_len: usize,
+    ) -> PyResult<PySourcedPipeline> {
+
+        // Create memory pool and pin all chunks for DMA from GPU
+        let pool = MemoryPool::new(CHUNK_SIZE * chunks, |ptr, bytes| {
+            tracing::trace!("pinning chunk (ptr = {:?}, bytes = {})", ptr, bytes);
+            cuda::pin(ptr, bytes);
+        });
+
+        let seq_path = folder.join("sequences.bin");
+        let pos_path = folder.join("occurences.bin");
+
+        tracing::info!("building pipeline...");
+        let pipeline = Pipeline::source(1, move |pool, _| {
+                Reader::open(seq_path.clone(), pos_path.clone(), sequence_len, batch_size, guide.clone(), thresholds, pool.clone())
+                    .expect("unable to create reader")
+        });
+
+        let mut pipeline = pipeline
+            .stage(1, |pool, _| GpuMiner::new(pool, 100_000, 32, 100_000, 0))
+            .stage(2, |pool, _| Resolver::new(pool))
+            .stage(2, |pool, _| Broadcast::new(pool));
+
+        // Add all transform stages
+        tracing::info!("adding transform stages: ");
+        for elem in transforms {
+            tracing::info!("\t{:?}", elem.get_type().getattr("__name__").unwrap());
+
+            let transform = elem.unbind();
+            pipeline = pipeline.stage_once(|_| PyTransform::new(transform))
+        }
+
+        // Add sink stage
+        let csv_writer = CsvWriter::open("results.csv".into());
+        let pipeline = pipeline.sink(2, {
+            let csv_writer_clone = csv_writer.clone();
+            move |_, _| { 
+                CsvWriterSink::new(&csv_writer_clone)
+            }
+        });
+
+        tracing::info!("pipeline ready!");
+        let handle = pipeline.execute(&pool, 3);
+        Ok(PySourcedPipeline {
+            handle,
             pool,
         })
     }
