@@ -292,11 +292,13 @@ impl Stage for GpuMiner {
                     );
                 });
 
+                /*
                 mined.with_cols(|c| {
                     for (seq_row_idx, cigar) in c.seq_row_idx.iter().zip(c.cigarx.iter()) {
                         tracing::info!("mined seq: {}", *seq_row_idx);
                     }
                 });
+                */
 
                 emitter.emit(SeqMinedBatch {
                     guide: input.guide.clone(),

@@ -52,20 +52,6 @@ struct ThreadCheckpoint {
 /// Warp intrinsics utils
 /// ====================================================================
 
-/*
-/// Sum values in the warp
-/// NOTE: Only thread lane 0 has the full sum
-__device__ int warp_sum(int val)
-{
-    unsigned mask = 0xFFFFFFFF; // full warp
-    for (int offset = 16; offset > 0; offset /= 2)
-    {
-        val += __shfl_down_sync(mask, val, offset);
-    }
-    return val;
-}
-*/
-
 /// Returns true if any warp has the flag to true
 __device__ bool warp_any(bool flag)
 {
@@ -137,7 +123,6 @@ __global__ void kmine(
         // A resumed thread must continue from the checkpointed offset only for the
         // interrupted sequence. All later sequences need to restart from offset 0.
         const u8 seq_start_offset = (bseq == start_bseq) ? start_offset : 0;
-
         for (u8 offset = seq_start_offset; offset <= (SLEN - GLEN + GGAP); offset += 1)
         {
             // Check if another thread signalled output full
@@ -287,7 +272,7 @@ namespace cuda::miner
     MinerOutput launch(MinerInput input)
     {
         u32 BLOCK_SIZE = 256;
-        u32 BLOCK_COUNT = (input.seq_count + BLOCK_SIZE - 1) / BLOCK_SIZE;
+        u32 BLOCK_COUNT = (input.seq_count + BLOCK_SIZE - 1) / BLOCK_SIZE; // 3000
         u32 TH_COUNT = BLOCK_SIZE * BLOCK_COUNT;
 
         // Lazy-allocate checkpoint buffer (persists across launches, freed in post_mine)

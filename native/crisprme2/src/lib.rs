@@ -368,7 +368,7 @@ pub mod _crisprme2_native {
         });
 
         let mut pipeline = pipeline
-            .stage(1, |pool, _| GpuMiner::new(pool, 1_000_000, 32, 1_000_000, 0))
+            .stage(1, |pool, _| GpuMiner::new(pool, 100_000, 32, 100_000, 0))
             .stage(2, |pool, _| Resolver::new(pool))
             .stage(2, |pool, _| Broadcast::new(pool));
 

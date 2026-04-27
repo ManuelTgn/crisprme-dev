@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::{ffi::os_str::Display, fmt::{Debug, write}};
 
 
 #[repr(u8)]
@@ -113,8 +113,14 @@ impl Iterator for Cigarx64Iter {
 
 impl Debug for Cigarx64 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_list()
-            .entries(self.iter())
-            .finish()
+        for elem in self.iter() {
+            write!(f, "{}", match elem {
+                CigarxOp::Match => '=',
+                CigarxOp::Mismatch => 'X',
+                CigarxOp::Deletion => 'D',
+                CigarxOp::Insertion => 'I',
+            })?
+        }
+        Ok(())
     }
 }

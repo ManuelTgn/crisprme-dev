@@ -15,7 +15,7 @@ use std::{mem::ManuallyDrop, sync::{Arc, Weak}, time::Instant};
 pub const CHUNK_SIZE: usize = 65536;
 
 /// Maximum alowed seconds before `try_acquire_spinning` fails
-pub const QUEUE_ACQUIRE_MAX_SECS: f32 = 1.0;
+pub const QUEUE_ACQUIRE_MAX_SECS: f32 = 5.0;
 
 #[derive(Error, Debug)]
 pub enum MemoryError {
@@ -88,9 +88,8 @@ impl ChunkArray {
         let chunks_count = used_bytes.div_ceil(CHUNK_SIZE);
         let mut chunks = Vec::with_capacity(chunks_count);
         for _ in 0..chunks_count {
-            // Get chunk without considering backpressure
-            chunks.push(pool.acquire()
-                .ok_or(MemoryError::OutOfMemory)?);
+            // Get chunk considering backpressure
+            chunks.push(pool.acquire_spinning());
         }
 
         tracing::trace!("ChunkArray with {} chunks ({} bytes not used)",
