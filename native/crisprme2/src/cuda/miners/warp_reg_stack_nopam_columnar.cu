@@ -134,7 +134,11 @@ __global__ void kmine(
     /// Process all sequences and starting offset
     for (u32 bseq = start_bseq; bseq < sequence_count; bseq += stride)
     {
-        for (u8 offset = start_offset; offset <= (SLEN - GLEN + GGAP); offset += 1)
+        // A resumed thread must continue from the checkpointed offset only for the
+        // interrupted sequence. All later sequences need to restart from offset 0.
+        const u8 seq_start_offset = (bseq == start_bseq) ? start_offset : 0;
+
+        for (u8 offset = seq_start_offset; offset <= (SLEN - GLEN + GGAP); offset += 1)
         {
             // Check if another thread signalled output full
             if (output_full)

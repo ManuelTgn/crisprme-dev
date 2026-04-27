@@ -43,11 +43,14 @@ class Printer:
 
 nat.init_tracing()
 pipeline = nat.dataset_pipeline(
-    folder = "examples/data/hgdp_chr10_HGDP01099_no_indel_het",
-    batch_size = 10_000,
-    guide = nat.Guide("CTAACAGTTGCTTTTATCAC"),
+    #folder = "examples/data/hgdp_chr10_HGDP01099_no_indel_het",
+    folder = "examples/data/single",
+    batch_size = 1_000_000,
+    #guide = nat.Guide("CTAACAGTTGCTTTTATCAC"),
+    guide = nat.Guide("CTCAGGCTTCYTYTTAT"),
     thresholds = nat.Thresholds(1, 1, 4),
-    sequence_len = 22,
+    #sequence_len = 30,
+    sequence_len = 23,
     chunks = 5_000, # 3 GB
     transforms = [
         #Scorer(0, 2),

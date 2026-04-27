@@ -133,6 +133,8 @@ pub struct GpuMiner {
 
     // Total alignments mined
     total_mined: usize,
+    // Total sequences loaded to staging buffer
+    total_uploaded: usize,
 }
 
 impl GpuMiner {
@@ -144,6 +146,7 @@ impl GpuMiner {
         Self { 
             pool: pool.clone(),
             total_mined: 0, 
+            total_uploaded: 0,
             buffers: None,
             src_seq_capacity,
             src_seq_stride,
@@ -188,8 +191,17 @@ impl Stage for GpuMiner {
         // Copy data from column region to staging buffer
         let mut src_seq_count = 0;
         input.sequences.with_cols(|cols| {
-            src_seq_count = cols.content.rows();
 
+            src_seq_count = cols.content.rows();
+            self.total_uploaded += src_seq_count;
+            assert!(
+                src_seq_count <= self.src_seq_capacity,
+                "received {} sequences, but src buffer capacity is {}",
+                src_seq_count,
+                self.src_seq_capacity
+            );
+
+            tracing::info!("mining batch of {} sequences", src_seq_count);
             tracing::debug!("uploading columns chunks to GPU");
 
             // How many bytes for each sequence element
@@ -198,15 +210,22 @@ impl Stage for GpuMiner {
             
             let mut offset = 0;
             for region in cols.content.chunks() {
-                assert!(offset < self.src_seq_capacity, "offset is {offset}, but max capacity is {}", self.src_seq_capacity);
-                //tracing::info!("moving {} bytes to src_seq_buffer", region.len() * stride);
+                let len = region.len() * stride;
+                assert!(
+                    offset + len <= buffers.src_buffer_seq.capacity,
+                    "upload would write {} elements into a src buffer with capacity {}",
+                    offset + len,
+                    buffers.src_buffer_seq.capacity
+                );
                 bindings::cuda::memcpy_to_gpu::<Iupac>(
                     region.as_ptr() as _,
                     unsafe { buffers.src_buffer_seq.dptr.add(offset) },
-                    region.len() * stride
+                    len
                 );
-                offset += region.len() * stride;
+                offset += len;
             }
+
+            tracing::info!("sequences uploaded since now: {}", self.total_uploaded);
         });
 
         // Mine alignments in a loop — kernel yields partial results when output buffer is full
@@ -225,8 +244,14 @@ impl Stage for GpuMiner {
             );
 
             self.total_mined += mined_count;
-            tracing::debug!("mined {} alignments (finish={})", mined_count, finish);
+            tracing::info!("mined {} alignments (finish={})", mined_count, finish);
             if mined_count != 0 {
+                assert!(
+                    mined_count <= buffers.dst_buffer_cigarx.capacity,
+                    "miner returned {} alignments, but dst buffer capacity is {}",
+                    mined_count,
+                    buffers.dst_buffer_cigarx.capacity
+                );
 
                 // Download results from GPU and emit
                 let mut mined = SeqMinedFrame::alloc(&self.pool, mined_count);
@@ -234,7 +259,7 @@ impl Stage for GpuMiner {
                     let mut offset = 0;
                     for region in cols.cigarx.chunks_mut() {
                         bindings::cuda::memcpy_to_cpu::<Cigarx64>(
-                            region.as_ptr() as _,
+                            region.as_mut_ptr(),
                             unsafe { buffers.dst_buffer_cigarx.dptr.add(offset) },
                             region.len()
                         );
@@ -244,7 +269,7 @@ impl Stage for GpuMiner {
                     offset = 0;
                     for region in cols.seq_row_idx.chunks_mut() {
                         bindings::cuda::memcpy_to_cpu::<SeqRowIdx>(
-                            region.as_ptr() as _,
+                            region.as_mut_ptr(),
                             unsafe { buffers.dst_buffer_idx.dptr.add(offset) },
                             region.len()
                         );
@@ -254,11 +279,22 @@ impl Stage for GpuMiner {
                     offset = 0;
                     for region in cols.offset.chunks_mut() {
                         bindings::cuda::memcpy_to_cpu::<u8>(
-                            region.as_ptr() as _,
+                            region.as_mut_ptr(),
                             unsafe { buffers.dst_buffer_offset.dptr.add(offset) },
                             region.len()
                         );
                         offset += region.len();
+                    }
+
+                    assert!(
+                        cols.seq_row_idx.iter().all(|idx| (*idx as usize) < src_seq_count),
+                        "downloaded seq_row_idx outside current batch"
+                    );
+                });
+
+                mined.with_cols(|c| {
+                    for (seq_row_idx, cigar) in c.seq_row_idx.iter().zip(c.cigarx.iter()) {
+                        tracing::info!("mined seq: {}", *seq_row_idx);
                     }
                 });
 
@@ -272,6 +308,8 @@ impl Stage for GpuMiner {
             if finish { break; }
         }
 
+        tracing::info!("Total mined: {}",    self.total_mined);
+        tracing::info!("Total uploaded: {}", self.total_uploaded);
         bindings::miner::post_mine();
         Ok(())
     }

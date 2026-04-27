@@ -37,6 +37,10 @@ impl BinarySequenceReader {
     pub fn open(path: PathBuf, sequence_len: usize) -> Self {
         let file = File::open(path).expect("File not found");
         let file_size = file.metadata().expect("File metadata could not be read").len();
+        assert!(
+            file_size as usize % sequence_len == 0,
+            "sequence file size ({file_size} bytes) is not divisible by sequence_len ({sequence_len})"
+        );
         Self {
             reader: BufReader::new(file),
             total: file_size as usize / sequence_len,
@@ -151,6 +155,7 @@ pub struct Reader {
     batch_size: usize,
     sequences: BinarySequenceReader,
     positions: BinaryPositionReader,
+    total_sequences: usize,
 }
 
 impl Reader {
@@ -170,6 +175,7 @@ impl Reader {
             batch_size,
             sequences: BinarySequenceReader::open(seq_path, sequence_len),
             positions: BinaryPositionReader::open(pos_path),
+            total_sequences: 0,
         })
     }
 }
@@ -181,7 +187,7 @@ impl Source for Reader {
     fn name() -> &'static str { "Reader" }
 
     fn next(&mut self) -> Result<Option<Self::O>, PipelineError> {
-        let occs = match self.positions.read(&self.pool, self.batch_size) {
+        let mut occs = match self.positions.read(&self.pool, self.batch_size) {
             None => return Ok(None),
             Some(frame) => frame,
         };
@@ -191,12 +197,23 @@ impl Source for Reader {
 
         /*
         seqs.with_cols(|cols| {
-            for element in cols.content.iter() {
+            for (i, element) in cols.content.iter().enumerate() {
                 let element = Sequence::new(element);
                 println!("{element:?}");
+                occs.with_cols(|o| {
+                    for (seq_row_idx, occ) in o.seq_row_idx.iter().zip(o.occurence.iter()) {
+                        if *seq_row_idx == i as u32 {
+                            println!("  occurs at position {}, seq_row_idx {}", occ.position(), *seq_row_idx);
+                        }
+                    }
+                });
             }
         });
         */
+
+        self.total_sequences += n_seqs;
+        println!("Read batch: {} sequences, total so far: {}",
+            n_seqs, self.total_sequences);
 
         Ok(Some(SeqBatch {
             seq_len: self.sequences.sequence_len,
