@@ -124,3 +124,102 @@ impl Debug for Cigarx64 {
         Ok(())
     }
 }
+
+/// Cigarx implemented as u128 with sentinel bit, 
+/// it supports up to 63 cigarx operations
+#[repr(transparent)]
+#[derive(Clone, Copy)]
+pub struct Cigarx128(u128);
+
+unsafe impl bytemuck::Pod for Cigarx128 { }
+unsafe impl bytemuck::Zeroable for Cigarx128 {
+    fn zeroed() -> Self {
+        // This in an invalid cigarx, but a valid storage
+        Self(0)
+    }
+}
+
+/// A valid cigarx starts with the sentinel at the first bit
+impl Default for Cigarx128 {
+    fn default() -> Self {
+        Self(1)
+    }
+}
+
+impl Cigarx for Cigarx128 {
+
+    // One bit is reserved for the sentinel
+    const CAPACITY: usize = (128 - 1) / 2;
+
+    fn len(&self) -> usize {
+        if self.0 == 0 { return 0; } // zeroed state for bytemuck compatibility
+        else {
+            let available_bits = u128::BITS - self.0.leading_zeros() - 1;
+            (available_bits / 2) as usize
+        }
+    }
+
+    fn push(&mut self, op: CigarxOp) {
+        assert!(self.len() < Self::CAPACITY, "Cigarx128 overflow");
+        if self.0 == 0 { self.0 = 1 }; // default state for bytemuck compatibility
+        self.0 = (self.0 << 2) | (op as u128);
+    }
+
+    fn pop(&mut self) -> Option<CigarxOp> {
+        if self.len() == 0 { None }
+        else {
+            let bits = (self.0 & 0b11) as u8;
+            Some(match bits {
+                0 => CigarxOp::Match,
+                1 => CigarxOp::Mismatch,
+                2 => CigarxOp::Deletion,
+                _ => CigarxOp::Insertion
+            })
+        }
+    }
+
+    fn iter(&self) -> impl Iterator<Item = CigarxOp> {
+        Cigarx128Iter {
+            remaining: self.len(),
+            storage: self.0,
+        }
+    }
+}
+
+pub struct Cigarx128Iter {
+    remaining: usize,
+    storage: u128,
+}
+
+impl Iterator for Cigarx128Iter {
+    type Item = CigarxOp;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.remaining == 0 { None }
+        else {
+            let shift = (self.remaining - 1) * 2;
+            let bits = ((self.storage >> shift) & 0b11) as u8;
+            self.remaining -= 1;
+            Some(match bits {
+                0 => CigarxOp::Match,
+                1 => CigarxOp::Mismatch,
+                2 => CigarxOp::Deletion,
+                _ => CigarxOp::Insertion
+            })
+        }
+    }
+}
+
+impl Debug for Cigarx128 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for elem in self.iter() {
+            write!(f, "{}", match elem {
+                CigarxOp::Match => '=',
+                CigarxOp::Mismatch => 'X',
+                CigarxOp::Deletion => 'D',
+                CigarxOp::Insertion => 'I',
+            })?
+        }
+        Ok(())
+    }
+}

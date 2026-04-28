@@ -56,6 +56,67 @@ struct Cigarx64
     }
 };
 
+// Follows same implementation of rust `Cigarx128`
+struct Cigarx128
+{
+    // Number of bits for the type
+    static constexpr u32 BITS = sizeof(u64) * 8 * 2;
+    // Number of operations upported
+    static constexpr u32 CAPACITY = (BITS - 1) / 2;
+
+    // All supported operations
+    enum class Oper : u8
+    {
+        M = 0b00, // `=` (sequence match) 
+        X = 0b01, // `X` (sequence mismatch)
+        D = 0b10, // `D` (deletion from reference)
+        I = 0b11  // `I` (insertion to reference)
+    };
+
+    // We always set the sentinel bit at first position
+    u64 m_lo = 1;
+    u64 m_hi = 0;
+
+    // Push a new operation
+    __device__ __forceinline__ void push(Oper value)
+    {
+#if DEBUG
+        assert(len() < CAPACITY);
+#endif
+        m_hi = (m_hi << 2) | (m_lo >> (64 - 2));
+        m_lo = (m_lo << 2) | static_cast<u64>(value);
+    }
+
+    // Pop the last operation
+    __device__ __forceinline__ void pop()
+    {
+#if DEBUG
+        assert(len() > 0);
+#endif
+        m_lo = (m_lo >> 2) | (m_hi << (64 - 2));
+        m_hi = (m_hi >> 2);
+    }
+
+    // Number of operations
+    __device__ __forceinline__ u32 len()
+    {
+        u32 aclz = m_hi != 0 ? __clzll(m_hi) : 64 + __clzll(m_lo);
+        u32 bits = BITS - aclz - 1;
+        return bits / 2;
+    }
+};
+
+__device__ const Cigarx128::Oper CIGARX_ENCODE_128[8] = {
+    Cigarx128::Oper::X, // 0b0'00 invalid!
+    Cigarx128::Oper::D, // 0b0'01 OK
+    Cigarx128::Oper::I, // 0b0'10 OK
+    Cigarx128::Oper::M, // 0b0'11 OK
+    Cigarx128::Oper::X, // 0b1'00 invalid!
+    Cigarx128::Oper::D, // 0b1'01 OK
+    Cigarx128::Oper::I, // 0b1'10 OK
+    Cigarx128::Oper::X, // 0b1'11 OK
+};
+
 __device__ const Cigarx64::Oper CIGARX_ENCODE_64[8] = {
     Cigarx64::Oper::X, // 0b0'00 invalid!
     Cigarx64::Oper::D, // 0b0'01 OK
@@ -139,6 +200,13 @@ struct Step
     {
         u32 index = (mismatch << 2) | value;
         return CIGARX_ENCODE_64[index];
+    }
+
+    /// Convert the step to a CIGARX value
+    __device__ __forceinline__ Cigarx128::Oper to_cigarx_op_u128(bool mismatch)
+    {
+        u32 index = (mismatch << 2) | value;
+        return CIGARX_ENCODE_128[index];
     }
 
     __device__ __forceinline__ char as_char()
@@ -316,6 +384,205 @@ struct ThreadMiner
         for (int i = mem.len - 1; i >= 0; --i)
         {
             Step step{(Step::Inner)((mem.stack >> i * 2) & 0b11)};
+            printf("%c", step.as_char());
+        }
+        printf("\n");
+    }
+
+    /// Print inner state
+    __device__ __forceinline__ void print_state()
+    {
+        printf("next_sidx: %d\n", mem.state.sidx);
+        printf("next_gidx: %d\n", mem.state.gidx);
+        printf("sgap: %d\n", mem.state.sgap);
+        printf("ggap: %d\n", mem.state.ggap);
+        printf("mism: %d\n", mem.state.mism);
+    }
+};
+
+/// Thread miner that keeps track of steps and match/mismatches
+struct ThreadMiner128
+{
+    /// Persistent data across launches
+    struct Inner
+    {
+        /// Contains a bitpacked version of the current explorations steps
+        /// NOTE: This is the same inside each thread of the warp
+        u64 stack_lo;
+        u64 stack_hi;
+
+        /// Bitset for mismatches, on bit for each step present in the stack (1 = mismatch, 0 = match/other)
+        /// NOTE: This differs inside each thread of the warp
+        u64 mismatches;
+
+        /// Current running state
+        /// NOTE: This differs inside each thread of the warp
+        ThreadState state;
+
+        /// Number of steps
+        /// NOTE: This is the same inside each thread of the warp
+        u8 len;
+
+    } mem;
+
+    __device__ __forceinline__ ThreadMiner128()
+    {
+        mem.stack_lo = 0;
+        mem.stack_hi = 0;
+        mem.mismatches = 0;
+        mem.state = {0, 0, 0, 0, 0};
+        mem.len = 0;
+    }
+
+    __device__ __forceinline__ bool has_work()
+    {
+        return mem.len != 0;
+    }
+
+    __device__ __forceinline__ void decrement_state(Step s)
+    {
+        mem.state.gidx -= s.gidx_dt();
+        mem.state.sidx -= s.sidx_dt();
+        mem.state.ggap -= s.ggap_dt();
+        mem.state.sgap -= s.sgap_dt();
+    }
+
+    __device__ __forceinline__ void increment_state(Step s)
+    {
+        mem.state.gidx += s.gidx_dt();
+        mem.state.sidx += s.sidx_dt();
+        mem.state.ggap += s.ggap_dt();
+        mem.state.sgap += s.sgap_dt();
+    }
+
+    /// Replace the current step without changing the mismatch bit
+    __device__ __forceinline__ void replace(Step s)
+    {
+        mem.stack_lo = (mem.stack_lo & ~0b11) | (s.value & 0b11);
+    }
+
+    /// Push a new step on top of the stack
+    __device__ __forceinline__ void push(Step s, bool set_mismatch)
+    {
+        assert(mem.len <= (sizeof(mem.stack_lo) * 8 * 2) / 2 && "StepStack too small!");
+
+        // Add state to memory
+        mem.stack_hi = (mem.stack_hi << 2) | (mem.stack_lo >> (64 - 2));
+        mem.stack_lo = (mem.stack_lo << 2) | static_cast<u64>(s.value);
+
+        mem.mismatches = (mem.mismatches << 1) | set_mismatch;
+        mem.len += 1;
+
+        // Update running state
+        mem.state.mism = __popc(mem.mismatches);
+        increment_state(s);
+    }
+
+    /// Pop the top of the stack and update running state
+    __device__ __forceinline__ Step pop()
+    {
+        Step s = current();
+
+        // Remove state from memory
+        mem.mismatches = mem.mismatches >> 1;
+        mem.stack_lo = (mem.stack_lo >> 2) | (mem.stack_hi << (64 - 2));
+        mem.stack_hi = (mem.stack_hi >> 2);
+        mem.len -= 1;
+
+        // Update running state
+        mem.state.mism = __popc(mem.mismatches);
+        decrement_state(s);
+
+        return s;
+    }
+
+    /// Travel the current step
+    __device__ __forceinline__ void travel()
+    {
+        Step step = current();
+        decrement_state(step);
+
+        // Set mismatch bit at zero after a travel!
+        // Only the initial B step uses the bit, all other step types do not use it.
+        mem.mismatches = mem.mismatches & ~0b1;
+        mem.state.mism = __popc(mem.mismatches);
+
+        step = step.next();
+        increment_state(step);
+        replace(step);
+    }
+
+    /// Get the current step
+    __device__ __forceinline__ Step current()
+    {
+        return Step{(Step::Inner)(mem.stack_lo & 0b11)};
+    }
+
+    /// Check if we are inside the thresholds
+    __device__ __forceinline__ bool inside_thresholds(u32 max_mism, u32 max_ggap, u32 max_sgap)
+    {
+        return (
+            mem.state.mism <= max_mism &&
+            mem.state.ggap <= max_ggap &&
+            mem.state.sgap <= max_sgap);
+    }
+
+    /// Check if we can continue with the exploration, that is if the guide is not completelly matched
+    /// and the target sequences index is not outside the relaxed bounds
+    __device__ __forceinline__ bool can_continue(u32 slen, u32 glen, u32 offset, u32 max_ggap)
+    {
+        return (
+            mem.state.gidx < glen &&
+            mem.state.sidx + offset < slen + max_ggap);
+    }
+
+    /// Check if the current state is final, the guide has been completelly matched
+    __device__ __forceinline__ bool is_complete(u32 glen)
+    {
+        return mem.state.gidx == glen;
+    }
+
+    /// Get the current CIGARX
+    __device__ __forceinline__ Cigarx128 cigarx()
+    {
+        Cigarx128 result{};
+        for (int i = mem.len - 1; i >= 0; --i)
+        {
+            // Shift u128
+            u64 lo = mem.stack_lo;
+            u64 hi = mem.stack_hi;
+
+            u8 shift = i * 2;
+            if (shift < 64) {
+                lo = (lo >> shift) | (hi << (64 - shift));
+            } else {
+                lo = hi >> (shift - 64);
+            }
+
+            Step step{(Step::Inner)(lo & 0b11)};
+            bool mismatch = (mem.mismatches >> i & 0b1);
+            result.push(step.to_cigarx_op_u128(mismatch));
+        }
+        return result;
+    }
+
+    /// Print the current stack
+    __device__ __forceinline__ void print()
+    {
+        for (int i = mem.len - 1; i >= 0; --i)
+        {
+            // Shift u128
+            u64 lo = mem.stack_lo;
+            u64 hi = mem.stack_hi;
+
+            u8 shift = i * 2;
+            if (shift < 64) {
+                lo = (lo >> shift) | (hi << (64 - shift));
+            } else {
+                lo = hi >> (shift - 64);
+            }
+
+            Step step{(Step::Inner)(lo & 0b11)};
             printf("%c", step.as_char());
         }
         printf("\n");
