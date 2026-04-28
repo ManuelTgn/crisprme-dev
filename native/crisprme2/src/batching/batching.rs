@@ -1,4 +1,5 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
+use crate::crispr::guide::Guide;
 use crate::crispr::{pam, guide};
 use crate::memory::batch::AlignmentRingBatch;
 use crate::sequence::{scanner, iupac};
@@ -320,6 +321,9 @@ impl TargetBatcher {
     pub fn set_alignment_stream(&mut self, rx: Receiver<AlignmentRingBatch>) {
         self.alignment_rx = Some(rx);
     }
+
+    pub fn get_sequence_len(&self) -> usize { self.size }
+    pub fn get_guide(&self) -> Guide { self.guide.clone() }
 }
 
 

@@ -241,3 +241,7 @@ Cargo.lock
 
 # pytest files
 .pytest_cache/
+
+# Crisprme
+examples/data
+results

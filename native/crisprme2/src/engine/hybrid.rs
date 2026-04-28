@@ -63,6 +63,7 @@ type SequenceRecv = Consumer<SequenceRingBatch>;
 type AlignmentSend = Producer<AlignmentRingBatch>;
 type AlignmentRecv = Consumer<AlignmentRingBatch>;
 
+/*
 
 /// Spawns a thread and pushes its [`JoinHandle`] onto `$threads`.
 ///
@@ -453,3 +454,5 @@ fn th_aggregator(_pipeline: AlignmentParams, rx: AlignmentRecv) {
         }
     }
 }
+
+*/

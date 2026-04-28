@@ -1,5 +1,5 @@
 [package]
-name = "columnar-derive"
+name = "columnar_derive"
 version = "0.1.0"
 edition = "2024"
 
@@ -8,5 +8,5 @@ proc-macro = true
 
 [dependencies]
 syn = { version = "2", features = ["full"] }
-proc-macro2 = "1"
 quote = "1"
+proc-macro2 = "1"

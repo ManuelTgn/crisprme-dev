@@ -42,22 +42,19 @@ class Printer:
 
 
 nat.init_tracing()
-pipeline = nat.pipeline(
-        chunks = 10_000, # 6 GB
+pipeline = nat.dataset_pipeline(
+    folder = "examples/data/hgdp_chr10_HGDP01099_no_indel_het",
+    #folder = "examples/data/chrX",
+    batch_size = 100_000,
+    guide = nat.Guide("CTAACAGTTGCTTTTATCAC"),
+    #guide = nat.Guide("CTCAGGCTTCYTYTTAT"),
+    thresholds = nat.Thresholds(1, 1, 4),
+    sequence_len = 30,
+    #sequence_len = 23,
+    chunks = 10_000, # 6 GB
     transforms = [
-        Scorer(0, 2),
-        Scorer(1, 7),
+        #Scorer(0, 2),
+        #Scorer(1, 7),
         #Printer(),
-    ]
+    ],
 )
-
-pipeline.send_debug_minable_data()
-
-#pipeline.send_debug_data()
-#time.sleep(0.1)
-#pipeline.send_debug_data()
-#time.sleep(0.1)
-#pipeline.send_debug_data()
-
-# We must close the pipeline at the end
-pipeline.close()

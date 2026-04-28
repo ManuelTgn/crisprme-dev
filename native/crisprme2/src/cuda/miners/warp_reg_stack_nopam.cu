@@ -15,10 +15,10 @@
 #define SHMEM 0
 
 #define BLOCK_COUNT 3000
-//#define BLOCK_SIZE 128
+// #define BLOCK_SIZE 128
 #define BLOCK_SIZE 256
-//#define BLOCK_COUNT 1
-//#define BLOCK_SIZE 1
+// #define BLOCK_COUNT 1
+// #define BLOCK_SIZE 1
 #define WARP_SIZE 32
 
 #define BLOCK_WARP_COUNT ((BLOCK_SIZE + WARP_SIZE - 1) / WARP_SIZE)
@@ -48,7 +48,8 @@ __device__ u32 dev_alignment_write = 0;
 
 /// Result alignment
 /// NOTE: This must have the same representation as the Rust struct
-struct Alignment {
+struct Alignment
+{
   Cigarx<u64> cigarx;
   u32 position;
   u8 offset;
@@ -59,23 +60,27 @@ struct Alignment {
 
 /// Sum values in the warp
 /// NOTE: Only thread lane 0 has the full sum
-__device__ int warp_sum(int val) {
-    unsigned mask = 0xFFFFFFFF; // full warp
-    for (int offset = 16; offset > 0; offset /= 2) {
-        val += __shfl_down_sync(mask, val, offset);
-    }
-    return val; // only thread lane 0 has the full sum
+__device__ int warp_sum(int val)
+{
+  unsigned mask = 0xFFFFFFFF; // full warp
+  for (int offset = 16; offset > 0; offset /= 2)
+  {
+    val += __shfl_down_sync(mask, val, offset);
+  }
+  return val; // only thread lane 0 has the full sum
 }
 
 /// Returns true if any warp has the flag to true
-__device__ bool warp_any(bool flag) {
-    unsigned mask = 0xFFFFFFFF; // full warp
-    for (int offset = 16; offset > 0; offset /= 2) {
-        flag |= __shfl_down_sync(mask, flag, offset);
-    }
-    // Broadcast the final result from lane 0 to all threads
-    flag = __shfl_sync(mask, flag, 0);
-    return flag;
+__device__ bool warp_any(bool flag)
+{
+  unsigned mask = 0xFFFFFFFF; // full warp
+  for (int offset = 16; offset > 0; offset /= 2)
+  {
+    flag |= __shfl_down_sync(mask, flag, offset);
+  }
+  // Broadcast the final result from lane 0 to all threads
+  flag = __shfl_sync(mask, flag, 0);
+  return flag;
 }
 
 // Warp centric version
@@ -93,15 +98,15 @@ __device__ bool warp_any(bool flag) {
 //  G G G G G G G . . . . . .
 //  . . . G G G G G G G . . .
 //
-//        G G G G G G G . . . / GOOD 
+//        G G G G G G G . . . / GOOD
 //      G G G G G G G - . . . / GOOD
 //      G G G G - G G G . . . / GOOD
 //      - G G G G G G G G . . / BAD
 //
 __global__ void warp_reg_stack(
-  const u8* __restrict__ batch, u32 batch_size,
-  Alignment* __restrict__ result, u32 capacity
-) {
+    const u8 *__restrict__ batch, u32 batch_size,
+    Alignment *__restrict__ result, u32 capacity)
+{
 
   // This warp
   cg::thread_block_tile<32> warp = cg::tiled_partition<32>(cg::this_thread_block());
@@ -112,7 +117,7 @@ __global__ void warp_reg_stack(
   // TODO: This will be loaded from the state in global memory
   const u32 start_bseq = blockDim.x * blockIdx.x + threadIdx.x;
   const u32 start_sidx = 0;
-  //const u32 offset = 0;
+  // const u32 offset = 0;
 
 #if SHMEM
   // Contains all required sequences for this block
@@ -121,39 +126,45 @@ __global__ void warp_reg_stack(
 #endif
 
   /// Process all sequences and starting offset
-  for (u32 bseq = start_bseq; bseq < batch_size; bseq += gridDim.x * blockDim.x) {
+  for (u32 bseq = start_bseq; bseq < batch_size; bseq += gridDim.x * blockDim.x)
+  {
 
 #if SHMEM
     // TODO: Load data to shared memory after the barrier
-    for (u32 i = 0; i < SLEN; ++i) {
-	batch_shared[i][threadIdx.x] = batch[bseq * SLEN + i];
+    for (u32 i = 0; i < SLEN; ++i)
+    {
+      batch_shared[i][threadIdx.x] = batch[bseq * SLEN + i];
     }
     __syncthreads();
 #endif
 
-    for (u32 offset = start_sidx; offset <= (SLEN - GLEN + GGAP); offset += 1) {
+    for (u32 offset = start_sidx; offset <= (SLEN - GLEN + GGAP); offset += 1)
+    {
 
       // Initialize stack for this sequence if not already done
-      if (miner.mem.len == 0) {
+      if (miner.mem.len == 0)
+      {
 #if SHMEM
         u8 s = batch_shared[threadIdx.x][offset + 0];
 #else
         u8 s = batch[bseq * SLEN + offset + 0];
-#endif   
-	u8 g = GUIDE[0];
+#endif
+        u8 g = GUIDE[0];
 
         miner.push(Step::initial(), !iupac_match(g, s));
       }
-    
+
       // Mine all toghether
       // NOTE: They will all do the same operation every time
-      while(miner.has_work()) {
+      while (miner.has_work())
+      {
         Step step = miner.current();
 
 #if DEBUG
         printf("============================\n");
-        printf("current: "); miner.print();
-	printf("offset: %d\n", offset);
+        printf("current: ");
+        miner.print();
+        printf("offset: %d\n", offset);
         printf("next_sidx: %d/%d\n", miner.mem.state.sidx, SLEN - 1);
         printf("next_gidx: %d/%d\n", miner.mem.state.gidx, GLEN - 1);
         printf("sgap: %d\n", miner.mem.state.sgap);
@@ -162,14 +173,16 @@ __global__ void warp_reg_stack(
 #endif
 
         // Backtrack
-        if (step.is_backtrack()) {
+        if (step.is_backtrack())
+        {
 #if DEBUG
           printf("pop\n");
 #endif
 
           miner.pop();
-          if (miner.has_work()) {
-	    // NOTE: This is necessary to exit an infinite loop
+          if (miner.has_work())
+          {
+            // NOTE: This is necessary to exit an infinite loop
             miner.travel();
           }
           continue;
@@ -181,21 +194,20 @@ __global__ void warp_reg_stack(
         bool is_complete = miner.is_complete(GLEN);
 
 #if DEBUG
-	printf("inside_thresholds: %d\n", inside_thresholds);
-	printf("can_continue: %d\n", can_continue);
-	printf("is_complete: %d\n", is_complete);
+        printf("inside_thresholds: %d\n", inside_thresholds);
+        printf("can_continue: %d\n", can_continue);
+        printf("is_complete: %d\n", is_complete);
 #endif
 
         // Skip initial I
         // NOTE: I will kill whoever says that goto should not be used >:(
-	if (miner.mem.state.gidx == 0 && miner.current().value == Step::Inner::S)
+        if (miner.mem.state.gidx == 0 && miner.current().value == Step::Inner::S)
           goto travel;
 
         // Some thread has a solution
-        if (warp.any(inside_thresholds && is_complete)) {
+        if (warp.any(inside_thresholds && is_complete))
+        {
           Cigarx<u64> cigarx = miner.cigarx();
-
-
 
           /*
           // Calculate how many solutions there are
@@ -208,71 +220,71 @@ __global__ void warp_reg_stack(
           */
 
           // Add solution to alignment batch
-          if (inside_thresholds && is_complete) {
+          if (inside_thresholds && is_complete)
+          {
 
-	    assert(miner.mem.state.ggap <= GGAP);
-	    assert(miner.mem.state.sgap <= SGAP);
-	    assert(miner.mem.state.mism <= MISM);
+            assert(miner.mem.state.ggap <= GGAP);
+            assert(miner.mem.state.sgap <= SGAP);
+            assert(miner.mem.state.mism <= MISM);
 
 #if DEBUG
-	    char sol[64];
+            char sol[64];
             cigarx.extract(sol);
-	    printf("solution: %s (sgap: %d, ggap: %d, mism: %d)\n", sol, miner.mem.state.sgap, miner.mem.state.ggap, miner.mem.state.mism);
+            printf("solution: %s (sgap: %d, ggap: %d, mism: %d)\n", sol, miner.mem.state.sgap, miner.mem.state.ggap, miner.mem.state.mism);
 #endif
 
             u32 write_idx = atomicAdd(&dev_alignment_write, 1);
             assert(write_idx < capacity && "ERR: too many alignments!");
-            result[write_idx] = Alignment {
-              cigarx, 
-	      bseq, 
-	      static_cast<u8>(offset), 
-	      STRAND
-            };
+            result[write_idx] = Alignment{
+                cigarx,
+                bseq,
+                static_cast<u8>(offset),
+                STRAND};
           }
-
         }
 
         // If some thread can push they all push
-        if (warp.any(inside_thresholds && can_continue)) {
+        if (warp.any(inside_thresholds && can_continue))
+        {
 #if DEBUG
           printf("push\n");
 #endif
-         
-	  // If the target sequence is out of bound this means that we can only add deletions
-	  // NOTE: The mismatch flag is not needed as the deletion is the last type of step before
-	  // a backtrack, it will never be used.
-	  if (miner.mem.state.sidx + offset >= SLEN) {
+
+          // If the target sequence is out of bound this means that we can only add deletions
+          // NOTE: The mismatch flag is not needed as the deletion is the last type of step before
+          // a backtrack, it will never be used.
+          if (miner.mem.state.sidx + offset >= SLEN)
+          {
 #if DEBUG
-	       printf("out-of-bound, pushing only deletions\n");
+            printf("out-of-bound, pushing only deletions\n");
 #endif
-	       miner.push(Step::deletion(), false);
-	       continue;
-	  }
+            miner.push(Step::deletion(), false);
+            continue;
+          }
 
           // In the other cases we can proceed as normal and push a match/mismatch step
-	  //assert(miner.mem.state.sidx + offset < SLEN);
-	  //assert(miner.mem.state.gidx < GLEN);
+          // assert(miner.mem.state.sidx + offset < SLEN);
+          // assert(miner.mem.state.gidx < GLEN);
 
 #if SHMEM
-	  u8 s = batch_shared[threadIdx.x][miner.mem.state.sidx + offset]; 
+          u8 s = batch_shared[threadIdx.x][miner.mem.state.sidx + offset];
 #else
-	  u8 s = batch[bseq * SLEN + miner.mem.state.sidx + offset];
+          u8 s = batch[bseq * SLEN + miner.mem.state.sidx + offset];
 #endif
-	  u8 g = GUIDE[miner.mem.state.gidx];
+          u8 g = GUIDE[miner.mem.state.gidx];
 
 #if DEBUG
-	  printf("match (%c:%d vs %c:%d)? %d\n", 
-	      iupac_decode(s), miner.mem.state.sidx + offset, iupac_decode(g), miner.mem.state.gidx, iupac_match(g, s));
+          printf("match (%c:%d vs %c:%d)? %d\n",
+                 iupac_decode(s), miner.mem.state.sidx + offset, iupac_decode(g), miner.mem.state.gidx, iupac_match(g, s));
 #endif
           miner.push(Step::initial(), !iupac_match(g, s));
           continue;
         }
 
-
-  travel:
+      travel:
         // No thread can continue, travel to next operation
 #if DEBUG
-	printf("travel\n");
+        printf("travel\n");
 #endif
         miner.travel();
       }
@@ -280,16 +292,19 @@ __global__ void warp_reg_stack(
   }
 }
 
-namespace cuda::miner {
+namespace cuda::miner
+{
 
   /// Invoked at the beginning of the program
-  void initialize(u32 device) {
-    CUDA_CHECK(cudaSetDevice(device)); 
+  void initialize(u32 device)
+  {
+    CUDA_CHECK(cudaSetDevice(device));
   }
 
   /// Invoked before a new batch is mined
-  void pre_mine(const u8* guide, u32 glen, u32 slen, u32 ggap, u32 sgap, u32 mism, u8 strand) {
-  
+  void pre_mine(const u8 *guide, u32 glen, u32 slen, u32 ggap, u32 sgap, u32 mism, u8 strand)
+  {
+
     // Copy guide to constant memory
     CUDA_CHECK(cudaMemcpyToSymbol(GUIDE, guide, glen, 0, cudaMemcpyHostToDevice));
 
@@ -311,32 +326,32 @@ namespace cuda::miner {
   }
 
   /// Mines a sequence batch and generates a single alignment batch
-  MinerOutput mine(const u8* batch, u32 batch_size, u8* alignments, u32 capacity) {
-    
-    Alignment* output = reinterpret_cast<Alignment*>(alignments);
+  MinerOutput mine(const u8 *batch, u32 batch_size, u8 *alignments, u32 capacity)
+  {
+
+    Alignment *output = reinterpret_cast<Alignment *>(alignments);
     warp_reg_stack<<<BLOCK_COUNT, BLOCK_SIZE>>>(batch, batch_size, output, capacity);
     cudaDeviceSynchronize();
 
-    cudaError_t err = cudaGetLastError();                                
-    if (err != cudaSuccess) {                                            
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
       fprintf(stderr, "CUDA kernel launch error in '%s' at line %d: %s (%d)\n",
-                    __FILE__, __LINE__, cudaGetErrorString(err), err);
+              __FILE__, __LINE__, cudaGetErrorString(err), err);
     }
 
     u32 alignments_count = 0;
     CUDA_CHECK(cudaMemcpyFromSymbol(&alignments_count, dev_alignment_write, sizeof(u32), 0, cudaMemcpyDeviceToHost));
-    
+
     // TODO: implement resume capability
-    return MinerOutput {
-      alignments_count,
-      true
-    };
+    return MinerOutput{
+        alignments_count,
+        true};
   }
 
   /// Invoked after a batch has been mined
-  void post_mine() { }
+  void post_mine() {}
 
   /// Invoked at the end of the program
-  void shutdown(u32 device) { }
+  void shutdown(u32 device) {}
 }
-

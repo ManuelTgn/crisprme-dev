@@ -1,0 +1,16 @@
+[package]
+name = "columnar"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+columnar_derive = { path = "../columnar_derive"}
+
+pyo3 = { version = "0.27.0", features = ["abi3-py311", "extension-module"] }
+
+bytemuck = "1.25.0"
+crossbeam = "0.8.4"
+smallvec = "1.15.1"
+tracing = "0.1.44"
+metrics = "0.24.3"
+thiserror = "2.0.18"
