@@ -43,7 +43,8 @@ class Printer:
 
 nat.init_tracing()
 pipeline = nat.pipeline(
-        chunks = 10_000, # 6 GB
+    chunks = 10_000, # 6 GB
+    threshold = nat.Thresholds(1, 1, 4),
     transforms = [
         Scorer(0, 2),
         Scorer(1, 7),
@@ -51,7 +52,7 @@ pipeline = nat.pipeline(
     ]
 )
 
-pipeline.send_debug_minable_data()
+# pipeline.submit(batcher)
 
 #pipeline.send_debug_data()
 #time.sleep(0.1)

@@ -115,6 +115,8 @@ pub mod _crisprme2_native {
         // Pipeline memory pool
         pool: MemoryPool,
 
+        threshold: Thresholds,
+
         // Input sender (Option so we can drop it explicitly to signal EOF)
         input: Driven<SeqBatch>,
         handle: PipelineHandle,
@@ -254,7 +256,7 @@ pub mod _crisprme2_native {
             py.detach(|| {
                 self.input
                     .send(SeqBatch {
-                        thresholds: Thresholds::new(1, 1, 1),
+                        thresholds: self.threshold.clone(),
                         seq_len: batcher.get_sequence_len(),
                         guide: batcher.get_guide(),
                         sequences: seqs,
@@ -295,7 +297,11 @@ pub mod _crisprme2_native {
 
     /// Create a driven pipeline with transforms
     #[pyfunction]
-    fn pipeline<'py>(chunks: usize, transforms: Bound<'py, PyList>) -> PyResult<PyPipeline> {
+    fn pipeline<'py>(
+        chunks: usize, 
+        threshold: Thresholds,
+        transforms: Bound<'py, PyList>
+    ) -> PyResult<PyPipeline> {
         
         // Create memory pool and pin all chunks for DMA from GPU
         let pool = MemoryPool::new(CHUNK_SIZE * chunks, |ptr, bytes| {
@@ -333,6 +339,7 @@ pub mod _crisprme2_native {
         tracing::info!("pipeline ready!");
         let handle = pipeline.execute(&pool, 3);
         Ok(PyPipeline {
+            threshold,
             handle,
             input,
             pool,
