@@ -2,6 +2,10 @@ import crisprme2._crisprme2_native as nat
 import numpy as np
 import time
 
+class ExampleTransform:
+    def __call__(self, batch: nat.PyAlignmentBatch):
+        pass
+
 class Scorer:
     def __init__(self, score: int, value: float):
         self.score = score
@@ -10,7 +14,6 @@ class Scorer:
     def __call__(self, batch: nat.PyAlignmentBatch):
         scores = np.asarray(batch.score(self.score))
         scores[:] = self.value
-
 
 class Printer:
     def __call__(self, batch: nat.PyAlignmentBatch):
@@ -29,6 +32,7 @@ class Printer:
 
     def print_str_debug(self, name: str, len: int, view):
         array = np.asarray(view)
+        # array = array.view("S32")
         print(f"+ {name} {array.shape}\n")
         for s in array.view(f'S{len}'):
             print(f"  {str(s)}")
@@ -52,7 +56,7 @@ pipeline = nat.pipeline(
     ]
 )
 
-# pipeline.submit(batcher)
+pipeline.submit(batcher)
 
 #pipeline.send_debug_data()
 #time.sleep(0.1)
