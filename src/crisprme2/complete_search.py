@@ -3,7 +3,7 @@
 from .crisprme2_argparse import Crisprme2SearchInputArgs
 from .crisprme2 import TOOLNAME
 from .logger import CrisprmeLoggers
-from .scanner import scan_fasta_reference_genome
+from .search import search_offtargets_reference_genome
 from .guide import read_guides, GuidesList, Guide
 from .pam import read_pam, PAM
 
@@ -35,7 +35,7 @@ def _retrieve_target_candidates(
         loggers.verboselog.debug(
             "Reference/assembly genome off-targets extraction pipeline"
         )
-        scan_fasta_reference_genome(fastas, pam, guide, offset, right, threads, loggers)
+        search_offtargets_reference_genome(fastas, pam, guide, offset, right, threads, loggers)
 
 
 def execute_complete_search(args: Crisprme2SearchInputArgs) -> None:

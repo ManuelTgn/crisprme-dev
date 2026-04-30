@@ -1,4 +1,36 @@
-""" """
+"""
+pipeline.py
+-----------
+Python wrapper for the Rust ``PyPipeline`` struct exposed via PyO3.
+
+The public surface is intentionally minimal: the Rust side owns all
+performance-critical state; this wrapper is responsible for:
+
+- Argument validation before any Rust FFI call is made.
+- Lifecycle enforcement (the pipeline is a strict context manager).
+- Mapping Rust panics / PyO3 errors to typed Python exceptions.
+- Providing typed, documented Python entry-points for scanner.py and
+  any future callers.
+
+Typical usage
+~~~~~~~~~~~~~
+::
+
+    from crisprme2.crisprme_core_api import Pipeline, Thresholds
+
+    thresholds = Thresholds(max_mm=4, max_bdna=1, max_brna=1, loggers=loggers)
+
+    with Pipeline.create(chunks=8, thresholds=thresholds, transforms=[my_transform], loggers=loggers) as pipeline:
+        pipeline.submit(batcher)   # called once per full batcher flush
+
+Notes
+~~~~~
+- ``close()`` is **not** part of the public API; it is called exclusively
+  inside ``__exit__``.  This prevents double-close bugs and makes the
+  usage contract unambiguous.
+- Transform validation happens entirely in Python before any Rust call,
+  so error messages are clear and do not reference internal Rust symbols.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +39,11 @@ from typing import Any, List, Optional, Type
 
 import os
 
-from .crisprme2_api_error import Crisprme2PipelineConfigError, Crisprme2PipelineLifecycleError, Crisprme2PipelineSubmitError
+from .crisprme2_api_error import (
+    Crisprme2PipelineConfigError,
+    Crisprme2PipelineLifecycleError,
+    Crisprme2PipelineSubmitError,
+)
 from ..logger import CrisprmeLoggers
 from .target_batcher import TargetBatcher
 from .thresholds import Thresholds
@@ -21,8 +57,9 @@ except ImportError:
 
 
 # ------------------------------------------------------------------------------
-# internal helpers 
+# internal helpers
 # ------------------------------------------------------------------------------
+
 
 def _require_native(loggers: CrisprmeLoggers) -> None:
     """Raise a configuration error if the native extension is unavailable"""
@@ -67,28 +104,29 @@ def _validate_transforms(transforms: List[Any], loggers: CrisprmeLoggers) -> Non
 
 
 # ------------------------------------------------------------------------------
-# public wrapper 
+# public wrapper
 # ------------------------------------------------------------------------------
+
 
 class Pipeline:
     """
     Python wrapper around the Rust ``PyPipeline`` processing pipeline.
- 
+
     The pipeline owns a pool of GPU/CPU memory and a chain of worker
     stages (GPU miner -> resolver -> broadcast -> user transforms -> CSV sink).
     It is **not** reusable: once the context manager exits the underlying
     Rust object is consumed and the instance must be discarded.
- 
+
     Construction
     ~~~~~~~~~~~~
     Always use the :meth:`create` classmethod — do **not** call ``__init__``
     directly.
- 
+
     ::
- 
+
         with Pipeline.create(chunks=8, thresholds=t, transforms=[f]) as p:
             p.submit(batcher)
- 
+
     Parameters
     ----------
     chunks : int
@@ -103,7 +141,7 @@ class Pipeline:
         Every element must implement ``__call__``; the list must be non-empty.
     loggers : CrisprmeLoggers
         Logger bundle used for structured logging and error propagation.
- 
+
     Raises
     ------
     Crisprme2PipelineConfigError
@@ -116,7 +154,7 @@ class Pipeline:
 
     def __init__(self, _rust_handle: Any, loggers: CrisprmeLoggers) -> None:
         # _rust_handle is the opaque PyPipeline object returned by the Rust
-        # function. Callers should NEVER construct this directly: use 
+        # function. Callers should NEVER construct this directly: use
         # Pipeline.create() instead
         self._pipeline = _rust_handle
         self._loggers = loggers
@@ -127,14 +165,20 @@ class Pipeline:
     # --------------------------------------------------------------------------
 
     @classmethod
-    def create(cls, chunks: int, thresholds: Thresholds, transforms: List[Any], loggers: CrisprmeLoggers) -> "Pipeline":
+    def create(
+        cls,
+        chunks: int,
+        thresholds: Thresholds,
+        transforms: List[Any],
+        loggers: CrisprmeLoggers,
+    ) -> "Pipeline":
         """
         Build and return a new :class:`Pipeline` instance.
- 
+
         This is the only supported constructor.  All arguments are validated
         in Python before the Rust factory is invoked, so errors carry
         descriptive messages without Rust symbol noise.
- 
+
         Parameters
         ----------
         chunks : int
@@ -147,18 +191,18 @@ class Pipeline:
             Non-empty list of Python callables forming the transform chain.
         loggers : CrisprmeLoggers
             Shared logger bundle.
- 
+
         Returns
         -------
         Pipeline
             A ready-to-use pipeline, not yet entered as a context manager.
- 
+
         Raises
         ------
         Crisprme2PipelineConfigError
             On any invalid argument or if the native extension is missing.
         """
-        _require_native(loggers)  # ensure native rust api is installed 
+        _require_native(loggers)  # ensure native rust api is installed
         _validate_transforms(transforms, loggers)  # ensure transforms are callable
         loggers.verboselog.debug(
             f"Constructing Pipeline (chunks={chunks}). num_transforms={len(transforms)}"
@@ -171,16 +215,18 @@ class Pipeline:
                 os.EX_UNAVAILABLE,
                 Crisprme2PipelineConfigError,
             )
-        loggers.basiclog.info(f"Pipeline created (chunks={chunks}, transforms={len(transforms)})")
+        loggers.basiclog.info(
+            f"Pipeline created (chunks={chunks}, transforms={len(transforms)})"
+        )
         return cls(rust_handle, loggers)
-    
+
     # --------------------------------------------------------------------------
     # lifecycle helpers
     # --------------------------------------------------------------------------
 
     def _assert_open(self) -> None:
         """
-        Guard: raise :exec:`Crisprme2PipelineLifeCycleError` if the pipeline has 
+        Guard: raise :exec:`Crisprme2PipelineLifeCycleError` if the pipeline has
         already been closed.
         """
         if self._closed:
@@ -214,11 +260,11 @@ class Pipeline:
     # --------------------------------------------------------------------------
     # Context manager protocol
     # --------------------------------------------------------------------------
-    
+
     def __enter__(self) -> "Pipeline":
         """
         Enter the pipeline context.
- 
+
         Raises
         ------
         Crisprme2PipelineLifecycleError
@@ -227,20 +273,27 @@ class Pipeline:
         self._assert_open()
         self._loggers.verboselog.debug("Entering Pipeline context")
         return self
-    
-    def __exit__(self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException], exc_tb: Optional[TracebackType]) -> bool:
+
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> bool:
         """
         Exit the pipeline context, always closing the underlying Rust object.
- 
+
         The pipeline is closed regardless of whether an exception occurred.
         Any exception propagates normally (return value is ``False``).
         If :meth:`_close` itself raises, that secondary exception is logged
         and re-raised, masking the original only when both fail simultaneously.
         """
-        self._loggers.verboselog.debug(f"Exiting Pipeline context (exc_type={exc_type})")
+        self._loggers.verboselog.debug(
+            f"Exiting Pipeline context (exc_type={exc_type})"
+        )
         self._close()
         return False  # do not suppress exceptions raised inside the with-block
-    
+
     # --------------------------------------------------------------------------
     # Public API
     # --------------------------------------------------------------------------
@@ -249,19 +302,19 @@ class Pipeline:
         """
         Submit the contents of a :class:`~crisprme2.crisprme_core_api.TargetBatcher`
         to the pipeline for alignment and scoring.
- 
+
         The batcher is drained (``flush_to_batch`` is called on the Rust
         side) and its windows + occurrences are transferred into pipeline
         memory frames.  The GIL is released while the data is sent across
         the channel so worker threads can make progress concurrently.
- 
+
         Parameters
         ----------
         batcher : TargetBatcher
             A populated batcher instance.  Must be a ``RustTargetBatcher``
             (i.e. ``crisprme2._crisprme2_native.TargetBatcher``) wrapped or
             unwrapped.
- 
+
         Raises
         ------
         Crisprme2PipelineLifecycleError
@@ -282,7 +335,6 @@ class Pipeline:
             )
         self._loggers.verboselog.debug("Batch submitted successfully")
 
-
     # --------------------------------------------------------------------------
     # other helpers
     # --------------------------------------------------------------------------
@@ -291,8 +343,7 @@ class Pipeline:
     def is_closed(self) -> bool:
         """``True`` once the context manager has exited"""
         return self._closed
- 
+
     def __repr__(self) -> str:
         status = "closed" if self._closed else "open"
         return f"Pipeline(status={status!r})"
-

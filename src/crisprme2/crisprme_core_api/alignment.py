@@ -17,7 +17,7 @@ class AlignmentBatch:
         occurrences: List[int],
         strand: List[int],
         guide_al: List[List[int]],
-        target_al: List[List[int]],  #0b00000000 -> '-'
+        target_al: List[List[int]],  # 0b00000000 -> '-'
         mm: List[int],
         bdna: List[int],
         brna: List[int],
