@@ -35,7 +35,9 @@ def _retrieve_target_candidates(
         loggers.verboselog.debug(
             "Reference/assembly genome off-targets extraction pipeline"
         )
-        search_offtargets_reference_genome(fastas, pam, guide, offset, right, threads, loggers)
+        search_offtargets_reference_genome(
+            fastas, pam, guide, offset, right, threads, loggers
+        )
 
 
 def execute_complete_search(args: Crisprme2SearchInputArgs) -> None:

@@ -173,7 +173,7 @@ class Thresholds:
         return self._rust_handle
 
     # --------------------------------------------------------------------------
-    # value-tyoe protocol
+    # value-type protocol
     # --------------------------------------------------------------------------
 
     def __eq__(self, other: object) -> bool:

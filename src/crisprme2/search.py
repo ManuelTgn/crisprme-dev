@@ -36,7 +36,6 @@ Data flow
 from .crisprme_core_api import TargetBatcher, Pipeline, Thresholds
 from .crisprme2_error import Crisprme2SearchError
 from .fasta_utils import read_fasta_files
-from .utils import flatten_list, OFFTARGETLEN
 from .logger import CrisprmeLoggers
 from .fasta import Fasta
 from .guide import Guide
@@ -45,7 +44,6 @@ from .pam import PAM
 from typing import List, Dict, Tuple
 from time import time
 
-import sys
 import os
 
 
@@ -67,6 +65,14 @@ _PIPELINE_CHUNKS: int = 10_000
 
 
 def _safe_fasta_contig(fasta: Fasta, contig: str, loggers: CrisprmeLoggers) -> str:
+    """
+    Return the contig name as it appears in an open *fasta* handle,
+    normalising "chr"-prefix mismatches between the dict key and pyfaidx.
+
+    Tries *contig* first; if absent, falls back to the normalised
+    single-contig name exposed by ``fasta.contig``.  Closes the handle
+    and raises before returning if neither name is found.
+    """
     c = contig
     if c not in fasta:
         contig_alt = fasta.contig  # normalized single-contig name from file
@@ -77,124 +83,9 @@ def _safe_fasta_contig(fasta: Fasta, contig: str, loggers: CrisprmeLoggers) -> s
             loggers.errorlog.log_raise_exception(
                 f"Contig {contig} not found in FASTA {fasta._filepath} (available: {fasta.contig})",
                 os.EX_DATAERR,
-                Crisprme2ScannerError,
+                Crisprme2SearchError,
             )
     return c
-
-
-def receive_data(pipeline):
-    complete = False
-    while not complete:
-        complete, res = pipeline.receive()
-
-
-def _extract_and_align(fasta: Fasta, contig: str, loggers: CrisprmeLoggers):
-    with fasta as f:
-        # ensure we fec=tch using a reference that exists in the opened handle
-        c = _safe_fasta_contig(fasta, contig, loggers)
-        sequence = f.fetch(c)  # fecth contig sequence
-        seqlen = len(sequence)  # avoid lazy compute
-        chunkedseq = sequence.chunk(CHUNKSIZE, CHUNKOVERLAP)
-
-
-def extract_targets(
-    fastas: Dict[str, Fasta],
-    contig_ids: Dict[str, int],
-    guide: Guide,
-    pam: PAM,
-    size: int,
-    right: bool,
-    threads: int,
-    loggers: CrisprmeLoggers,
-) -> None:
-    for contig, fasta in fastas.items():  # iterate over single fasta
-        loggers.verboselog.debug(
-            f"Scanning contig {contig} for targets (threads = {threads}, right = {right}, size = {size})"
-        )
-        start = time()  # trace scanner run time on current contig
-        contig_id = contig_ids[contig]  # retrieve contig id
-        try:  # Fasta.contig normalizes "chr" prefix; dict key are already be normalized
-            with fasta as f:
-                # ensure we fetch using a reference that exists in the opened handle
-                c = _safe_fasta_contig(fasta, contig, loggers)
-                sequence = f.fetch(c)  # fetch contig sequence
-                seqlen = len(sequence)
-                chunkedseq = sequence.chunk(CHUNKSIZE, CHUNKOVERLAP)
-                for i, chunkseq in enumerate(chunkedseq):  # iterate over subchunks
-                    core_start = (
-                        i * CHUNKSIZE
-                    )  # compute chunk start (e.g. 0, 10M, etc.)
-                    core_len = min(CHUNKSIZE, seqlen - core_start)
-                    # initialize batcher data for subsequence
-                    chunk_start = 0 if i == 0 else core_start - CHUNKOVERLAP
-                    if len(chunkseq) < size:
-                        continue
-                    # pass subchunk to rust API batcher
-                    status = batcher.feed_chunk(
-                        contig_id, chunk_start, chunkseq, core_len
-                    )
-                    # st = batcher.stats()
-                    # print(
-                    #     "hits_in_batch", st.hits_in_batch, "unique", st.unique_windows
-                    # )
-
-                    # TODO: remove after debugging
-                    # if status.flushed:
-                    # batcher.flush_and_align_placeholder_tsv(guide.sequence, 4, otfname)
-                    # batcher.flush_and_align()
-
-                    # 1. ------> pipeline = pipeline()
-
-                    # 2. ------> pipeline.submit(batcher)
-
-                    # 3. ------> trash batcher -> finalize()
-
-                    # complete = False
-                    # while not complete:
-                    #     complete, result = pipeline.receive()
-
-                    # windows_written, rows_written = batcher.flush_and_align_placeholder_tsv(
-                    #     guide.sequence,
-                    #     4,                 # max_mm
-                    #     str(otfname),       # PathBuf/str ok
-                    # )
-                    # loggers.verboselog.debug(
-                    #     f"Flushed: windows={windows_written}, rows={rows_written}, "
-                    #     f"at contig={contig}, chunk={i}, chunk_start={chunk_start}"
-                    # )
-        except Exception as e:
-            # raise to stop the pipeline
-            loggers.errorlog.log_raise_exception(
-                f"Scanning contig {contig} failed: {e}",
-                os.EX_DATAERR,
-                Crisprme2ScannerError,
-            )
-        finally:
-
-            loggers.verboselog.debug(
-                f"Contig {contig} scanned in {time() - start:.2f}s"
-            )
-
-    # pipeline.close()
-
-    # Final tail flush: you must explicitly flush remaining windows too
-    # windows_written, rows_written = batcher.flush_and_align_placeholder_tsv(
-    #     guide.sequence,
-    #     4,
-    #     str(otfname),
-    # )
-    # batcher.flush_and_align_placeholder_tsv(guide.sequence, 4, otfname)
-    batcher.flush_and_align()
-    tail = batcher.finalize()  # clears internal state
-
-    # loggers.verboselog.debug(
-    #     f"Final flush: windows={windows_written}, rows={rows_written}; "
-    #     f"tail stats: hits={tail.hits_in_batch}, unique={tail.unique_windows}"
-    # )
-
-
-def _compute_target_size(guide: Guide, pam: PAM, offset: int) -> int:
-    return len(guide) + len(pam) + offset
 
 
 def _compute_contig_ids(contigs: List[str]) -> Dict[str, int]:
@@ -211,7 +102,81 @@ def _compute_overlap(size: int) -> int:
     return max(size - 1, CHUNKOVERLAP)
 
 
-def scan_reference_genome(
+def _chunk_sequence(
+    fasta: Fasta, contig: str, overlap: int, loggers: CrisprmeLoggers
+) -> Tuple[List[str], int]:
+    """
+    Fetch a contig sequence from an already-open *fasta* handle and split
+    it into overlapping sub-chunks.
+
+    .. note::
+        This function must be called **inside** an open ``with fasta``
+        block (i.e. from :func:`_process_contig`).  The *fasta* parameter
+        is the live handle ``fa``, not the outer wrapper.
+    """
+    c = _safe_fasta_contig(fasta, contig, loggers)
+    sequence = fasta.fetch(c)
+    return sequence.chunk(CHUNKSIZE, overlap), len(sequence)
+
+
+def _submit_and_log(
+    pipeline: Pipeline, batcher: TargetBatcher, label: str, loggers: CrisprmeLoggers
+) -> None:
+    """
+    Submit *batcher* to *pipeline* and log the action.
+
+    Separating this into a helper keeps the chunk loop readable and gives
+    a single point to add metrics / tracing in the future.
+    """
+    stats = batcher.stats()
+    loggers.verboselog.debug(
+        f"{label}: submitting batch - "
+        f"{stats.hits_in_batch} hits, {stats.unique_windows} unique windows"
+    )
+    pipeline.submit(batcher)
+
+
+def _process_contig(
+    fasta: Fasta,
+    batcher: TargetBatcher,
+    pipeline: Pipeline,
+    contig: str,
+    contig_id: int,
+    overlap: int,
+    size: int,
+    loggers: CrisprmeLoggers,
+):
+    """
+    Open a FASTA handle, chunk its sequence, and feed each chunk to
+    *batcher*, submitting to *pipeline* whenever the batch is full.
+
+    This function owns the ``with fasta`` context for one contig.
+    It delegates chunking to :func:`_chunk_sequence` and submission
+    to :func:`_submit_and_log`.
+    """
+    with fasta as fa:
+        chunk_seqs, seqlen = _chunk_sequence(fa, contig, overlap, loggers)
+        for i, chunk_seq in enumerate(chunk_seqs):
+            # absolute genomic start of the full chunk (including left overlap for i > 0)
+            core_start: int = i * CHUNKSIZE
+            core_len: int = min(CHUNKSIZE, seqlen - core_start)
+            chunk_start: int = 0 if i == 0 else core_start - overlap
+            if len(chunk_seq) < size:
+                # chunk too short to contain even one window; skip rather than
+                # sending empty work to rust
+                loggers.verboselog.debug(
+                    f"Contig {contig!r}, chunk {i}: sequence ({len(chunk_seq)} bp) "
+                    f"shorter than window size ({size}), skipping"
+                )
+                continue
+            result = batcher.feed_chunk(contig_id, chunk_start, chunk_seq, core_len)
+            if result.flushed:
+                _submit_and_log(
+                    pipeline, batcher, f"contig={contig!r} chunk={i}", loggers
+                )
+
+
+def _scan_reference_genome(
     fastas: Dict[str, Fasta],
     contig_ids: Dict[str, int],
     guide: Guide,
@@ -223,6 +188,58 @@ def scan_reference_genome(
     transforms: List,
     loggers: CrisprmeLoggers,
 ) -> None:
+    """
+    Scan every contig in *fastas* for off-target candidates and route
+    full batches through the alignment pipeline.
+
+    Manages three nested levels of state:
+
+    - **Pipeline context** — one :class:`Pipeline` for the entire genome
+      run, opened once and closed (workers joined) after all contigs.
+    - **Contig loop** — each contig is opened, chunked, and fully
+      processed before the next contig begins.
+    - **Chunk loop** — :data:`CHUNKSIZE`-bp sub-sequences (with overlap)
+      are fed to :class:`TargetBatcher` one at a time.  When
+      ``feed_chunk`` returns ``flushed=True``, the batch is submitted to
+      the pipeline before the next chunk is processed.
+
+    After all contigs are exhausted, a final tail flush submits any
+    windows that did not trigger an automatic flush, and
+    :meth:`~crisprme2.crisprme_core_api.TargetBatcher.finalize` clears
+    the internal Rust map.
+
+    Parameters
+    ----------
+    fastas : dict[str, Fasta]
+        Mapping from normalised contig name to an unopened
+        :class:`~crisprme2.fasta.Fasta` handle.
+    contig_ids : dict[str, int]
+        Mapping from contig name to its integer index.
+    guide : Guide
+        Guide RNA object; ``.sequence`` forwarded to the batcher.
+    pam : PAM
+        PAM object; ``.pam`` forwarded to the batcher.
+    size : int
+        Window extraction width (guide + PAM + bulge offset).
+    upstream : bool
+        ``True`` if the PAM is 3′ of the protospacer (e.g. SpCas9 NGG).
+    threads : int
+        Number of parallel scanner threads inside the batcher.
+    thresholds : Thresholds
+        Alignment thresholds (max mismatches, DNA bulges, RNA bulges)
+        forwarded to the pipeline and used at flush time.
+    transforms : list[callable]
+        Ordered transform callables forming the pipeline's scoring and
+        annotation stage chain.
+    loggers : CrisprmeLoggers
+        Shared logger bundle.
+
+    Raises
+    ------
+    Crisprme2SearchError
+        If any contig scan fails (FASTA I/O, position overflow, etc.).
+        The error message includes the contig name and the underlying cause.
+    """
     overlap = _compute_overlap(size)
     # build batcher - one per genome run; reset between flushes by Rust
     batcher = TargetBatcher.create(
@@ -233,7 +250,43 @@ def scan_reference_genome(
     )
     # pipeline: one context for the entire genome run
     with Pipeline.create(_PIPELINE_CHUNKS, thresholds, transforms, loggers) as pipeline:
-        pass
+        for contig, fasta in fastas.items():
+            contig_id = contig_ids[contig]
+            loggers.verboselog.debug(
+                f"Processing contig {contig!r} "
+                f"(id={contig_id}, threads={threads}, upstream={upstream}, size={size})"
+            )
+            contig_start = time()  # trace contig processing running time
+            try:
+                _process_contig(
+                    fasta, batcher, pipeline, contig, contig_id, overlap, size, loggers
+                )
+            except Crisprme2SearchError:
+                raise  # already formatted; propagate as-is
+            except Exception as e:
+                loggers.errorlog.log_raise_exception(
+                    f"Processing contig {contig!r} failed: {e}",
+                    os.EX_DATAERR,
+                    Crisprme2SearchError,
+                )
+            finally:
+                loggers.verboselog.debug(
+                    f"Contig {contig!r} processed in {time() - contig_start:.2f}s"
+                )
+        # tail flush: submit whatever remains after the last auto-flush
+        tail_stats = batcher.stats()
+        if tail_stats.hits_in_batch > 0 or tail_stats.unique_windows > 0:
+            _submit_and_log(pipeline, batcher, "tail flush", loggers)
+        # finalize clears internal rust states; log what was flushed in the tail
+        final_stats = batcher.finalize()
+        loggers.basiclog.info(
+            f"Processing complete - batcher id = {batcher.id}, "
+            f"total chunks={batcher.total_chunks_fed}, "
+            f"total flushes={batcher.total_flushes}, "
+            f"tail residual: hits={final_stats.hits_in_batch}, "
+            f"unique windows={tail_stats.unique_windows}"
+        )
+    # pipeline.__exit__ signals EOF and joins all worker threads here
 
 
 def search_offtargets_reference_genome(
@@ -289,7 +342,7 @@ def search_offtargets_reference_genome(
         f" | thresholds: {thresholds}"
     )
     # extract targets from reference genome fasta files
-    scan_reference_genome(
+    _scan_reference_genome(
         fastas,
         contig_ids,
         guide,
