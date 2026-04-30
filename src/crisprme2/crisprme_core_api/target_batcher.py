@@ -1,6 +1,6 @@
 """ """
 
-from .crisprme_api_error import Crisprme2BatcherError
+from .crisprme2_api_error import Crisprme2BatcherError
 from ..logger import CrisprmeLoggers
 
 try:  # import rust API modules
@@ -79,6 +79,10 @@ class TargetBatcher:
             f"<{self.__class__.__name__} object; id={self.id}, "
             f"hits={stats.hits_in_batch}, unique={stats.unique_windows}>"
         )
+    
+    @property
+    def batcher(self) -> RustTargetBatcher:
+        return self._batcher
 
     @property
     def id(self) -> int:

@@ -67,8 +67,13 @@ def compute_cfd(wildtype: str, sg: str, pam: str, mmscores: Dict[str, float], pa
     score = _compute_cfd_mismatches(wildtype, sg, mmscores, loggers)
     # weight cfd score by pam score
     score = _compute_cfd_pam(score, pam.upper(), pamscores, loggers)
+    # scores 
     return score
 
+def compute_cfd_batch(batch):
+    scores = np.asarray(batch["scores"])
+
+    scores[0][:] = 6
         
 
 

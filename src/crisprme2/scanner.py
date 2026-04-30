@@ -1,5 +1,6 @@
 """ """
 
+from .crisprme_core_api import TargetBatcher
 from .crisprme2_error import Crisprme2ScannerError
 from .fasta_utils import read_fasta_files
 from .utils import flatten_list, OFFTARGETLEN
@@ -18,7 +19,7 @@ import os
 
 
 # define sequence chunk size
-CHUNKSIZE = 10_000_000
+CHUNKSIZE = 100_000
 
 # define overlap size between chunks
 CHUNKOVERLAP = 29  # 30 - 1 (we extract 30-mers)
@@ -43,6 +44,21 @@ def _safe_fasta_contig(fasta: Fasta, contig: str, loggers: CrisprmeLoggers) -> s
     return c
 
 
+def receive_data(pipeline):
+    complete = False
+    while not complete:
+        complete, res = pipeline.receive()
+
+
+def _extract_and_align(fasta: Fasta, contig: str, loggers: CrisprmeLoggers):
+    with fasta as f:
+        # ensure we fec=tch using a reference that exists in the opened handle
+        c = _safe_fasta_contig(fasta, contig, loggers)
+        sequence = f.fetch(c)  # fecth contig sequence
+        seqlen = len(sequence)  # avoid lazy compute
+        chunkedseq = sequence.chunk(CHUNKSIZE, CHUNKOVERLAP)
+
+
 def extract_targets(
     fastas: Dict[str, Fasta],
     contig_ids: Dict[str, int],
@@ -52,16 +68,7 @@ def extract_targets(
     right: bool,
     threads: int,
     loggers: CrisprmeLoggers,
-):
-
-    batcher = TargetBatcher(
-        pam.pam, size, right, threads, BATCHITS, 250_000, CHUNKOVERLAP
-    )
-
-    otfname = "results/test-run/test.txt"
-
-    print(contig_ids)
-
+) -> None:
     for contig, fasta in fastas.items():  # iterate over single fasta
         loggers.verboselog.debug(
             f"Scanning contig {contig} for targets (threads = {threads}, right = {right}, size = {size})"
@@ -88,15 +95,21 @@ def extract_targets(
                     status = batcher.feed_chunk(
                         contig_id, chunk_start, chunkseq, core_len
                     )
-                    st = batcher.stats()
-                    print(
-                        "hits_in_batch", st.hits_in_batch, "unique", st.unique_windows
-                    )
+                    # st = batcher.stats()
+                    # print(
+                    #     "hits_in_batch", st.hits_in_batch, "unique", st.unique_windows
+                    # )
 
                     # TODO: remove after debugging
-                    if status.flushed:
+                    # if status.flushed:
                         # batcher.flush_and_align_placeholder_tsv(guide.sequence, 4, otfname)
-                        batcher.flush_and_align()
+                        # batcher.flush_and_align()
+
+                    # ------ pipeline.submit(batcher)
+
+                        # complete = False
+                        # while not complete:
+                        #     complete, result = pipeline.receive()
 
                         # windows_written, rows_written = batcher.flush_and_align_placeholder_tsv(
                         #     guide.sequence,
@@ -115,9 +128,13 @@ def extract_targets(
                 Crisprme2ScannerError,
             )
         finally:
+            
             loggers.verboselog.debug(
                 f"Contig {contig} scanned in {time() - start:.2f}s"
             )
+
+    # pipeline.close()
+
 
     # Final tail flush: you must explicitly flush remaining windows too
     # windows_written, rows_written = batcher.flush_and_align_placeholder_tsv(

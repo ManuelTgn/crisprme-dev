@@ -9,7 +9,7 @@ class Scorer:
 
     def __call__(self, batch: nat.PyAlignmentBatch):
         scores = np.asarray(batch.score(self.score))
-        scores[:] = self.value
+        scores[:] = self.value  # change directly in rust memory
 
 
 class Printer:
