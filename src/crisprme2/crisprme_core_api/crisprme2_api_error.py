@@ -45,7 +45,7 @@ class Crisprme2AnnotationError(Crisprme2Error):
         return super().__str__()  # string representation for the exception
 
 
-class Crisprme2AlignmentError(Crisprme2Error):
+class Crisprme2AlignmentBatchError(Crisprme2Error):
     """Raised when an alignment attribute receives an invalid value"""
 
     def __init__(self, value: str):

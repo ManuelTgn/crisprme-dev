@@ -1,5 +1,6 @@
 """
 callbacks.py
+------------
 Structural interfaces and base implementations for alignment batch processing.
 
 This module defines the AlignmentTransformer protocol, which serves as the
