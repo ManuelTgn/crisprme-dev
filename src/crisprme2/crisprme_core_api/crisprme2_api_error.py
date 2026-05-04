@@ -1,5 +1,5 @@
 """
-crisprme_api_error.py
+crisprme2_api_error.py
 ---------------------
 Custom exception hierarchy for the crisprme2 core API.
 
@@ -14,7 +14,7 @@ Hierarchy
     Crisprme2Error
     ├── Crisprme2BatcherError       - TargetBatcher failures
     ├── Crisprme2AnnotationError    - FeatureRegistry / annotation failures
-    ├── Crisprme2AlignmentError     - Alignment scoring / validation failures
+    ├── Crisprme2AlignmentBatchError     - Alignment scoring / validation failures
     └── Crisprme2PipelineError      - Pipeline construction / runtime failures
             ├── Crisprme2PipelineConfigError   - bad arguments at build time
             ├── Crisprme2PipelineSubmitError   - failure while submitting a batch
