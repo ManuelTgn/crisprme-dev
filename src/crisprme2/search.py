@@ -40,6 +40,7 @@ from .logger import CrisprmeLoggers
 from .fasta import Fasta
 from .guide import Guide
 from .pam import PAM
+from .protocol import Transformer
 
 from typing import List, Dict, Tuple
 from time import time
@@ -185,7 +186,7 @@ def _scan_reference_genome(
     upstream: bool,
     threads: int,
     thresholds: Thresholds,
-    transforms: List,
+    transforms: List[Transformer],
     loggers: CrisprmeLoggers,
 ) -> None:
     """
@@ -296,7 +297,7 @@ def search_offtargets_reference_genome(
     upstream: bool,
     threads: int,
     thresholds: Thresholds,
-    transforms: List,
+    transforms: List[Transformer],
     loggers: CrisprmeLoggers,
 ) -> None:
     """

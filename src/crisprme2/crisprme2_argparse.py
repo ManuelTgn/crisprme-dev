@@ -257,8 +257,8 @@ class Crisprme2SearchInputArgs:
         return self._brna
 
     @property
-    def right(self) -> bool:
-        return self._args.right
+    def upstream(self) -> bool:
+        return self._args.upstream
 
     @property
     def outdir(self) -> str:

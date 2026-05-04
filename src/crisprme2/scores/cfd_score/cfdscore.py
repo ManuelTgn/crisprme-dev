@@ -329,7 +329,7 @@ class CfdScorer:
     # transformer protocol
     # --------------------------------------------------------------------------
 
-    def __call__(self, raw_batch: object) -> Any:
+    def __call__(self, batch: AlignmentBatch) -> Any:
         """
         Score all alignments in *raw_batch* using the CFD model.
 
@@ -341,7 +341,7 @@ class CfdScorer:
 
         Parameters
         ----------
-        raw_batch : PyAlignmentBatch
+        batch : AlignmentBatch
             Opaque Rust alignment batch delivered by the pipeline stage.
 
         Raises
@@ -349,14 +349,6 @@ class CfdScorer:
         Crisprme2CfdScoreError
             If the batch cannot be wrapped or scoring fails.
         """
-        try:
-            batch = AlignmentBatch(raw_batch, self._loggers)
-        except Exception as e:
-            self._loggers.errorlog.log_raise_exception(
-                f"CfdScorer: failed to wrap PyAlignmentBatch: {e}",
-                os.EX_DATAERR,
-                Crisprme2CfdScoreError,
-            )
         n_rows = batch.n_rows
         if n_rows == 0:
             return  # nothing to score

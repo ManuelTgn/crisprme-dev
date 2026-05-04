@@ -195,12 +195,12 @@ def create_search_parser(subparser: _SubParsersAction) -> _SubParsersAction:
         help="maximum number of RNA bulges allowed in the search (default: 0)",
     )
     optional_group.add_argument(
-        "--right",
+        "--upstream",
         action="store_true",
-        dest="right",
+        dest="upstream",
         default=False,
-        help="if set, guides occur downstream (right side) of the PAM "
-        "(default: guides occur upstream (left side))",
+        help="if set, PAM occurs upstream (left side) of the guide "
+        "(default: PAM occurs downstream (right side))",
     )
     optional_group.add_argument(
         "--threads",
