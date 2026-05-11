@@ -1,10 +1,10 @@
 """
-callbacks.py
+protocol.py
 ------------
 Structural interfaces and base implementations for alignment batch processing.
 
-This module defines the AlignmentTransformer protocol, which serves as the
-foundation for all batch-level modifications and inspections within the pipeline.
+This module defines the Transformer protocol, which serves as the foundation
+for all batch-level modifications and inspections within the pipeline.
 By utilizing Python's structural subtyping (Protocols), it ensures that
 disparate tools—ranging from scorers to debug loggers—share a consistent
 execution contract.
@@ -14,7 +14,7 @@ Typical usage
 ::
 
     from crisprme2.transforms import Scorer, Printer
-    from crisprme2.callbacks import CallbackPipeline
+    from crisprme2.protocol import CallbackPipeline
 
     # Define a pipeline of operations
     pipeline = CallbackPipeline([

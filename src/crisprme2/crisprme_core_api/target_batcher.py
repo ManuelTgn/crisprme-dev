@@ -39,7 +39,7 @@ Typical usage (from scanner.py)
 
     thresholds = Thresholds(max_mm=4, max_bdna=1, max_brna=1, loggers=loggers)
     batcher = TargetBatcher.create(
-        pam=pam, guide=guide, size=30, right=True,
+        pam=pam, guide=guide, size=30, upstream=True,
         overlap=29, threads=8, loggers=loggers,
     )
 
@@ -199,7 +199,7 @@ class TargetBatcher:
     ::
 
         batcher = TargetBatcher.create(
-            pam=pam, guide=guide, size=30, right=True,
+            pam=pam, guide=guide, size=30, upstream=True,
             overlap=29, threads=8, loggers=loggers,
         )
 
@@ -212,8 +212,8 @@ class TargetBatcher:
     size : int
         Window width (guide length + PAM length + any bulge offset).
         Must be strictly positive.
-    right : bool
-        ``True`` if the PAM lies to the right of the protospacer.
+    upstream : bool
+        ``True`` if the PAM lies upstream of the protospacer.
     overlap : int
         Left-overlap kept between consecutive chunks (>= ``size - 1``).
     threads : int
@@ -262,8 +262,8 @@ class TargetBatcher:
             Guide RNA object; ``.sequence`` str is forwarded to Rust.
         size : int
             Window extraction width (> 0).
-        right : bool
-            Whether the PAM is on the right side of the protospacer.
+        upstream : bool
+            Whether the PAM is upstream of the protospacer.
         overlap : int
             Left overlap between consecutive FASTA chunks (>= size - 1).
         threads : int
@@ -296,7 +296,7 @@ class TargetBatcher:
             f"batch_hits={batch_hits}, max_unique={max_unique}"
         )
         try:
-            rust_handle = RustTargetBatcher(pam_seq, guide_seq, size, right, threads, batch_hits, max_unique, overlap)  # type: ignore
+            rust_handle = RustTargetBatcher(pam_seq, guide_seq, size, upstream, threads, batch_hits, max_unique, overlap)  # type: ignore
         except Exception as e:
             loggers.errorlog.log_raise_exception(
                 f"Rust TargetBatcher construction failed: {e}",

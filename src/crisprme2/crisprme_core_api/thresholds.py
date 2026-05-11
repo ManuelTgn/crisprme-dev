@@ -46,7 +46,7 @@ from .crisprme2_api_error import Crisprme2PipelineConfigError
 from ..logger import CrisprmeLoggers
 
 try:
-    from .._crisprme2_native import Threshdolds as RustThresholds
+    from .._crisprme2_native import Thresholds as RustThresholds
 except ImportError:
     RustThresholds = None
 

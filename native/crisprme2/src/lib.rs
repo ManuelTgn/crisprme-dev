@@ -68,7 +68,7 @@ pub mod _crisprme2_native {
     };
     use itertools::izip;
     use pyo3::{
-        Bound, Py, PyResult, Python, pyclass, pyfunction, pymethods, types::{PyAnyMethods, PyList}
+        Bound, Py, PyResult, Python, pyclass, pyfunction, pymethods, pymodule, types::{PyAnyMethods, PyList}
     };
 
     use crate::{
@@ -85,6 +85,12 @@ pub mod _crisprme2_native {
 
     #[pymodule_export]
     pub use crate::batching::batching::TargetBatcher;
+
+    #[pymodule_export]
+    pub use crate::batching::batching::BatcherStats;
+
+    #[pymodule_export]
+    pub use crate::batching::batching::FeedStatus;
 
     #[pymodule_export]
     pub use crate::pipeline::stage::transform::PyAlignmentBatch;
