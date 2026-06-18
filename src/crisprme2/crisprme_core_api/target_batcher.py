@@ -83,7 +83,7 @@ import os
 _DEFAULT_BATCH_HITS: int = 100_000
 
 # Maximum number of *unique* windows before an automatic flush is triggered.
-_DEFAULT_MAX_UNIQUE: int = 500_000
+_DEFAULT_MAX_UNIQUE: int = 100_000
 
 # ------------------------------------------------------------------------------
 # immutable result dataclasses

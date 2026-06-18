@@ -285,26 +285,39 @@ impl TargetBatcher {
     /// Convert the current batch (unique windows + occurrences) into a `WindowBatch`
     /// and clear internal state.
     pub fn flush_to_batch(&mut self) -> WindowBatch {
-        let map: AHashMap<WindowKey, Vec<Occ>> = std::mem::take(&mut self.map);
+        let cap = self.max_unique;  // invariant: max_unique <= miner src capacity
 
-        let unique = map.len();
-        let mut windows: Vec<WindowKey> = Vec::with_capacity(unique);
-        let mut occs: Vec<Vec<Occ>> = Vec::with_capacity(unique);
+        // Fast path: whole map fits
+        if self.map.len() <= cap {
+            let map = std::mem::take(&mut self.map);
+            let unique = map.len();
+            let mut windows = Vec::with_capacity(unique);
+            let mut occs = Vec::with_capacity(unique);
+            let mut total_hits = 0usize;
+            for (k, v) in map {
+                total_hits += v.len();
+                windows.push(k);
+                occs.push(v);
+            }
+            self.hits_in_batch = 0;
+            return  WindowBatch { windows, occs, total_hits };
+        }
 
+        // Overshoot path: emit exactly `cap` windows, keep the rest for the next submit
+        let mut windows = Vec::with_capacity(cap);
+        let mut occs = Vec::with_capacity(cap);
         let mut total_hits = 0usize;
-        for (k, v) in map {
-            total_hits += v.len();
-            windows.push(k);
-            occs.push(v);
+        let take: Vec<WindowKey> = self.map.keys().take(cap).cloned().collect();
+        for k in take {
+            if let Some(v) = self.map.remove(&k) {
+                total_hits += v.len();
+                windows.push(k);
+                occs.push(v);
+            }
         }
-
-        self.hits_in_batch = 0;
-
-        WindowBatch {
-            windows,
-            occs,
-            total_hits,
-        }
+        self.hits_in_batch -= total_hits;  // retained windows stay counted
+        WindowBatch{ windows, occs, total_hits }
+        
     }
 
     #[inline(always)]
