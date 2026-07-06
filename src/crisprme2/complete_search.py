@@ -95,6 +95,11 @@ def _build_thresholds(
     )
 
 
+class ExampleTransform:
+    def __call__(self):
+        pass
+
+
 def _build_transforms(pam: PAM, loggers: CrisprmeLoggers) -> List[Transformer]:
     transforms: List[Transformer] = []
     # ---- scoring transform
