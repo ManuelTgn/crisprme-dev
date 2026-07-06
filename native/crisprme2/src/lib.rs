@@ -244,7 +244,7 @@ pub mod _crisprme2_native {
             let mut occs = SeqOccFrame::alloc(&self.pool, total_occs);
             occs.with_cols(|mut cols| {
                 // Each occurrence carries the index of the WINDOW (source sequence) it
-                // belongs to, so seq_row_idx < source_seq_count (Broadcast/Reader contract)
+                // belongs to, so seq_row_idx < source_seq_count (Broadcast/Reader contract).
                 let iter = izip!(
                     cols.seq_row_idx.iter_mut(),
                     cols.occurence.iter_mut(),
