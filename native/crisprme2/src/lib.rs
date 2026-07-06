@@ -243,18 +243,17 @@ pub mod _crisprme2_native {
             let total_occs = batch.occs.iter().map(|o| o.len()).sum();
             let mut occs = SeqOccFrame::alloc(&self.pool, total_occs);
             occs.with_cols(|mut cols| {
-
+                // Each occurrence carries the index of the WINDOW (source sequence) it
+                // belongs to, so seq_row_idx < source_seq_count (Broadcast/Reader contract)
                 let iter = izip!(
                     cols.seq_row_idx.iter_mut(),
                     cols.occurence.iter_mut(),
-                    batch.occs.iter()
-                        .flat_map(|s| s.iter())
+                    batch.occs.iter().enumerate()
+                        .flat_map(|(w, s)| s.iter().map(move |occ| (w as u32, *occ))),
                 );
-
-                // Copy content into frame
-                for (i, (dst_seq_id, dst_occ, src_occ)) in iter.enumerate() {
-                    *dst_seq_id = i as u32;
-                    *dst_occ = Occurence(*src_occ);
+                for (dst_seq_id, dst_occ, (w, src_occ)) in iter {
+                    *dst_seq_id = w;
+                    *dst_occ = Occurence(src_occ);
                 }
             });
 
