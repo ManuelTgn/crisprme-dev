@@ -7,7 +7,7 @@
 //! |-----------------|-------------------------------|------------------------|
 //! | `ERROR`         | `errorlog`   (`.error`)       | `errors.log`           |
 //! | `WARN`          | `basiclog` + `verboselog`     | `basic.log` + verbose  |
-//! |                 | (`.info`, `"WARNING: "` prefix)|                        |
+//! |                 | (`.info`, `"WARNING: "` prefix)|                       |
 //! | `INFO`          | `basiclog` + `verboselog`     | `basic.log` + verbose  |
 //! | `DEBUG`/`TRACE` | `verboselog` (`.debug`)       | `verbose.log`          |
 //!
@@ -98,6 +98,11 @@ where
             };
             match level {
                 Level::ERROR => emit(&self.loggers.error, "error", &msg),
+                Level::WARN => {
+                    let warn = format!("WARNING: {msg}");
+                    emit(&self.loggers.basic, "info", &warn);
+                    emit(&self.loggers.verbose, "info", &warn);
+                }
                 Level::INFO => {
                     emit(&self.loggers.basic, "info", &msg);
                 }

@@ -1,4 +1,4 @@
-use crate::error::crisprme_errors::PamError;
+use crate::error::crisprme_errors::{AnnotationError, PamError, TargetError};
 
 use pyo3::exceptions::{PyIOError, PyValueError, PyIndexError};
 use pyo3::PyErr;
@@ -25,7 +25,6 @@ impl From<AnnotationError> for PyErr {
     }
 }
 
-
 impl From<PamError> for PyErr {
     fn from(err: PamError) -> PyErr {
         match err {
@@ -35,6 +34,16 @@ impl From<PamError> for PyErr {
             // Out-of-range lookup -> IndexError (more Pythonic)
             PamError::IndexOutOfRange { .. } =>
                 PyIndexError::new_err(err.to_string()),
+            // Too many wildcard characters in PAM -> ValueError
+            PamError::TooManyWildcards { .. } =>
+                PyValueError::new_err(err.to_string()),
         }
+    }
+}
+
+impl From<TargetError> for PyErr {
+    fn from(err: TargetError) -> PyErr {
+        // both are configuration errors -> ValueError
+        PyValueError::new_err(err.to_string())
     }
 }

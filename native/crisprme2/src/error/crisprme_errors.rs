@@ -42,5 +42,21 @@ pub enum PamError {
     /// A variant index handed to the decoder is out of range.
     #[error("PAM variant index {index} out of range (valid: 0..{count})")]
     IndexOutOfRange { index: u16, count: u32 },
+
+    #[error("PAM has {count} unconstrained (N) positions; the maximum supported is {max}")]
+    TooManyWildcards { count: usize, max: usize },
+}
+
+/// Errors raised while constructing a candidate target or working with it.
+///
+/// All variants map to a Python exception through
+/// [`crate::python::pyerrors`], so a Python caller always receives a
+/// descriptive, typed error rather than an opaque Rust panic.
+#[derive(Debug, Error)]
+pub enum TargetError {
+    #[error("PAM length {plen} is invalid for window size {size} (must be 1..={size})")]
+    PamOutOfRange { plen: usize, size: usize },
+    #[error("window size {size} exceeds the maximum supported length {max}")]
+    WindowTooLong { size: usize, max: usize },
 }
 
