@@ -74,7 +74,7 @@ try:
     from .._crisprme2_native import PyAlignmentBatch as RustAlignmentBatch
 except ImportError:
     RustAlignmentBatch = None
-    
+
 
 # ==============================================================================
 # fixed slot counts - match transform.rs constants

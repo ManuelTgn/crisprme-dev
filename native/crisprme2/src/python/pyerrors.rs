@@ -24,3 +24,17 @@ impl From<AnnotationError> for PyErr {
         }
     }
 }
+
+
+impl From<PamError> for PyErr {
+    fn from(err: PamError) -> PyErr {
+        match err {
+            // Bad input / configuration -> ValueError
+            PamError::InvalidCharacter { .. } | PamError::TooManyVariants { .. } =>
+                PyValueError::new_err(err.to_string()),
+            // Out-of-range lookup -> IndexError (more Pythonic)
+            PamError::IndexOutOfRange { .. } =>
+                PyIndexError::new_err(err.to_string()),
+        }
+    }
+}

@@ -32,7 +32,7 @@ from __future__ import annotations
 
 from typing import List, Tuple
 
-from .crisprme_core_api import Thresholds
+from .crisprme_core_api import Thresholds, init_native_logging
 from .crisprme2_argparse import Crisprme2SearchInputArgs
 from .crisprme2 import TOOLNAME
 from .guide import read_guides, GuidesList
@@ -140,15 +140,14 @@ def execute_complete_search(args: Crisprme2SearchInputArgs) -> None:
         If any component of the search pipeline fails.
     """
     loggers = CrisprmeLoggers(args.outdir)  # initialize loggers
+    init_native_logging(loggers)  # initialize rust-level logging
     loggers.basiclog.info(f"Start {TOOLNAME} search")
-
     # initialize pam and guide objects
     guides, pam = _build_pam_and_guides(args, loggers)
     # initialize thresholds object
     thresholds = _build_thresholds(args, loggers)
     # initialize transforms
     transforms = _build_transforms(pam, loggers)
-
     for guide in guides:
         # retrieve candidate off-targets for current guide
         loggers.verboselog.debug(

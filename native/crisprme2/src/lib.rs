@@ -410,4 +410,32 @@ pub mod _crisprme2_native {
             pool,
         })
     }
+
+    /// Install the Rust -> Python logging bridge.
+    ///
+    /// Call this **once**, early, passing the `CrisprmeLoggers` bundle.
+    /// It composes a compact stderr layer (dev console) with the
+    /// [`PyLoggerLayer`], so every `tracing` event in the native core is
+    /// mirrored into `basic.log` / `verbose.log` / `errors.log`.
+    ///
+    /// `TRACE` is filtered out to keep hot-path `trace!` events off the GIL.
+    /// Uses `try_init`, so a second call (or a prior `init_tracing`) is a
+    /// silent no-op rather than a panic — but you should call only one of
+    /// the two initialisers
+    #[pyfunction]
+    fn init_logging(loggers: &Bound<'_, PyAny>) -> PyResult<()> {
+        use tracing_subscriber::prelude::*;
+        use tracing_subscriber::{filter::LevelFilter, fmt};
+
+        let py_layer = crate::python::pylog::PyLoggerLayer::from_bundle(loggers)?;
+
+        tracing_subscriber::registry()
+            .with(LevelFilter::DEBUG)
+            .with(fmt::layer().compact().with_target(false))
+            .with(py_layer)
+            .try_init()
+            .ok();
+
+        Ok(())
+    }
 }

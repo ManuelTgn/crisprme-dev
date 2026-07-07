@@ -123,7 +123,7 @@ class Thresholds:
         self._max_brna = max_brna
         loggers.verboselog.debug(f"Constructing object {repr(self)}")
         try:  # initialize rust Thresholds object
-            self._rust_handle: Any = RustThresholds(max_bdna, max_rna, max_mm)  # type: ignore[assignment]
+            self._rust_handle: Any = RustThresholds(max_bdna, max_brna, max_mm)  # type: ignore[assignment]
         except Exception as e:
             loggers.errorlog.log_raise_exception(
                 f"Rust Thresholds construction failed: {e}",
