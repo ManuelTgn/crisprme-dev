@@ -95,6 +95,10 @@ def _build_thresholds(
     )
 
 
+class ExampleTransformer:
+    def __call__(self, *args, **kwds):
+        pass
+
 def _build_transforms(pam: PAM, loggers: CrisprmeLoggers) -> List[Transformer]:
     transforms: List[Transformer] = []
     # ---- scoring transform
@@ -109,7 +113,8 @@ def _build_transforms(pam: PAM, loggers: CrisprmeLoggers) -> List[Transformer]:
     loggers.verboselog.debug(
         "Transform chain assembled: " f"{[type(t).__name__ for t in transforms]}"
     )
-    return transforms
+    # return transforms
+    return [ExampleTransformer()]
 
 
 def execute_complete_search(args: Crisprme2SearchInputArgs) -> None:
