@@ -99,6 +99,7 @@ class ExampleTransformer:
     def __call__(self, *args, **kwds):
         pass
 
+
 def _build_transforms(pam: PAM, loggers: CrisprmeLoggers) -> List[Transformer]:
     transforms: List[Transformer] = []
     # ---- scoring transform

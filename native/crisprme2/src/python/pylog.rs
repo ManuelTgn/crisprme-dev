@@ -98,14 +98,8 @@ where
             };
             match level {
                 Level::ERROR => emit(&self.loggers.error, "error", &msg),
-                Level::WARN => {
-                    let warn = format!("WARNING: {msg}");
-                    emit(&self.loggers.basic, "info", &warn);
-                    emit(&self.loggers.verbose, "info", &warn);
-                }
                 Level::INFO => {
                     emit(&self.loggers.basic, "info", &msg);
-                    emit(&self.loggers.verbose, "info", &msg);
                 }
                 Level::DEBUG | Level::TRACE => {
                     emit(&self.loggers.verbose, "debug", &msg);

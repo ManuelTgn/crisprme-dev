@@ -59,6 +59,9 @@ pub fn extract_targets_rs(
 #[pymodule]
 pub mod _crisprme2_native {
 
+    use crate::python::pylog::PyLoggerLayer;
+    use tracing_subscriber::prelude::*;
+
     use std::{path::PathBuf, time::Instant};
 
     use columnar::{
@@ -68,7 +71,7 @@ pub mod _crisprme2_native {
     };
     use itertools::izip;
     use pyo3::{
-        Bound, Py, PyResult, Python, pyclass, pyfunction, pymethods, pymodule, types::{PyAnyMethods, PyList}
+        Bound, Py, PyResult, Python, pyclass, pyfunction, pymethods, pymodule, types::{PyAnyMethods, PyList, PyAny}
     };
 
     use crate::{
@@ -419,23 +422,19 @@ pub mod _crisprme2_native {
     /// mirrored into `basic.log` / `verbose.log` / `errors.log`.
     ///
     /// `TRACE` is filtered out to keep hot-path `trace!` events off the GIL.
-    /// Uses `try_init`, so a second call (or a prior `init_tracing`) is a
-    /// silent no-op rather than a panic — but you should call only one of
-    /// the two initialisers
     #[pyfunction]
-    fn init_logging(loggers: &Bound<'_, PyAny>) -> PyResult<()> {
+    fn init_logging(loggers: &Bound<'_, PyAny>) -> PyResult<bool> {
         use tracing_subscriber::prelude::*;
         use tracing_subscriber::{filter::LevelFilter, fmt};
 
         let py_layer = crate::python::pylog::PyLoggerLayer::from_bundle(loggers)?;
 
-        tracing_subscriber::registry()
+        let installed = tracing_subscriber::registry()
             .with(LevelFilter::DEBUG)
-            .with(fmt::layer().compact().with_target(false))
             .with(py_layer)
             .try_init()
-            .ok();
+            .is_ok();
 
-        Ok(())
+        Ok(installed)   // report install status instead of hiding it
     }
 }

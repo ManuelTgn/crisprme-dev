@@ -121,7 +121,6 @@ def init_native_logging(loggers: CrisprmeLoggers) -> None:
     debug line and return without changing the active loggers.
     """
     global _installed
-
     # Validate the bundle first: if it is malformed we cannot route the error
     # through it, so raise the typed exception directly.
     if not isinstance(loggers, CrisprmeLoggers):
@@ -129,25 +128,26 @@ def init_native_logging(loggers: CrisprmeLoggers) -> None:
             f"'loggers' must be a CrisprmeLoggers instance, "
             f"got {type(loggers).__name__!r}"
         )
-
     _require_native(loggers)  # ensure native rust api is installed
-
     if _installed:
         loggers.verboselog.debug(
             "Native logging bridge already installed; call ignored"
         )
         return
-
     loggers.verboselog.debug("Installing native (Rust) -> Python logging bridge")
     try:
-        _rust_init_logging(loggers)  # type: ignore[misc]
+        installed = _rust_init_logging(loggers)  # type: ignore[misc]
+        if not installed:
+            loggers.basiclog.info(
+                "Native logging bridge NOT installed - a tracing subscriber was "
+                "already set; Rust events are not being forwarded"
+            )
     except Exception as e:
         loggers.errorlog.log_raise_exception(
             f"Failed to install native logging bridge: {e}",
             os.EX_UNAVAILABLE,
             Crisprme2LoggingError,
         )
-
     _installed = True
     loggers.basiclog.info(
         "Native logging bridge installed - Rust events routed to CRISPRme2 loggers"
