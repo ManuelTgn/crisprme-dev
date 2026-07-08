@@ -109,16 +109,6 @@ impl ParsedPAM {
         let plen = bytes.len();
         let unconstrained = bytes.iter().all(|&m| m == N_MASK);
 
-        // Check number of wildcard characters in PAM -> cannot exceed 3!!!
-        // NOTE: Future releases may change this value
-        const MAX_WILDCARDS: usize = 3;
-        let wildcards = bytes.iter().filter(|&m| m == N_MASK).count();
-        if wildcards > MAX_WILDCARDS {
-            let err = PamError::TooManyWildcards { count: wildcards, max: MAX_WILDCARDS };
-            tracing::error!("{err}");
-            return Err(err);
-        }
-
         // Reverse-complement via Iupac::complement (single source of truth).
         let revcomp: Vec<u8> = bytes
             .iter()

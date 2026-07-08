@@ -256,7 +256,7 @@ pub mod _crisprme2_native {
                 );
                 for (dst_seq_id, dst_occ, (w, src_occ)) in iter {
                     *dst_seq_id = w;
-                    *dst_occ = Occurence(src_occ.packed);
+                    *dst_occ = Occurence(src_occ);
                 }
             });
 
