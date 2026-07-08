@@ -111,7 +111,22 @@ impl Iupac {
         if self.0 & 0b0001 != 0 { code |= 0b1000; }  // A -> T
         if self.0 & 0b0010 != 0 { code |= 0b0100; }  // C -> G 
         if self.0 & 0b0100 != 0 { code |= 0b0010; }  // G -> C
-        if self.0 & 0b1000 != 0 { code |= 0b0001; }  // T -> A 
+        if self.0 & 0b1000 != 0 { code |= 0b0001; }  // T -> A
+
+        if self.0 & 0b0101 != 0 { code |= 0b1010; }  // R -> Y 
+        if self.0 & 0b1010 != 0 { code |= 0b0101; }  // Y -> R 
+        if self.0 & 0b0110 != 0 { code |= 0b0110; }  // S -> S 
+        if self.0 & 0b1001 != 0 { code |= 0b1001; }  // W -> W
+        if self.0 & 0b1100 != 0 { code |= 0b0011; }  // K -> M 
+        if self.0 & 0b0011 != 0 { code |= 0b1100; }  // M -> K 
+
+        if self.0 & 0b1110 != 0 { code |= 0b0111; }  // B -> V
+        if self.0 & 0b1101 != 0 { code |= 0b1011; }  // D -> H
+        if self.0 & 0b1011 != 0 { code |= 0b1101; }  // H -> D
+        if self.0 & 0b0111 != 0 { code |= 0b1110; }  // V -> B
+
+        if self.0 & 0b1111 != 0 { code |= 0b1111; }  // N -> N
+        
         Self(code)
     }
 

@@ -1,4 +1,4 @@
-use crate::error::crisprme_errors::PamError;
+use crate::error::crisprme_errors::{AnnotationError, PamError};
 
 use pyo3::exceptions::{PyIOError, PyValueError, PyIndexError};
 use pyo3::PyErr;
