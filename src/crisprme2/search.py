@@ -48,21 +48,26 @@ from time import time
 import os
 
 
-# ---------------------------------------------------------------------------
+# ==============================================================================
 # Chunk geometry constants
-# ---------------------------------------------------------------------------
+# ==============================================================================
 
-# Number of base-pairs in each FASTA sub-chunk fed to the batcher.
+#: Number of base-pairs in each FASTA sub-chunk fed to the batcher.
 CHUNKSIZE: int = 100_000
 
-# Number of overlapping base-pairs kept between consecutive chunks.
-# Must satisfy: CHUNKOVERLAP >= window_size - 1.
-# Window size is at most guide(20) + PAM(3) + max_bulge(2) = 25,
-# so 29 is a safe conservative default.
+#: Number of overlapping base-pairs kept between consecutive chunks.
+#: Must satisfy: CHUNKOVERLAP >= window_size - 1.
+#: Window size is at most guide(20) + PAM(3) + max_bulge(2) = 25,
+#: so 29 is a safe conservative default.
 CHUNKOVERLAP: int = 29  # updated at runtime to max(size - 1, 29)
 
-# Default pipeline memory-pool chunk count.
+#: Default pipeline memory-pool chunk count.
 _PIPELINE_CHUNKS: int = 10_000
+
+
+# ==============================================================================
+# Internal search helpers
+# ==============================================================================
 
 
 def _safe_fasta_contig(fasta: Fasta, contig: str, loggers: CrisprmeLoggers) -> str:
@@ -223,7 +228,7 @@ def _scan_reference_genome(
     size : int
         Window extraction width (guide + PAM + bulge offset).
     upstream : bool
-        ``True`` if the PAM is 3′ of the protospacer (e.g. SpCas9 NGG).
+        ``True`` if the PAM is 3' of the protospacer (e.g. SpCas9 NGG).
     threads : int
         Number of parallel scanner threads inside the batcher.
     thresholds : Thresholds
@@ -290,6 +295,11 @@ def _scan_reference_genome(
     # pipeline.__exit__ signals EOF and joins all worker threads here
 
 
+# ==============================================================================
+# Public API
+# ==============================================================================
+
+
 def search_offtargets_reference_genome(
     fasta_files: List[str],
     pam: PAM,
@@ -336,7 +346,7 @@ def search_offtargets_reference_genome(
     )
     fastas = read_fasta_files(fasta_files, loggers)
     contig_ids = _compute_contig_ids(list(fastas.keys()))
-    size = 30  # TODO: define as constant?
+    size = len(guide) + len(pam) + max(thresholds.bdna, thresholds.brna)
     loggers.verboselog.debug(
         f"Contigs: {list(fastas.keys())}"
         f" | window size: {size}"

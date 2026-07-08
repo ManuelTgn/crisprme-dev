@@ -51,9 +51,9 @@ except ImportError:
     RustThresholds = None
 
 
-# ------------------------------------------------------------------------------
+# ==============================================================================
 # internal helpers
-# ------------------------------------------------------------------------------
+# ==============================================================================
 
 
 def _require_native(loggers: CrisprmeLoggers) -> None:
@@ -67,9 +67,9 @@ def _require_native(loggers: CrisprmeLoggers) -> None:
         )
 
 
-# ------------------------------------------------------------------------------
+# ==============================================================================
 # public python wrapper
-# ------------------------------------------------------------------------------
+# ==============================================================================
 
 
 class Thresholds:
@@ -123,7 +123,7 @@ class Thresholds:
         self._max_brna = max_brna
         loggers.verboselog.debug(f"Constructing object {repr(self)}")
         try:  # initialize rust Thresholds object
-            self._rust_handle: Any = RustThresholds(max_mm, max_bdna, max_brna)  # type: ignore[assignment]
+            self._rust_handle: Any = RustThresholds(max_bdna, max_brna, max_mm)  # type: ignore[assignment]
         except Exception as e:
             loggers.errorlog.log_raise_exception(
                 f"Rust Thresholds construction failed: {e}",
@@ -131,10 +131,10 @@ class Thresholds:
                 Crisprme2PipelineConfigError,
             )
 
-    # --------------------------------------------------------------------------
+    # ==========================================================================
     # read-only fields accessors
     # (values are stored in Python; the rust handle is opaque)
-    # --------------------------------------------------------------------------
+    # ==========================================================================
 
     @property
     def mm(self) -> int:
@@ -156,9 +156,9 @@ class Thresholds:
         """``True`` when all thresholds are zero (exact-match mode)"""
         return self._max_mm == 0 and self._max_bdna == 0 and self._max_brna == 0
 
-    # --------------------------------------------------------------------------
+    # ==========================================================================
     # internal: raw rust handle for pipeline internals
-    # --------------------------------------------------------------------------
+    # ==========================================================================
 
     @property
     def rust_handle(self) -> Any:
@@ -172,9 +172,9 @@ class Thresholds:
         """
         return self._rust_handle
 
-    # --------------------------------------------------------------------------
+    # ==========================================================================
     # value-type protocol
-    # --------------------------------------------------------------------------
+    # ==========================================================================
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Thresholds):

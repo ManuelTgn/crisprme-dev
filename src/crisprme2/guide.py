@@ -165,9 +165,9 @@ def read_guides(args: Crisprme2SearchInputArgs, loggers: CrisprmeLoggers) -> Gui
     assert sum(bool(e) for e in [args.guide, args.fasta_guide, args.bed_guide]) == 1
     if args.guide:  # --guide option (single guide)
         return _read_guide(args.guide, loggers)
-    elif args.fasta_guide:  # extract guide sequence
+    if args.fasta_guide:  # extract guide sequence
         return _read_guides_fasta(args.fasta_guide, loggers)
-    elif args.bed_guide:  # --coordinates option (guides extracted via bed)
+    if args.bed_guide:  # --coordinates option (guides extracted via bed)
         pass
     loggers.errorlog.log_raise_exception(
         "Invalid input: no guide input option selected. None of the following "

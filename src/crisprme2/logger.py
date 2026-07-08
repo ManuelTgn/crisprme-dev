@@ -40,6 +40,7 @@ class BaseLogger:
             BaseLogger._logs_cleaned = True  # logs folder is clean now
         self.logger = logging.getLogger(name + "_" + log_file)
         self.logger.setLevel(logging.DEBUG)  # Capture all; filter later
+        self.logger.propagate = False
         if not self.logger.handlers:
             os.makedirs(log_dir, exist_ok=True)
             file_path = os.path.join(log_dir, log_file)
@@ -54,21 +55,20 @@ class BaseLogger:
                 handler.addFilter(log_filter)
 
     def _clean_logs_folder(self, log_dir: str) -> None:
-        if os.path.exists(log_dir) and os.path.isdir(log_dir):
-            try:
-                for fname in os.listdir(
-                    log_dir
-                ):  # remove all files in the logs folders
-                    fpath = os.path.join(log_dir, fname)
-                    try:
-                        if os.path.isfile(fpath) or os.path.islink(fpath):
-                            os.unlink(fpath)  # delete log
-                        elif os.path.isdir(fpath):  # what? better remove it anyway
-                            shutil.rmtree(fpath)
-                    except Exception as e:
-                        warning(f"Failed to delete {fpath}. Reason {e}", 1)
-            except Exception as e:  # throw a warning, but do not halt execution
-                warning(f"Failed to clean logs folder {log_dir}. Reason: {e}", 1)
+        if not os.path.exists(log_dir) or not os.path.isdir(log_dir):
+            return
+        try:
+            for fname in os.listdir(log_dir):  # remove all files in the logs folders
+                fpath = os.path.join(log_dir, fname)
+                try:
+                    if os.path.isfile(fpath) or os.path.islink(fpath):
+                        os.unlink(fpath)  # delete log
+                    elif os.path.isdir(fpath):  # what? better remove it anyway
+                        shutil.rmtree(fpath)
+                except Exception as e:
+                    warning(f"Failed to delete {fpath}. Reason {e}", 1)
+        except Exception as e:  # throw a warning, but do not halt execution
+            warning(f"Failed to clean logs folder {log_dir}. Reason: {e}", 1)
 
     @classmethod
     def reset_cleanup_flag(cls):
@@ -109,7 +109,12 @@ class BasicLogger(BaseLogger):
 class VerboseLogger(BaseLogger):
     def __init__(self, name: str, log_dir: str = "logs"):
         super().__init__(
-            name, log_file="verbose.log", log_dir=log_dir, level=logging.DEBUG
+            name,
+            log_file="verbose.log",
+            log_dir=log_dir,
+            level=logging.DEBUG,
+            max_bytes=5 * 10**9,
+            backup_count=10,
         )
 
     def _get_filter(self, level: int):

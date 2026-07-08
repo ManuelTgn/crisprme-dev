@@ -1,6 +1,6 @@
-use crate::error::crisprme_errors::AnnotationError;
+use crate::error::crisprme_errors::{AnnotationError, PamError};
 
-use pyo3::exceptions::{PyIOError, PyValueError};
+use pyo3::exceptions::{PyIOError, PyValueError, PyIndexError};
 use pyo3::PyErr;
 
 impl From<AnnotationError> for PyErr {
@@ -21,6 +21,20 @@ impl From<AnnotationError> for PyErr {
 
             AnnotationError::EmptyInput =>
                 PyValueError::new_err("Annotation input cannot be empty"),
+        }
+    }
+}
+
+
+impl From<PamError> for PyErr {
+    fn from(err: PamError) -> PyErr {
+        match err {
+            // Bad input / configuration -> ValueError
+            PamError::InvalidCharacter { .. } | PamError::TooManyVariants { .. } =>
+                PyValueError::new_err(err.to_string()),
+            // Out-of-range lookup -> IndexError (more Pythonic)
+            PamError::IndexOutOfRange { .. } =>
+                PyIndexError::new_err(err.to_string()),
         }
     }
 }

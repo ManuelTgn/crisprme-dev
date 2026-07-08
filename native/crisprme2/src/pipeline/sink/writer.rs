@@ -89,11 +89,11 @@ impl Sink for CsvWriterSink {
                 for it in &mut feat_iters {
                     write!(self.buffer, ",{}", it.next().unwrap()).unwrap();
                 }
+                */
                 
                 for it in &mut score_iters {
                     write!(self.buffer, ",{:.6}", it.next().unwrap()).unwrap();
                 }
-                */
 
                 self.buffer.push('\n');
             }

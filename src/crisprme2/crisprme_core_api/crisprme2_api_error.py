@@ -12,12 +12,13 @@ Hierarchy
 ::
 
     Crisprme2Error
-    ├── Crisprme2BatcherError       - TargetBatcher failures
-    ├── Crisprme2AnnotationError    - FeatureRegistry / annotation failures
-    ├── Crisprme2AlignmentBatchError     - Alignment scoring / validation failures
-    └── Crisprme2PipelineError      - Pipeline construction / runtime failures
-            ├── Crisprme2PipelineConfigError   - bad arguments at build time
-            ├── Crisprme2PipelineSubmitError   - failure while submitting a batch
+    ├── Crisprme2BatcherError                   - TargetBatcher failures
+    ├── Crisprme2AnnotationError                - FeatureRegistry / annotation failures
+    ├── Crisprme2AlignmentBatchError            - Alignment scoring / validation failures
+    ├── Crisprme2LoggingError                   - native logging-bridge failures
+    └── Crisprme2PipelineError                  - Pipeline construction / runtime failures
+            ├── Crisprme2PipelineConfigError    - bad arguments at build time
+            ├── Crisprme2PipelineSubmitError    - failure while submitting a batch
             └── Crisprme2PipelineLifecycleError - close / context-manager misuse
 """
 
@@ -54,6 +55,16 @@ class Crisprme2AlignmentBatchError(Crisprme2Error):
 
     def __str__(self):
         return super().__str__()  # string representation for the exception
+
+
+class Crisprme2LoggingError(Crisprme2Error):
+    """Raised when the native Rust -> Python logging bridge cannot be installed"""
+
+    def __init__(self, value: str) -> None:
+        super().__init__(value)
+
+    def __str__(self):
+        return super().__str__()
 
 
 class Crisprme2PipelineError(Crisprme2Error):

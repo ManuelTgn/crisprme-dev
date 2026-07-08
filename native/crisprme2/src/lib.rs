@@ -59,6 +59,9 @@ pub fn extract_targets_rs(
 #[pymodule]
 pub mod _crisprme2_native {
 
+    use crate::python::pylog::PyLoggerLayer;
+    use tracing_subscriber::prelude::*;
+
     use std::{path::PathBuf, time::Instant};
 
     use columnar::{
@@ -68,7 +71,7 @@ pub mod _crisprme2_native {
     };
     use itertools::izip;
     use pyo3::{
-        Bound, Py, PyResult, Python, pyclass, pyfunction, pymethods, pymodule, types::{PyAnyMethods, PyList}
+        Bound, Py, PyResult, Python, pyclass, pyfunction, pymethods, pymodule, types::{PyAnyMethods, PyList, PyAny}
     };
 
     use crate::{
@@ -243,18 +246,17 @@ pub mod _crisprme2_native {
             let total_occs = batch.occs.iter().map(|o| o.len()).sum();
             let mut occs = SeqOccFrame::alloc(&self.pool, total_occs);
             occs.with_cols(|mut cols| {
-
+                // Each occurrence carries the index of the WINDOW (source sequence) it
+                // belongs to, so seq_row_idx < source_seq_count (Broadcast/Reader contract).
                 let iter = izip!(
                     cols.seq_row_idx.iter_mut(),
                     cols.occurence.iter_mut(),
-                    batch.occs.iter()
-                        .flat_map(|s| s.iter())
+                    batch.occs.iter().enumerate()
+                        .flat_map(|(w, s)| s.iter().map(move |occ| (w as u32, *occ))),
                 );
-
-                // Copy content into frame
-                for (i, (dst_seq_id, dst_occ, src_occ)) in iter.enumerate() {
-                    *dst_seq_id = i as u32;
-                    *dst_occ = Occurence(*src_occ);
+                for (dst_seq_id, dst_occ, (w, src_occ)) in iter {
+                    *dst_seq_id = w;
+                    *dst_occ = Occurence(src_occ);
                 }
             });
 
@@ -410,5 +412,29 @@ pub mod _crisprme2_native {
             handle,
             pool,
         })
+    }
+
+    /// Install the Rust -> Python logging bridge.
+    ///
+    /// Call this **once**, early, passing the `CrisprmeLoggers` bundle.
+    /// It composes a compact stderr layer (dev console) with the
+    /// [`PyLoggerLayer`], so every `tracing` event in the native core is
+    /// mirrored into `basic.log` / `verbose.log` / `errors.log`.
+    ///
+    /// `TRACE` is filtered out to keep hot-path `trace!` events off the GIL.
+    #[pyfunction]
+    fn init_logging(loggers: &Bound<'_, PyAny>) -> PyResult<bool> {
+        use tracing_subscriber::prelude::*;
+        use tracing_subscriber::{filter::LevelFilter, fmt};
+
+        let py_layer = crate::python::pylog::PyLoggerLayer::from_bundle(loggers)?;
+
+        let installed = tracing_subscriber::registry()
+            .with(LevelFilter::DEBUG)
+            .with(py_layer)
+            .try_init()
+            .is_ok();
+
+        Ok(installed)   // report install status instead of hiding it
     }
 }
