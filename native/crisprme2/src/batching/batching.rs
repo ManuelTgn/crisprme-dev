@@ -60,7 +60,7 @@ pub struct TargetBatcher {
 
     // config
     size: usize,
-    right: bool,
+    upstream: bool,
     threads: usize,
     batch_hits: usize,
     max_unique: usize,
@@ -87,7 +87,7 @@ impl TargetBatcher {
         pam_seq: &str,
         guide_seq: &str,
         size: usize,
-        right: bool,
+        upstream: bool,
         threads: usize,
         batch_hits: usize,
         max_unique: usize,
@@ -109,7 +109,7 @@ impl TargetBatcher {
             id: TARGET_BATCHER_NEXT_ID.fetch_add(1, Ordering::SeqCst),
             alignment_rx: None,
             size,
-            right,
+            upstream,
             threads,
             batch_hits,
             max_unique,
@@ -134,7 +134,7 @@ impl TargetBatcher {
             &seq_bitmask,
             &self.pam,
             self.size,
-            self.right,
+            self.upstream,
             self.threads,
         )
         .map_err(|e| PyErr::new::<PyValueError, _>(e))?;
@@ -361,7 +361,3 @@ impl WindowBatch {
         self.windows.is_empty()
     }
 }
-
-
-
-

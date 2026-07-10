@@ -29,8 +29,8 @@ use pyo3::PyResult;
 /// * `contig` (str): The name/identifier of the sequence (e.g., "chr1").
 /// * `pam_seq` (str): The Protospacer Adjacent Motif (PAM) sequence (e.g., "NGG").
 /// * `k` (usize): The length of the target/protospacer sequence, excluding the PAM.
-/// * `right` (bool): If `true`, the PAM is expected to be immediately *right* of the target sequence.
-///                   If `false`, the PAM is expected to be immediately *left* of the target sequence.
+/// * `upstream` (bool): If `true`, the PAM is expected to be immediately *upstream* of the target sequence.
+///                   If `false`, the PAM is expected to be immediately *downstream* of the target sequence.
 /// * `threads` (usize): The number of threads to use for parallel scanning.
 ///
 /// # Returns
@@ -44,14 +44,14 @@ pub fn extract_targets_rs(
     sequence: &str,
     pam_seq: &str,
     size: usize,
-    right: bool,
+    upstream: bool,
     threads: usize,
 ) -> PyResult<(Vec<usize>, Vec<u8>)> {
     let pat = crispr::pam::ParsedPAM::new(pam_seq)
         .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid PAM sequence: {e}")))?;
 
     // Execute the core parallel scanning logic and return the results
-    sequence::scanner::scan_targets(sequence, &pat, size, right, threads)
+    sequence::scanner::scan_targets(sequence, &pat, size, upstream, threads)
         .map_err(|e| PyErr::new::<PyValueError, _>(e))
 }
 

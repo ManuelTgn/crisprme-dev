@@ -16,21 +16,21 @@ pub fn scan_targets(
     sequence: &str,
     pam: &ParsedPAM,
     size: usize,
-    right: bool,
+    upstream: bool,
     threads: usize,
 ) -> Result<(Vec<usize>, Vec<u8>), String> {
     // encode contig chunk sequence in bits
     let seq_bitmask = sequence_encoder(sequence);
 
     // extract target candidates from contig chunk
-    scan_targets_bitmask(&seq_bitmask, pam, size, right, threads)
+    scan_targets_bitmask(&seq_bitmask, pam, size, upstream, threads)
 }
 
 pub fn scan_targets_bitmask(
     seq_bitmask: &[u8],
     pam: &ParsedPAM,
     size: usize,
-    right: bool,
+    upstream: bool,
     threads: usize,
 ) -> Result<(Vec<usize>, Vec<u8>), String> {
     // get sequence length
@@ -55,8 +55,8 @@ pub fn scan_targets_bitmask(
     let use_sparse_rev = !pam.unconstrained && idx_rev.len() < plen;
 
     // compute start positions for pam
-    let pam_start_fwd = if right { 0 } else { size - plen };
-    let pam_start_rev = if right { size - plen } else { 0 };
+    let pam_start_fwd = if upstream { 0 } else { size - plen };
+    let pam_start_rev = if upstream { size - plen } else { 0 };
 
     threadpool::with_pool(threads, || {
         // define chunk sizes for threads spawning over sequences
