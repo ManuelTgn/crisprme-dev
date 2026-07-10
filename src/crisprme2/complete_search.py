@@ -37,7 +37,7 @@ from .crisprme2_argparse import Crisprme2SearchInputArgs
 from .crisprme2 import TOOLNAME
 from .guide import read_guides, GuidesList
 from .logger import CrisprmeLoggers
-from .pam import read_pam, PAM
+from .pam import read_pam, PAM, SPCAS9, XCAS9
 from .protocol import Transformer
 from .scores import CfdScorer
 from .search import search_offtargets_reference_genome
@@ -103,6 +103,9 @@ class ExampleTransformer:
 def _build_transforms(pam: PAM, loggers: CrisprmeLoggers) -> List[Transformer]:
     transforms: List[Transformer] = []
     # ---- scoring transform
+    if pam.cas_system in [SPCAS9, XCAS9]:
+        pam_key = pam.pam[-2:]
+        transforms.append(CfdScorer(pam=pam_key, loggers=loggers))
     # CFD score + slot 0
     # CFD pam is the last two bases of the PAM sequence
     # For NGG the key is "GG"; for NGA it is "GA", etc.
@@ -171,6 +174,7 @@ def execute_complete_search(args: Crisprme2SearchInputArgs) -> None:
             pam,
             guide,
             args.upstream,
+            args.outdir,
             args.threads,
             thresholds,
             transforms,

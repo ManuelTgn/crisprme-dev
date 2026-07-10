@@ -41,6 +41,7 @@ import os
 
 
 from ..logger import CrisprmeLoggers
+from ..pam import PAM
 
 from .crisprme2_api_error import (
     Crisprme2PipelineConfigError,
@@ -172,8 +173,11 @@ class Pipeline:
         chunks: int,
         thresholds: Thresholds,
         transforms: List[Any],
+        pam: PAM,
+        upstream: bool,
+        outdir: str,
         loggers: CrisprmeLoggers,
-    ) -> "Pipeline":
+    ) -> "Pipeline":        
         """
         Build and return a new :class:`Pipeline` instance.
 
@@ -191,6 +195,14 @@ class Pipeline:
             ``max_mm``, ``max_bdna``, and ``max_brna`` limits.
         transforms : list[callable]
             Non-empty list of Python callables forming the transform chain.
+        pam : PAM
+            Parsed PAM; ``.pam`` (str) is forwarded to Rust and rendered into
+            the guide column of the CSV report.
+        upstream : bool
+            ``True``  -> guide column is ``<PAM><aligned-guide>`` (Cas12a TTTV)
+            ``False`` -> guide column is ``<aligned-guide><PAM>`` (SpCas9 NGG)
+        outdir : str
+            Path of the CSV report. Truncated on open.
         loggers : CrisprmeLoggers
             Shared logger bundle.
 
@@ -207,10 +219,11 @@ class Pipeline:
         _require_native(loggers)  # ensure native rust api is installed
         _validate_transforms(transforms, loggers)  # ensure transforms are callable
         loggers.verboselog.debug(
-            f"Constructing Pipeline (chunks={chunks}). num_transforms={len(transforms)}"
+            f"Constructing Pipeline (chunks={chunks}). num_transforms={len(transforms)} "
+            f"pam={pam.pam!r}, upstream={upstream}, output={outdir!r})"
         )
         try:
-            rust_handle = _rust_pipeline_factory(chunks, thresholds.rust_handle, transforms)  # type: ignore
+            rust_handle = _rust_pipeline_factory(chunks, thresholds.rust_handle, transforms, pam.pam, upstream, outdir)  # type: ignore
         except Exception as e:
             loggers.errorlog.log_raise_exception(
                 f"Rust pipeline initialization failed: {e}",
@@ -218,7 +231,8 @@ class Pipeline:
                 Crisprme2PipelineConfigError,
             )
         loggers.basiclog.info(
-            f"Pipeline created (chunks={chunks}, transforms={len(transforms)})"
+            f"Pipeline created (chunks={chunks}, transforms={len(transforms)} "
+            f"pam={pam.pam!r}, upstream={upstream})"
         )
         return cls(rust_handle, loggers)
 

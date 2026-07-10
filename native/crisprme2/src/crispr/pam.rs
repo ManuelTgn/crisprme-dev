@@ -1,11 +1,11 @@
 //! Protospacer Adjacent Motif (PAM) parsing, matching, and variant indexing.
 //!
 //! A PAM is a short, possibly-degenerate IUPAC motif (e.g. SpCas9 `NGG`).
-//! This module provides [`ParsedPAM`], which precomputes everything the
+//! This module provides [`PAM`], which precomputes everything the
 //! scanner and batcher need to work with a PAM at high throughput:
 //!
-//! * the forward IUPAC bitmasks ([`ParsedPAM::bytes`]),
-//! * the reverse-complement bitmasks ([`ParsedPAM::revcomp`]), so the
+//! * the forward IUPAC bitmasks ([`PAM::bytes`]),
+//! * the reverse-complement bitmasks ([`PAM::revcomp`]), so the
 //!   scanner never reverse-complements inside the hot loop,
 //! * a fast-path flag for fully-unconstrained PAMs, and
 //! * a **finite variant enumeration**: because each degenerate position
@@ -29,10 +29,10 @@
 //! `rank_i` is the position of the concrete base within the ascending
 //! (A < C < G < T) list of bases allowed at `i`. This makes `AGG → 0`,
 //! `CGG → 1`, `GGG → 2`, `TGG → 3`, and the mapping is a bijection onto
-//! `0..variant_count`, so it round-trips ([`ParsedPAM::pam_index`] ∘
-//! [`ParsedPAM::pam_variant`] is the identity).
+//! `0..variant_count`, so it round-trips ([`PAM::pam_index`] ∘
+//! [`PAM::pam_variant`] is the identity).
 //!
-//! The index is represented as a `u16` downstream; [`ParsedPAM::new`]
+//! The index is represented as a `u16` downstream; [`PAM::new`]
 //! rejects PAMs whose variant count would overflow that (see
 //! [`PamError::TooManyVariants`]), which no real PAM approaches.
 
@@ -54,7 +54,7 @@ const N_MASK: u8 = 0b1111;
 ///
 /// The bitmask representation enables extremely fast matching using
 /// bitwise operations and supports both exact and degenerate PAMs.
-pub struct ParsedPAM {
+pub struct PAM {
     /// PAM sequence encoded as IUPAC bitmasks (forward orientation).
     ///
     /// Each element is a 4-bit mask representing the set of allowed bases
@@ -77,9 +77,14 @@ pub struct ParsedPAM {
     /// the product of `popcount(mask)` over all positions. Guaranteed to
     /// fit in a `u16` index (`<= u16::MAX + 1`).
     variant_count: u32,
+
+    /// The upper-cased IUPAC motif exactly as supplied (e.g. `"NGG"`, `"TTTV"`).
+    /// Single source of truth for anything that renders the PAM as text.
+    motif: Box<str>,
+
 }
 
-impl ParsedPAM {
+impl PAM {
     /// Parse a PAM string into its bitmask representation and precompute
     /// its reverse complement and variant enumeration.
     ///
@@ -93,9 +98,13 @@ impl ParsedPAM {
     ///   variant count would not fit a `u16` index (unreachable for real
     ///   PAMs).
     pub fn new(pam: &str) -> Result<Self, PamError> {
+        // Normalise once, then parse the normalised form: `Iupac::try_from_ascii`
+        // is case-sensitive, so this also makes lowercase input legal.
+        let motif = pam.to_ascii_uppercase();
+
         // Convert each ASCII nucleotide to its IUPAC bitmask.
-        let mut bytes = Vec::with_capacity(pam.len());
-        for (i, &b) in pam.as_bytes().iter().enumerate() {
+        let mut bytes = Vec::with_capacity(motif.len());
+        for (i, &b) in motif.as_bytes().iter().enumerate() {
             match Iupac::try_from_ascii(b) {
                 Some(code) => bytes.push(code.as_u8()),
                 None => {
@@ -141,8 +150,13 @@ impl ParsedPAM {
         );
         tracing::info!("PAM {pam:?} ready ({variant_count} concrete variant(s))");
 
-        Ok(Self { bytes, revcomp, unconstrained, plen, variant_count })
+        Ok(Self { bytes, revcomp, unconstrained, plen, variant_count,
+                    motif: motif.into_boxed_str() })
     }
+
+    /// The degenerate IUPAC motif as ASCII, e.g. `"NGG"` or `"TTTV"`.
+    #[inline]
+    pub fn motif(&self) -> &str { &self.motif }
 
     /// PAM length in bases.
     #[inline(always)]
@@ -313,7 +327,7 @@ mod tests {
 
     #[test]
     fn ngg_variant_enumeration() {
-        let pam = ParsedPAM::new("NGG").unwrap();
+        let pam = PAM::new("NGG").unwrap();
         assert_eq!(pam.variant_count(), 4);
         assert_eq!(pam.pam_index(&[A, G, G]), 0);
         assert_eq!(pam.pam_index(&[C, G, G]), 1);
@@ -324,7 +338,7 @@ mod tests {
     #[test]
     fn two_degenerate_positions_roundtrip() {
         // R = {A,G}, Y = {C,T}, G -> 2 * 2 * 1 = 4 variants.
-        let pam = ParsedPAM::new("RYG").unwrap();
+        let pam = PAM::new("RYG").unwrap();
         assert_eq!(pam.variant_count(), 4);
         // Round-trip every index: decode -> encode must be the identity.
         for idx in 0..pam.variant_count() as u16 {
@@ -338,7 +352,7 @@ mod tests {
 
     #[test]
     fn decode_rejects_out_of_range() {
-        let pam = ParsedPAM::new("NGG").unwrap();
+        let pam = PAM::new("NGG").unwrap();
         assert!(matches!(
             pam.pam_variant(4),
             Err(PamError::IndexOutOfRange { index: 4, count: 4 })
@@ -348,7 +362,7 @@ mod tests {
     #[test]
     fn invalid_character_is_reported_with_position() {
         assert!(matches!(
-            ParsedPAM::new("NXG"),
+            PAM::new("NXG"),
             Err(PamError::InvalidCharacter { position: 1, byte: b'X' })
         ));
     }

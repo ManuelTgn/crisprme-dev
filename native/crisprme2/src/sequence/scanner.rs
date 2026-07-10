@@ -1,7 +1,7 @@
 use rayon::prelude::*;
 use std::result::Result; 
 
-use crate::crispr::pam::{ParsedPAM, build_sparse};
+use crate::crispr::pam::{PAM, build_sparse};
 use crate::sequence::iupac::{matches_iupac, sequence_encoder};
 use crate::utils::threadpool;
 
@@ -14,7 +14,7 @@ const N_MASK: u8 = 0b1111;
 
 pub fn scan_targets(
     sequence: &str,
-    pam: &ParsedPAM,
+    pam: &PAM,
     size: usize,
     upstream: bool,
     threads: usize,
@@ -28,7 +28,7 @@ pub fn scan_targets(
 
 pub fn scan_targets_bitmask(
     seq_bitmask: &[u8],
-    pam: &ParsedPAM,
+    pam: &PAM,
     size: usize,
     upstream: bool,
     threads: usize,

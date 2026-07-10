@@ -189,6 +189,7 @@ def _scan_reference_genome(
     pam: PAM,
     size: int,
     upstream: bool,
+    outdir: str,
     threads: int,
     thresholds: Thresholds,
     transforms: List[Transformer],
@@ -229,6 +230,8 @@ def _scan_reference_genome(
         Window extraction width (guide + PAM + bulge offset).
     upstream : bool
         ``True`` if the PAM is 3' of the protospacer (e.g. SpCas9 NGG).
+    outdir : str
+        Path of the CSV report. Truncated on open.
     threads : int
         Number of parallel scanner threads inside the batcher.
     thresholds : Thresholds
@@ -255,7 +258,7 @@ def _scan_reference_genome(
         f"TargetBatcher ready (id={batcher.id}, size={size}, overlap={overlap})"
     )
     # pipeline: one context for the entire genome run
-    with Pipeline.create(_PIPELINE_CHUNKS, thresholds, transforms, loggers) as pipeline:
+    with Pipeline.create(_PIPELINE_CHUNKS, thresholds, transforms, pam, upstream, outdir, loggers) as pipeline:
         for contig, fasta in fastas.items():
             contig_id = contig_ids[contig]
             loggers.verboselog.debug(
@@ -305,6 +308,7 @@ def search_offtargets_reference_genome(
     pam: PAM,
     guide: Guide,
     upstream: bool,
+    outdir: str,
     threads: int,
     thresholds: Thresholds,
     transforms: List[Transformer],
@@ -327,6 +331,8 @@ def search_offtargets_reference_genome(
         Guide RNA object.
     upstream : bool
         ``True`` if the PAM is 3' of the protospacer (e.g. SpCas9 NGG).
+    outdir : str
+        Path of the CSV report. Truncated on open.
     threads : int
         Number of parallel scanner threads.
     thresholds : Thresholds
@@ -360,6 +366,7 @@ def search_offtargets_reference_genome(
         pam,
         size,
         upstream,
+        outdir,
         threads,
         thresholds,
         transforms,

@@ -70,7 +70,7 @@ pub struct TargetBatcher {
     alignment_rx: Option<Receiver<AlignmentRingBatch>>,
 
     // parsed PAM
-    pam: pam::ParsedPAM,
+    pam: pam::PAM,
 
     // guide
     guide: guide::Guide,
@@ -93,7 +93,7 @@ impl TargetBatcher {
         max_unique: usize,
         overlap_left: usize,
     ) -> PyResult<Self> {
-        let pam = pam::ParsedPAM::new(pam_seq)
+        let pam = pam::PAM::new(pam_seq)
             .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid PAM sequence: {e}")))?;
 
         let guide = guide::Guide::from(guide_seq);

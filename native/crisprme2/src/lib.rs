@@ -47,7 +47,7 @@ pub fn extract_targets_rs(
     upstream: bool,
     threads: usize,
 ) -> PyResult<(Vec<usize>, Vec<u8>)> {
-    let pat = crispr::pam::ParsedPAM::new(pam_seq)
+    let pat = crispr::pam::PAM::new(pam_seq)
         .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid PAM sequence: {e}")))?;
 
     // Execute the core parallel scanning logic and return the results
@@ -71,15 +71,15 @@ pub mod _crisprme2_native {
     };
     use itertools::izip;
     use pyo3::{
-        Bound, Py, PyResult, Python, pyclass, pyfunction, pymethods, pymodule, types::{PyAnyMethods, PyList, PyAny}
+        Bound, Py, PyResult, Python, pyclass, pyfunction, pymethods, pymodule, types::{PyAnyMethods, PyList, PyAny}, exceptions::{PyOSError, PyValueError}
     };
 
     use crate::{
         bindings::cuda, model::{
             alignment::AlignmentFrame,
             input::{SEQ_MAX_LEN, SeqBatch, SeqFrame, SeqOccFrame}, occurence::Occurence,
-        }, pipeline::{
-            sink::{NullSink, writer::{CsvWriter, CsvWriterSink}}, source::reader::Reader, stage::{broadcast::Broadcast, miner::{GpuMiner, Miner}, resolve::Resolver, transform::PyTransform}
+        }, crispr::pam::PAM, pipeline::{
+            sink::{NullSink, writer::{CsvWriter, CsvWriterSink, PamContext, PamPlacement}}, source::reader::Reader, stage::{broadcast::Broadcast, miner::{GpuMiner, Miner}, resolve::Resolver, transform::PyTransform}
         }, sequence::{iupac::Iupac, sequence::Sequence}
     };
 
@@ -308,8 +308,23 @@ pub mod _crisprme2_native {
     fn pipeline<'py>(
         chunks: usize, 
         threshold: Thresholds,
-        transforms: Bound<'py, PyList>
+        transforms: Bound<'py, PyList>,
+        pam: &str,
+        upstream: bool,
+        outpath: PathBuf,
     ) -> PyResult<PyPipeline> {
+
+        // Validate the PAM before allocating a multi-GB pool.
+        let parsed_pam = PAM::new(pam)
+            .map_err(|e| PyValueError::new_err(format!("invalid PAM {pam:?}: {e}")))?;
+
+        let placement = PamPlacement::from_upstream(upstream);
+        let pam_ctx = PamContext::new(&parsed_pam, placement);
+
+        tracing::info!(
+            "guide column layout: {}",
+            if upstream { "<PAM><guide>" } else { "<guide><PAM>" }
+        );
         
         // Create memory pool and pin all chunks for DMA from GPU
         let pool = MemoryPool::new(CHUNK_SIZE * chunks, |ptr, bytes| {
@@ -336,7 +351,10 @@ pub mod _crisprme2_native {
 
         // Add sink stage
         //let pipeline = pipeline.sink(2, |_, _| NullSink::<AlignmentFrame>::new());
-        let csv_writer = CsvWriter::open("results.csv".into());
+        let csv_writer = CsvWriter::open(&outpath, pam_ctx)
+            .map_err(|e| PyOSError::new_err(
+                format!("cannot open CSV report {}: {e}", outpath.display())))?;
+
         let pipeline = pipeline.sink(2, {
             let csv_writer_clone = csv_writer.clone();
             move |_, _| { 
@@ -356,63 +374,63 @@ pub mod _crisprme2_native {
 
 
     /// Create a dataset pipeline that reads batches of sequences from disk, applies transforms, and writes results to disk.
-    #[pyfunction]
-    fn dataset_pipeline<'py>(
-        chunks: usize, 
-        transforms: Bound<'py, PyList>, 
-        folder: PathBuf,
-        batch_size: usize,
-        guide: Guide,
-        thresholds: Thresholds,
-        sequence_len: usize,
-    ) -> PyResult<PySourcedPipeline> {
+    // #[pyfunction]
+    // fn dataset_pipeline<'py>(
+    //     chunks: usize, 
+    //     transforms: Bound<'py, PyList>, 
+    //     folder: PathBuf,
+    //     batch_size: usize,
+    //     guide: Guide,
+    //     thresholds: Thresholds,
+    //     sequence_len: usize,
+    // ) -> PyResult<PySourcedPipeline> {
 
-        // Create memory pool and pin all chunks for DMA from GPU
-        let pool = MemoryPool::new(CHUNK_SIZE * chunks, |ptr, bytes| {
-            tracing::trace!("pinning chunk (ptr = {:?}, bytes = {})", ptr, bytes);
-            cuda::pin(ptr, bytes);
-        });
+    //     // Create memory pool and pin all chunks for DMA from GPU
+    //     let pool = MemoryPool::new(CHUNK_SIZE * chunks, |ptr, bytes| {
+    //         tracing::trace!("pinning chunk (ptr = {:?}, bytes = {})", ptr, bytes);
+    //         cuda::pin(ptr, bytes);
+    //     });
 
-        let seq_path = folder.join("sequences.bin");
-        let pos_path = folder.join("positions.bin");
+    //     let seq_path = folder.join("sequences.bin");
+    //     let pos_path = folder.join("positions.bin");
 
-        tracing::info!("building pipeline...");
-        let pipeline = Pipeline::source(1, move |pool, _| {
-                Reader::open(seq_path.clone(), pos_path.clone(), sequence_len, batch_size, guide.clone(), thresholds, pool.clone())
-                    .expect("unable to create reader")
-        });
+    //     tracing::info!("building pipeline...");
+    //     let pipeline = Pipeline::source(1, move |pool, _| {
+    //             Reader::open(seq_path.clone(), pos_path.clone(), sequence_len, batch_size, guide.clone(), thresholds, pool.clone())
+    //                 .expect("unable to create reader")
+    //     });
 
-        let mut pipeline = pipeline
-            .stage(1, |pool, _| GpuMiner::new(pool, 100_000, 32, 100_000, 0))
-            .stage(2, |pool, _| Resolver::new(pool))
-            .stage(2, |pool, _| Broadcast::new(pool));
+    //     let mut pipeline = pipeline
+    //         .stage(1, |pool, _| GpuMiner::new(pool, 100_000, 32, 100_000, 0))
+    //         .stage(2, |pool, _| Resolver::new(pool))
+    //         .stage(2, |pool, _| Broadcast::new(pool));
 
-        // Add all transform stages
-        tracing::info!("adding transform stages: ");
-        for elem in transforms {
-            tracing::info!("\t{:?}", elem.get_type().getattr("__name__").unwrap());
+    //     // Add all transform stages
+    //     tracing::info!("adding transform stages: ");
+    //     for elem in transforms {
+    //         tracing::info!("\t{:?}", elem.get_type().getattr("__name__").unwrap());
 
-            let transform = elem.unbind();
-            pipeline = pipeline.stage_once(|_| PyTransform::new(transform))
-        }
+    //         let transform = elem.unbind();
+    //         pipeline = pipeline.stage_once(|_| PyTransform::new(transform))
+    //     }
 
-        // Add sink stage
-        let csv_writer = CsvWriter::open("results.csv".into());
-        let pipeline = pipeline.sink(2, {
-            let csv_writer_clone = csv_writer.clone();
-            move |_, _| { 
-                CsvWriterSink::new(&csv_writer_clone)
-            }
-        });
+    //     // Add sink stage
+    //     let csv_writer = CsvWriter::open("results.csv".into());
+    //     let pipeline = pipeline.sink(2, {
+    //         let csv_writer_clone = csv_writer.clone();
+    //         move |_, _| { 
+    //             CsvWriterSink::new(&csv_writer_clone)
+    //         }
+    //     });
 
-        tracing::info!("pipeline ready!");
-        let handle = pipeline.execute(&pool, 3);
-        Ok(PySourcedPipeline {
-            started_at: Instant::now(),
-            handle,
-            pool,
-        })
-    }
+    //     tracing::info!("pipeline ready!");
+    //     let handle = pipeline.execute(&pool, 3);
+    //     Ok(PySourcedPipeline {
+    //         started_at: Instant::now(),
+    //         handle,
+    //         pool,
+    //     })
+    // }
 
     /// Install the Rust -> Python logging bridge.
     ///
