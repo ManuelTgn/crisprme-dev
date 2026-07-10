@@ -1,6 +1,7 @@
 use crate::{model::{
     alignment::{SeqMinedBatch, SeqResolvedBatch, SeqResolvedFrame},
     cigarx::{Cigarx, CigarxOp},
+    occurence::Strand,
 }, sequence::sequence::Sequence};
 use columnar::{
     pipeline::{Emit, Stage, PipelineError},
@@ -70,9 +71,15 @@ impl Stage for Resolver {
 
                         for op in cigarx.iter() {
                             match op {
-                                CigarxOp::Match | CigarxOp::Mismatch => {
+                                CigarxOp::Match => {
                                     rguide[opos] = guide[gpos].to_ascii();
                                     rseq[opos] = sequence[spos].to_ascii();
+                                    gpos += 1;
+                                    spos += 1;
+                                }
+                                CigarxOp::Mismatch => {
+                                    rguide[opos] = guide[gpos].to_ascii();
+                                    rseq[opos] = sequence[spos].to_ascii_lowercase();
                                     gpos += 1;
                                     spos += 1;
                                 }
@@ -292,9 +299,9 @@ mod tests {
         let mut occs = SeqOccFrame::alloc(&pool, 2);
         occs.with_cols(|mut cols| {
             *cols.seq_row_idx.get_mut(0) = 0;
-            *cols.occurence.get_mut(0) = Occurence::new(1, 100, 0);
+            *cols.occurence.get_mut(0) = Occurence::new(1, 100, Strand::from_bit(0));
             *cols.seq_row_idx.get_mut(1) = 0;
-            *cols.occurence.get_mut(1) = Occurence::new(2, 200, 1);
+            *cols.occurence.get_mut(1) = Occurence::new(2, 200, Strand::from_bit(1));
         });
 
         let ops = cigar(&[CigarxOp::Match]);

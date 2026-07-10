@@ -175,7 +175,7 @@ class Pipeline:
         transforms: List[Any],
         pam: PAM,
         upstream: bool,
-        outdir: str,
+        outpath: str,
         loggers: CrisprmeLoggers,
     ) -> "Pipeline":        
         """
@@ -201,7 +201,7 @@ class Pipeline:
         upstream : bool
             ``True``  -> guide column is ``<PAM><aligned-guide>`` (Cas12a TTTV)
             ``False`` -> guide column is ``<aligned-guide><PAM>`` (SpCas9 NGG)
-        outdir : str
+        outpath : str
             Path of the CSV report. Truncated on open.
         loggers : CrisprmeLoggers
             Shared logger bundle.
@@ -220,10 +220,10 @@ class Pipeline:
         _validate_transforms(transforms, loggers)  # ensure transforms are callable
         loggers.verboselog.debug(
             f"Constructing Pipeline (chunks={chunks}). num_transforms={len(transforms)} "
-            f"pam={pam.pam!r}, upstream={upstream}, output={outdir!r})"
+            f"pam={pam.pam!r}, upstream={upstream}, output={outpath!r})"
         )
         try:
-            rust_handle = _rust_pipeline_factory(chunks, thresholds.rust_handle, transforms, pam.pam, upstream, outdir)  # type: ignore
+            rust_handle = _rust_pipeline_factory(chunks, thresholds.rust_handle, transforms, pam.pam, upstream, outpath)  # type: ignore
         except Exception as e:
             loggers.errorlog.log_raise_exception(
                 f"Rust pipeline initialization failed: {e}",

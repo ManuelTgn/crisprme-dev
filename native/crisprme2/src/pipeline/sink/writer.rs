@@ -143,12 +143,15 @@ impl Sink for CsvWriterSink {
                 cols.rguide.iter(),
                 cols.rseq.iter(),
             ) {
-                let contig   = (occ.0 >> 33) as u32;
-                let position = ((occ.0 >> 1) & 0xFFFF_FFFF) as u32;
-                let strand   = (occ.0 & 1) as u8;
-
-                // Genomic location columns
-                write!(self.buffer, "{},{},{},{}", contig, position, strand, offset).unwrap();
+                // Layout is owned by `Occurence`; never unpack the u64 here.
+                write!(
+                    self.buffer,
+                    "{},{},{},{}",
+                    occ.contig(),
+                    occ.position(),
+                    occ.strand(),
+                    offset,
+                ).expect("fmt::Write for String is infallible");
 
                 // Aligned guide (PAM decorated) columns
                 self.buffer.push(',');

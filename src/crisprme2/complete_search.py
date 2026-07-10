@@ -104,13 +104,11 @@ def _build_transforms(pam: PAM, loggers: CrisprmeLoggers) -> List[Transformer]:
     transforms: List[Transformer] = []
     # ---- scoring transform
     if pam.cas_system in [SPCAS9, XCAS9]:
+        # CFD score + slot 0
+        # CFD pam is the last two bases of the PAM sequence
+        # For NGG the key is "GG"; for NGA it is "GA", etc.
         pam_key = pam.pam[-2:]
         transforms.append(CfdScorer(pam=pam_key, loggers=loggers))
-    # CFD score + slot 0
-    # CFD pam is the last two bases of the PAM sequence
-    # For NGG the key is "GG"; for NGA it is "GA", etc.
-    pam_key = pam.pam[-2:]
-    transforms.append(CfdScorer(pam=pam_key, loggers=loggers))
 
     # ---> future scorers <---
 

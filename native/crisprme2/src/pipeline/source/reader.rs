@@ -12,6 +12,8 @@ use crate::{
     }, sequence::sequence::Sequence,
 };
 
+use crate::model::occurence::Strand;
+
 /// Allocates and fills a `SeqFrame` with exactly `n` sequences read from the binary stream.
 /// Returns `None` on clean EOF.
 pub trait ReadSeqFrame {
@@ -137,7 +139,7 @@ impl ReadOccFrame for BinaryPositionReader {
                     let (idx, occ) = occ_iter.next()
                         .expect("occ frame size mismatch");
 
-                    *occ = Occurence::new(0, pos, 0);
+                    *occ = Occurence::new(0, pos, Strand::from_bit(0));
                     *idx = seq_idx as u32;
                 }
                 pos_offset += count;

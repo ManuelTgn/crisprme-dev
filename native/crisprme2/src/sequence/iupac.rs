@@ -157,6 +157,32 @@ impl Iupac {
     }
 
     #[inline(always)]
+    pub fn to_ascii_lowercase(self) -> u8 {
+       match self.0 {
+
+            0b0001 => b'a',
+            0b0010 => b'c',
+            0b0100 => b'g',
+            0b1000 => b't',
+
+            0b0101 => b'r',
+            0b1010 => b'y',
+            0b0110 => b's',
+            0b1001 => b'w',
+            0b1100 => b'k',
+            0b0011 => b'm',
+            
+            0b1110 => b'b',
+            0b1101 => b'd',
+            0b1011 => b'h',
+            0b0111 => b'v',
+            
+            0b1111 => b'n',
+            _ => b'?',  // invalid / unknown code
+        }
+    }
+
+    #[inline(always)]
     fn from_utf8_lossy(value: char) -> Self {
         Self::from_ascii_lossy(value as u8)
     }
