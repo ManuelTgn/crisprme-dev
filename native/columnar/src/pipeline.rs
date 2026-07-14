@@ -1,4 +1,3 @@
-
 //! Multi-threaded data processing pipeline.
 //!
 //! A [`Pipeline`] is a chain of [`Stage`]s connected by bounded crossbeam channels.
@@ -7,11 +6,11 @@
 //!
 //! Dropping a [`PipelineHandle`] closes the input and joins all worker threads.
 
-use std::thread::JoinHandle;
+use crate::MemoryPool;
 use crossbeam::channel::{Receiver, Sender, TrySendError, bounded};
 use metrics::{counter, histogram};
+use std::thread::JoinHandle;
 use thiserror::Error;
-use crate::MemoryPool;
 
 /// Error returned when a stage fails or a channel is disconnected.
 #[derive(Error, Debug)]
@@ -19,7 +18,7 @@ pub enum PipelineError {
     #[error("Channel error")]
     ChannelError,
     #[error("Channel disconnected")]
-    Disconnect
+    Disconnect,
 }
 
 /// Sink for items produced by a [`Stage`]. Wraps crossbeam send errors.
@@ -28,16 +27,14 @@ pub trait Emit<T> {
 }
 
 impl<T> Emit<T> for Sender<T> {
-
     fn emit(&self, item: T) -> Result<(), PipelineError> {
         if let Err(e) = self.try_send(item) {
             match e {
                 TrySendError::Disconnected(_) => return Err(PipelineError::Disconnect),
                 TrySendError::Full(item) => {
                     counter!("pipeline.backpressure").increment(1);
-                    self.send(item)
-                        .map_err(|_| PipelineError::ChannelError)?;
-                },
+                    self.send(item).map_err(|_| PipelineError::ChannelError)?;
+                }
             }
         }
         Ok(())
@@ -53,7 +50,6 @@ impl<T> Emit<T> for Sender<T> {
 /// Implement [`process`](Stage::process) to define the transformation.
 /// [`run`](Stage::run) is the thread entry-point and drives the recv/process loop.
 pub trait Stage: Send + 'static {
-
     type I: Send + 'static;
     type O: Send + 'static;
 
@@ -61,13 +57,21 @@ pub trait Stage: Send + 'static {
     fn name() -> &'static str;
 
     /// Called by the running thread before start
-    fn initialize(&mut self) { }
+    fn initialize(&mut self) {}
 
     /// Transform one input item, emitting zero or more outputs via `emitter`.
-    fn process(&mut self, input: Self::I, emitter: &impl Emit<Self::O>) -> Result<(), PipelineError>;
+    fn process(
+        &mut self,
+        input: Self::I,
+        emitter: &impl Emit<Self::O>,
+    ) -> Result<(), PipelineError>;
 
     /// Thread entry-point: receives items and calls [`process`](Stage::process) until the channel closes.
-    fn run(&mut self, src: Receiver<Self::I>, dst: impl Emit<Self::O>) -> Result<(), PipelineError> {
+    fn run(
+        &mut self,
+        src: Receiver<Self::I>,
+        dst: impl Emit<Self::O>,
+    ) -> Result<(), PipelineError> {
         while let Ok(item) = src.recv() {
             counter!("pipeline.items", "stage" => Self::name()).increment(1);
 
@@ -80,15 +84,15 @@ pub trait Stage: Send + 'static {
     }
 
     /// Called once after the input channel closes. Override to flush or release resources.
-    fn shutdown(&mut self) -> Result<(), PipelineError> { Ok(()) }
-
+    fn shutdown(&mut self) -> Result<(), PipelineError> {
+        Ok(())
+    }
 }
 
 /// A stage that generates items autonomously — no external input required.
 ///
 /// Used as the entry point of a [`pipeline_with_source`] pipeline.
 pub trait Source: Send + 'static {
-
     type O: Send + 'static;
 
     // Get name of the stage
@@ -111,15 +115,15 @@ pub trait Source: Send + 'static {
     }
 
     /// Called once after the last item has been emitted.
-    fn shutdown(&mut self) -> Result<(), PipelineError> { Ok(()) }
-
+    fn shutdown(&mut self) -> Result<(), PipelineError> {
+        Ok(())
+    }
 }
 
 /// A terminal stage that consumes items without producing output.
 ///
 /// Used as the endpoint of a [`Pipeline::sink`] pipeline.
 pub trait Sink: Send + 'static {
-
     type I: Send + 'static;
 
     // Get name of the stage
@@ -134,7 +138,6 @@ pub trait Sink: Send + 'static {
             self.consume(item)?;
             histogram!("pipeline.elapsed_ns", "stage" => Self::name())
                 .record(t.elapsed().as_nanos() as f64);
-            
         }
         self.shutdown()
     }
@@ -143,7 +146,9 @@ pub trait Sink: Send + 'static {
     fn consume(&mut self, item: Self::I) -> Result<(), PipelineError>;
 
     /// Called once after the input channel closes.
-    fn shutdown(&mut self) -> Result<(), PipelineError> { Ok(()) }
+    fn shutdown(&mut self) -> Result<(), PipelineError> {
+        Ok(())
+    }
 }
 
 // =============================================================================
@@ -161,10 +166,8 @@ pub struct Pipeline<T: Send + 'static> {
 }
 
 impl Pipeline<()> {
-
     /// Create a driven pipeline entry-point
     pub fn driven<T: Send + 'static>(input_cap: usize) -> (Driven<T>, Pipeline<T>) {
-        
         let (tx, rx) = bounded::<T>(input_cap);
         let driven = Driven(Some(tx));
 
@@ -186,7 +189,6 @@ impl Pipeline<()> {
     {
         Pipeline {
             f: Box::new(move |pool, cap| {
-                
                 // Create channel connection
                 let (tx, rx) = bounded::<S::O>(cap);
 
@@ -194,7 +196,7 @@ impl Pipeline<()> {
                 let mut handles = Vec::new();
                 for i in 0..workers {
                     let mut source = f(pool, i);
-                    
+
                     let dst = tx.clone();
                     handles.push(std::thread::spawn(move || {
                         source.run(dst).unwrap();
@@ -208,7 +210,6 @@ impl Pipeline<()> {
 }
 
 impl<T: Send + 'static> Pipeline<T> {
-
     /// Create a transform stage in the pipeline
     pub fn stage<F, S>(self, workers: usize, f: F) -> Pipeline<S::O>
     where
@@ -218,7 +219,6 @@ impl<T: Send + 'static> Pipeline<T> {
         let prev = self.f;
         Pipeline {
             f: Box::new(move |pool, cap| {
-                
                 // Call previous pipeline stages
                 let (mut handles, src_rx) = prev(pool, cap);
 
@@ -252,7 +252,6 @@ impl<T: Send + 'static> Pipeline<T> {
         let prev = self.f;
         Pipeline {
             f: Box::new(move |pool, cap| {
-
                 // Call previous pipeline stages
                 let (mut handles, src_rx) = prev(pool, cap);
 
@@ -279,7 +278,6 @@ impl<T: Send + 'static> Pipeline<T> {
         let prev = self.f;
         PipelineExecutable {
             launcher: Box::new(move |pool, cap| {
-                
                 // Call previous pipeline stages
                 let (mut handles, src_rx) = prev(pool, cap);
 
@@ -307,15 +305,13 @@ pub struct PipelineExecutable {
 impl PipelineExecutable {
     pub fn execute(self, pool: &MemoryPool, cap: usize) -> PipelineHandle {
         let handles = (self.launcher)(pool, cap);
-        PipelineHandle {
-            handles
-        }
+        PipelineHandle { handles }
     }
 }
 
 /// Handle to the pipeline
 pub struct PipelineHandle {
-    handles: Vec<JoinHandle<()>>
+    handles: Vec<JoinHandle<()>>,
 }
 
 impl PipelineHandle {
@@ -340,9 +336,9 @@ impl Drop for PipelineHandle {
 /// Sender for a driven source
 pub struct Driven<T>(Option<Sender<T>>);
 impl<T: Send> Driven<T> {
-
     pub fn send(&self, item: T) -> Result<(), PipelineError> {
-        self.0.as_ref()
+        self.0
+            .as_ref()
             .expect("pipeline was closed")
             .send(item)
             .map_err(|_e| PipelineError::ChannelError)
@@ -360,18 +356,23 @@ impl<T: Send> Driven<T> {
 
 #[cfg(test)]
 mod test {
-    use crate::memory::CHUNK_SIZE;
     use super::*;
+    use crate::memory::CHUNK_SIZE;
 
     struct SourceStage(u32);
     impl Source for SourceStage {
         type O = u32;
 
-        fn name() -> &'static str { "SourceStage" }
+        fn name() -> &'static str {
+            "SourceStage"
+        }
 
         fn next(&mut self) -> Result<Option<Self::O>, PipelineError> {
-            if self.0 == 0 { return Ok(None); }
-            else { self.0 -= 1; }
+            if self.0 == 0 {
+                return Ok(None);
+            } else {
+                self.0 -= 1;
+            }
             Ok(Some(self.0))
         }
     }
@@ -380,7 +381,9 @@ mod test {
     impl Sink for SinkStage {
         type I = u32;
 
-        fn name() -> &'static str { "SinkStage" }
+        fn name() -> &'static str {
+            "SinkStage"
+        }
 
         fn consume(&mut self, _item: Self::I) -> Result<(), PipelineError> {
             Ok(())
@@ -392,29 +395,34 @@ mod test {
         type I = u32;
         type O = u32;
 
-        fn name() -> &'static str { "DoubleStage" }
+        fn name() -> &'static str {
+            "DoubleStage"
+        }
 
-        fn process(&mut self, input: Self::I, emitter: &impl Emit<Self::O>) -> Result<(), PipelineError> {
+        fn process(
+            &mut self,
+            input: Self::I,
+            emitter: &impl Emit<Self::O>,
+        ) -> Result<(), PipelineError> {
             emitter.emit(input * 2)
         }
     }
 
     #[test]
     fn it_works() {
-        let pool = MemoryPool::new(CHUNK_SIZE, |_, _| { });
+        let pool = MemoryPool::new(CHUNK_SIZE, |_, _| {});
 
         let pipeline = Pipeline::source(2, |_pool, _worker| SourceStage(10))
             .stage(2, |_pool, _worker| DoubleStage)
             .stage(3, |_pool, _worker| DoubleStage)
             .sink(1, |_pool, _worker| SinkStage);
 
-        let _handle = pipeline
-            .execute(&pool, 2);
+        let _handle = pipeline.execute(&pool, 2);
     }
 
     #[test]
     fn it_works_driven() {
-        let pool = MemoryPool::new(CHUNK_SIZE, |_, _| { });
+        let pool = MemoryPool::new(CHUNK_SIZE, |_, _| {});
 
         let (input, pipeline) = Pipeline::driven::<u32>(2);
         let pipeline = pipeline
@@ -422,12 +430,10 @@ mod test {
             .stage(3, |_pool, _worker| DoubleStage)
             .sink(1, |_pool, _worker| SinkStage);
 
-        let _handle = pipeline
-            .execute(&pool, 2);
+        let _handle = pipeline.execute(&pool, 2);
 
         for i in 0..10 {
-            input.send(i)
-                .unwrap();
+            input.send(i).unwrap();
         }
 
         drop(input); // close the channel so workers can finish

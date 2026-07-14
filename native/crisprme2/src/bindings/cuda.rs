@@ -18,7 +18,7 @@ use tracing::info;
 mod ffi {
     unsafe extern "C++" {
         include!("api.cuh");
-        
+
         unsafe fn malloc(bytes: u64) -> *mut u8;
         unsafe fn free(memory: *mut u8);
         unsafe fn memcpy_to_gpu(gpu: *mut u8, cpu: *const u8, bytes: u64);
@@ -47,8 +47,7 @@ pub fn memcpy_to_gpu<T>(cpu: *const T, gpu: *mut T, len: usize) {
     unsafe {
         ffi::memcpy_to_gpu(gpu as *mut u8, cpu as *const u8, bytes as u64);
     }
-    tracing::trace!("memcpy CPU -> GPU [{}ms]", 
-        now.elapsed().as_millis());
+    tracing::trace!("memcpy CPU -> GPU [{}ms]", now.elapsed().as_millis());
 }
 
 #[tracing::instrument(name = "cuda", skip_all)]
@@ -58,8 +57,7 @@ pub fn memcpy_to_cpu<T>(cpu: *mut T, gpu: *const T, len: usize) {
     unsafe {
         ffi::memcpy_to_cpu(gpu as *const u8, cpu as *mut u8, bytes as u64);
     }
-    tracing::trace!("memcpy CPU <- GPU [{}ms]", 
-        now.elapsed().as_millis());
+    tracing::trace!("memcpy CPU <- GPU [{}ms]", now.elapsed().as_millis());
 }
 
 #[tracing::instrument(name = "cuda")]

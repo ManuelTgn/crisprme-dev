@@ -1,6 +1,6 @@
 use crossbeam::channel::SendError;
-use std::ops::{Deref, DerefMut};
 use crossbeam_channel::TryRecvError;
+use std::ops::{Deref, DerefMut};
 use tracing::{error, trace, warn};
 
 // use crate::bindings;

@@ -57,10 +57,25 @@ impl PyLoggerLayer {
     /// Propagates any attribute/method error from the Python side (e.g. a
     /// bundle that is not a `CrisprmeLoggers`).
     pub fn from_bundle(bundle: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let basic = bundle.getattr("basiclog")?.call_method0("get_logger")?.unbind();
-        let verbose = bundle.getattr("verboselog")?.call_method0("get_logger")?.unbind();
-        let error = bundle.getattr("errorlog")?.call_method0("get_logger")?.unbind();
-        Ok(Self { loggers: PyLoggers { basic, verbose, error } })
+        let basic = bundle
+            .getattr("basiclog")?
+            .call_method0("get_logger")?
+            .unbind();
+        let verbose = bundle
+            .getattr("verboselog")?
+            .call_method0("get_logger")?
+            .unbind();
+        let error = bundle
+            .getattr("errorlog")?
+            .call_method0("get_logger")?
+            .unbind();
+        Ok(Self {
+            loggers: PyLoggers {
+                basic,
+                verbose,
+                error,
+            },
+        })
     }
 }
 

@@ -1,4 +1,3 @@
-
 use pyo3::{pyclass, pymethods};
 
 use crate::alignment::thresholds::Thresholds;

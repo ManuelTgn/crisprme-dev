@@ -69,6 +69,7 @@ _PIPELINE_CHUNKS: int = 10_000
 # Internal search helpers
 # ==============================================================================
 
+
 def _compute_report_name(guide: Guide, pam: PAM, outdir: str) -> str:
     return os.path.join(outdir, f"{guide.sequence}_{pam.pam}.csv")
 
@@ -263,7 +264,16 @@ def _scan_reference_genome(
     # compute report's output name
     outpath = _compute_report_name(guide, pam, outdir)
     # pipeline: one context for the entire genome run
-    with Pipeline.create(_PIPELINE_CHUNKS, thresholds, transforms, pam, upstream, outpath, contig_ids, loggers) as pipeline:
+    with Pipeline.create(
+        _PIPELINE_CHUNKS,
+        thresholds,
+        transforms,
+        pam,
+        upstream,
+        outpath,
+        contig_ids,
+        loggers,
+    ) as pipeline:
         for contig, fasta in fastas.items():
             contig_id = contig_ids[contig]
             loggers.verboselog.debug(

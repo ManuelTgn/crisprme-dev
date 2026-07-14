@@ -71,16 +71,34 @@ pub mod _crisprme2_native {
     };
     use itertools::izip;
     use pyo3::{
-        Bound, Py, PyResult, Python, pyclass, pyfunction, pymethods, pymodule, types::{PyAnyMethods, PyList, PyAny}, exceptions::{PyOSError, PyValueError}
+        exceptions::{PyOSError, PyValueError},
+        pyclass, pyfunction, pymethods, pymodule,
+        types::{PyAny, PyAnyMethods, PyList},
+        Bound, Py, PyResult, Python,
     };
 
     use crate::{
-        bindings::cuda, model::{
+        bindings::cuda,
+        crispr::pam::PAM,
+        model::{
             alignment::AlignmentFrame,
-            input::{SEQ_MAX_LEN, SeqBatch, SeqFrame, SeqOccFrame}, occurence::Occurence,
-        }, crispr::pam::PAM, pipeline::{
-            sink::{NullSink, writer::{CsvWriter, CsvWriterSink, ContigLabels, PamContext, PamPlacement}}, source::reader::Reader, stage::{broadcast::Broadcast, miner::{GpuMiner, Miner}, resolve::Resolver, transform::PyTransform}
-        }, sequence::{iupac::Iupac, sequence::Sequence}
+            input::{SeqBatch, SeqFrame, SeqOccFrame, SEQ_MAX_LEN},
+            occurence::Occurence,
+        },
+        pipeline::{
+            sink::{
+                writer::{ContigLabels, CsvWriter, CsvWriterSink, PamContext, PamPlacement},
+                NullSink,
+            },
+            source::reader::Reader,
+            stage::{
+                broadcast::Broadcast,
+                miner::{GpuMiner, Miner},
+                resolve::Resolver,
+                transform::PyTransform,
+            },
+        },
+        sequence::{iupac::Iupac, sequence::Sequence},
     };
 
     #[pymodule_export]
@@ -107,7 +125,6 @@ pub mod _crisprme2_native {
     #[pymodule_export]
     pub use crate::alignment::thresholds::Thresholds;
 
-
     #[pyfunction]
     pub fn init_tracing() {
         tracing_subscriber::fmt()
@@ -133,9 +150,7 @@ pub mod _crisprme2_native {
 
     #[pymethods]
     impl PyPipeline {
-
         fn send_debug_minable_data(&mut self, py: Python<'_>) -> PyResult<()> {
-
             const ROWS: usize = 500;
 
             let mut seqs = SeqFrame::alloc(&self.pool, ROWS);
@@ -175,7 +190,6 @@ pub mod _crisprme2_native {
         }
 
         fn send_debug_data(&mut self, py: Python<'_>) -> PyResult<()> {
-
             const ROWS: usize = 10;
 
             let seq_len: usize = 24;
@@ -223,9 +237,10 @@ pub mod _crisprme2_native {
 
         /// Submit the content of a TargetBatcher
         pub fn submit(&mut self, py: Python<'_>, batcher: &mut TargetBatcher) -> PyResult<()> {
-
-            assert!(batcher.get_sequence_len() <= SEQ_MAX_LEN,
-                "window sequence should fit inside a SeqFrame");
+            assert!(
+                batcher.get_sequence_len() <= SEQ_MAX_LEN,
+                "window sequence should fit inside a SeqFrame"
+            );
 
             // Create compact representation
             let batch = batcher.flush_to_batch();
@@ -251,7 +266,10 @@ pub mod _crisprme2_native {
                 let iter = izip!(
                     cols.seq_row_idx.iter_mut(),
                     cols.occurence.iter_mut(),
-                    batch.occs.iter().enumerate()
+                    batch
+                        .occs
+                        .iter()
+                        .enumerate()
                         .flat_map(|(w, s)| s.iter().map(move |occ| (w as u32, *occ))),
                 );
                 for (dst_seq_id, dst_occ, (w, src_occ)) in iter {
@@ -298,15 +316,17 @@ pub mod _crisprme2_native {
 
     impl Drop for PySourcedPipeline {
         fn drop(&mut self) {
-            tracing::info!("pipeline took {:.2} s", 
-                self.started_at.elapsed().as_secs_f32());
+            tracing::info!(
+                "pipeline took {:.2} s",
+                self.started_at.elapsed().as_secs_f32()
+            );
         }
     }
 
     /// Create a driven pipeline with transforms
     #[pyfunction]
     fn pipeline<'py>(
-        chunks: usize, 
+        chunks: usize,
         threshold: Thresholds,
         transforms: Bound<'py, PyList>,
         pam: &str,
@@ -314,24 +334,27 @@ pub mod _crisprme2_native {
         outpath: PathBuf,
         contigs: Vec<String>,
     ) -> PyResult<PyPipeline> {
-
         // Validate the PAM before allocating a multi-GB pool.
         let parsed_pam = PAM::new(pam)
             .map_err(|e| PyValueError::new_err(format!("invalid PAM {pam:?}: {e}")))?;
         let pam_ctx = PamContext::new(&parsed_pam, PamPlacement::from_upstream(upstream));
         tracing::info!(
             "guide column layout: {}",
-            if upstream { "<PAM><guide>" } else { "<guide><PAM>" }
+            if upstream {
+                "<PAM><guide>"
+            } else {
+                "<guide><PAM>"
+            }
         );
 
         let contigs = ContigLabels::from_names(contigs)?;
-        
+
         // Create memory pool and pin all chunks for DMA from GPU
         let pool = MemoryPool::new(CHUNK_SIZE * chunks, |ptr, bytes| {
             tracing::trace!("pinning chunk (ptr = {:?}, bytes = {})", ptr, bytes);
             cuda::pin(ptr, bytes);
         });
-        
+
         tracing::info!("building pipeline...");
         let (input, pipeline) = Pipeline::driven(10);
 
@@ -351,17 +374,15 @@ pub mod _crisprme2_native {
 
         // Add sink stage
         //let pipeline = pipeline.sink(2, |_, _| NullSink::<AlignmentFrame>::new());
-        let csv_writer = CsvWriter::open(&outpath, pam_ctx, contigs)
-            .map_err(|e| PyOSError::new_err(
-                format!("cannot open CSV report {}: {e}", outpath.display())))?;
+        let csv_writer = CsvWriter::open(&outpath, pam_ctx, contigs).map_err(|e| {
+            PyOSError::new_err(format!("cannot open CSV report {}: {e}", outpath.display()))
+        })?;
 
         let pipeline = pipeline.sink(2, {
             let csv_writer_clone = csv_writer.clone();
-            move |_, _| { 
-                CsvWriterSink::new(&csv_writer_clone)
-            }
+            move |_, _| CsvWriterSink::new(&csv_writer_clone)
         });
-        
+
         tracing::info!("pipeline ready!");
         let handle = pipeline.execute(&pool, 3);
         Ok(PyPipeline {
@@ -372,12 +393,11 @@ pub mod _crisprme2_native {
         })
     }
 
-
     /// Create a dataset pipeline that reads batches of sequences from disk, applies transforms, and writes results to disk.
     // #[pyfunction]
     // fn dataset_pipeline<'py>(
-    //     chunks: usize, 
-    //     transforms: Bound<'py, PyList>, 
+    //     chunks: usize,
+    //     transforms: Bound<'py, PyList>,
     //     folder: PathBuf,
     //     batch_size: usize,
     //     guide: Guide,
@@ -418,7 +438,7 @@ pub mod _crisprme2_native {
     //     let csv_writer = CsvWriter::open("results.csv".into());
     //     let pipeline = pipeline.sink(2, {
     //         let csv_writer_clone = csv_writer.clone();
-    //         move |_, _| { 
+    //         move |_, _| {
     //             CsvWriterSink::new(&csv_writer_clone)
     //         }
     //     });
@@ -453,6 +473,6 @@ pub mod _crisprme2_native {
             .try_init()
             .is_ok();
 
-        Ok(installed)   // report install status instead of hiding it
+        Ok(installed) // report install status instead of hiding it
     }
 }

@@ -3,7 +3,10 @@
 //! A [`DynFrame`] holds [`DynColumn`] slots (each a `ShareCell<ChunkArray>`)
 //! and a row count. Typed access is layered on top via `shape::Column`.
 
-use crate::{memory::ChunkArray, shared::{Share, ShareCell}};
+use crate::{
+    memory::ChunkArray,
+    shared::{Share, ShareCell},
+};
 
 /// An untyped column: a shareable chunk array
 pub type DynColumn = ShareCell<ChunkArray>;
@@ -14,14 +17,11 @@ pub struct DynFrame {
 }
 
 impl DynFrame {
-
     /// Create a frame with all slots empty and zero rows
     pub fn empty(slots: usize) -> Self {
         let mut v = Vec::with_capacity(slots);
         v.resize_with(slots, DynColumn::default);
-        Self {
-            slots: v
-        }
+        Self { slots: v }
     }
 
     /// Returns a raw pointer to the slot storage.
@@ -38,9 +38,7 @@ impl Share for DynFrame {
     /// Freeze every slot and return a shared copy of the frame
     fn share(&mut self) -> Self {
         let mut result = DynFrame::empty(self.slots.len());
-        for (src, dst) in 
-            self.slots.iter_mut().zip(result.slots.iter_mut()) 
-        {
+        for (src, dst) in self.slots.iter_mut().zip(result.slots.iter_mut()) {
             *dst = src.share();
         }
         result

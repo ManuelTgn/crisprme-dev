@@ -10,9 +10,13 @@
 //! [`ColumnGroup`] provides N independent scalar sub-columns backed by N
 //! separate [`DynColumn`] slots.
 
-use std::marker::PhantomData;
+use crate::{
+    frame::DynColumn,
+    memory::{ChunkArray, MemoryPool},
+    shared::Share,
+};
 use bytemuck::Pod;
-use crate::{frame::DynColumn, memory::{ChunkArray, MemoryPool}, shared::Share};
+use std::marker::PhantomData;
 
 /// Typed, borrowed view over a [`DynColumn`].
 ///
@@ -23,18 +27,18 @@ pub struct Column<'frame, T: Pod> {
 }
 
 impl<'frame, T: Pod> Column<'frame, T> {
-
     /// Create a new typed column from a DynColumn reference
     pub fn new(inner: &'frame mut DynColumn) -> Self {
-        Self { _type: PhantomData, inner }
+        Self {
+            _type: PhantomData,
+            inner,
+        }
     }
 
     /// Allocate this column type from the pool
     pub fn alloc(&mut self, pool: &MemoryPool, rows: usize) {
-        *self.inner = DynColumn::new(
-            ChunkArray::alloc::<T>(pool, rows)
-                .expect("unable to allocate column")
-        );
+        *self.inner =
+            DynColumn::new(ChunkArray::alloc::<T>(pool, rows).expect("unable to allocate column"));
     }
 
     /// Allocate this column with the same amount of rows of another
@@ -44,8 +48,7 @@ impl<'frame, T: Pod> Column<'frame, T> {
 
     /// Number of rows in this column
     pub fn rows(&self) -> usize {
-        self.inner.as_ref()
-            .len_of::<T>()
+        self.inner.as_ref().len_of::<T>()
     }
 
     /// Size in bytes of the rows
@@ -55,8 +58,7 @@ impl<'frame, T: Pod> Column<'frame, T> {
 
     /// Returns the index of an element in memory
     pub fn index(&self, row: usize) -> (usize, usize) {
-        self.inner.as_ref()
-            .map_index::<T>(row)
+        self.inner.as_ref().map_index::<T>(row)
     }
 
     /// Share: freeze `other` and point `self` at the same Arc'd data
@@ -71,60 +73,50 @@ impl<'frame, T: Pod> Column<'frame, T> {
 
     /// Reference to row `row`
     pub fn get(&self, row: usize) -> &T {
-        self.inner.as_ref()
-            .get::<T>(row)
+        self.inner.as_ref().get::<T>(row)
     }
 
     /// Mutable reference to row `row`
     pub fn get_mut(&mut self, row: usize) -> &mut T {
-        self.inner.as_mut()
-            .get_mut::<T>(row)
+        self.inner.as_mut().get_mut::<T>(row)
     }
 
     /// Reference to row at `chunk` and `offset`
     pub fn get_fast(&self, chunk: usize, offset: usize) -> &T {
-        self.inner.as_ref()
-            .get_fast::<T>(chunk, offset)
+        self.inner.as_ref().get_fast::<T>(chunk, offset)
     }
 
     /// Mutable reference to row at `chunk` and `offset`
     pub fn get_fast_mut(&mut self, chunk: usize, offset: usize) -> &mut T {
-        self.inner.as_mut()
-            .get_fast_mut::<T>(chunk, offset)
+        self.inner.as_mut().get_fast_mut::<T>(chunk, offset)
     }
 
     /// Per-chunk slices (aligned to `CHUNK_SIZE`)
     pub fn chunks(&self) -> impl Iterator<Item = &[T]> {
-        self.inner.as_ref()
-            .chunks::<T>()
+        self.inner.as_ref().chunks::<T>()
     }
 
     /// Per-chunk mutable slices
     pub fn chunks_mut(&mut self) -> impl Iterator<Item = &mut [T]> {
-        self.inner.as_mut()
-            .chunks_mut::<T>()
+        self.inner.as_mut().chunks_mut::<T>()
     }
 
     pub fn slice(&mut self, idx: usize, len: usize) -> &[T] {
-        self.inner.as_ref()
-            .subchunk::<T>(idx, len)
+        self.inner.as_ref().subchunk::<T>(idx, len)
     }
 
     pub fn slice_mut(&mut self, idx: usize, len: usize) -> &mut [T] {
-        self.inner.as_mut()
-            .subchunk_mut::<T>(idx, len)
+        self.inner.as_mut().subchunk_mut::<T>(idx, len)
     }
 
     /// Flat iterator over all rows
     pub fn iter(&self) -> impl Iterator<Item = &T> {
-        self.chunks()
-            .flat_map(|c| c.iter())
+        self.chunks().flat_map(|c| c.iter())
     }
 
     /// Flat mutable iterator over all rows
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> {
-        self.chunks_mut()
-            .flat_map(|c| c.iter_mut())
+        self.chunks_mut().flat_map(|c| c.iter_mut())
     }
 }
 
@@ -138,16 +130,17 @@ pub struct ColumnGroup<'frame, T: Pod, const N: usize> {
 }
 
 impl<'frame, T: Pod, const N: usize> ColumnGroup<'frame, T, N> {
-
     /// Create a group from N mutable slot references
     pub fn new(columns: [&'frame mut DynColumn; N]) -> Self {
-        Self { _type: PhantomData, columns }
+        Self {
+            _type: PhantomData,
+            columns,
+        }
     }
 
     /// Number of rows (same across all sub-columns; reads from the first)
     pub fn rows(&self) -> usize {
-        self.columns[0].as_ref()
-            .len_of::<T>()
+        self.columns[0].as_ref().len_of::<T>()
     }
 
     /// Size in bytes of the rows
@@ -177,17 +170,14 @@ impl<'frame, T: Pod, const N: usize> ColumnGroup<'frame, T, N> {
 
     /// Split the group into all of its columns
     pub fn split(self) -> [Column<'frame, T>; N] {
-        self.columns.map(|c| 
-            Column::new(c)
-        )
+        self.columns.map(|c| Column::new(c))
     }
 
     /// Allocate all N sub-columns with the given row count
     pub fn alloc(&mut self, pool: &MemoryPool, rows: usize) {
         for slot in self.columns.iter_mut() {
             **slot = DynColumn::new(
-                ChunkArray::alloc::<T>(pool, rows)
-                    .expect("unable to allocate group sub-column")
+                ChunkArray::alloc::<T>(pool, rows).expect("unable to allocate group sub-column"),
             );
         }
     }
@@ -200,7 +190,7 @@ impl<'frame, T: Pod, const N: usize> ColumnGroup<'frame, T, N> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::memory::{MemoryPool, CHUNK_SIZE};
+    use crate::memory::{CHUNK_SIZE, MemoryPool};
 
     fn make_pool() -> MemoryPool {
         MemoryPool::new(CHUNK_SIZE * 8, |_, _| {})
@@ -295,7 +285,12 @@ mod test {
         col.alloc(&pool, 32);
 
         for (i, arr) in col.iter_mut().enumerate() {
-            *arr = [i as u32 * 4, i as u32 * 4 + 1, i as u32 * 4 + 2, i as u32 * 4 + 3];
+            *arr = [
+                i as u32 * 4,
+                i as u32 * 4 + 1,
+                i as u32 * 4 + 2,
+                i as u32 * 4 + 3,
+            ];
         }
 
         for (i, arr) in col.iter().enumerate() {
@@ -357,9 +352,15 @@ mod test {
         grp.alloc(&pool, 16);
 
         // Write different values to each sub-column
-        for (i, v) in grp.col(0).iter_mut().enumerate() { *v = i as u32; }
-        for (i, v) in grp.col(1).iter_mut().enumerate() { *v = (i as u32) * 10; }
-        for (i, v) in grp.col(2).iter_mut().enumerate() { *v = (i as u32) * 100; }
+        for (i, v) in grp.col(0).iter_mut().enumerate() {
+            *v = i as u32;
+        }
+        for (i, v) in grp.col(1).iter_mut().enumerate() {
+            *v = (i as u32) * 10;
+        }
+        for (i, v) in grp.col(2).iter_mut().enumerate() {
+            *v = (i as u32) * 100;
+        }
 
         // Read back and verify independence
         let c0: Vec<u32> = grp.col(0).iter().copied().collect();
@@ -374,7 +375,12 @@ mod test {
     #[test]
     fn group_sub_column_correct_length() {
         let pool = make_pool();
-        let mut slots = [DynColumn::Empty, DynColumn::Empty, DynColumn::Empty, DynColumn::Empty];
+        let mut slots = [
+            DynColumn::Empty,
+            DynColumn::Empty,
+            DynColumn::Empty,
+            DynColumn::Empty,
+        ];
         let [s0, s1, s2, s3] = &mut slots;
         let mut grp = ColumnGroup::<u32, 4>::new([s0, s1, s2, s3]);
         grp.alloc(&pool, 50);
@@ -396,7 +402,9 @@ mod test {
         {
             let mut src = Column::<u32>::new(&mut src_dyn);
             src.alloc(&pool, 16);
-            for (i, v) in src.iter_mut().enumerate() { *v = i as u32; }
+            for (i, v) in src.iter_mut().enumerate() {
+                *v = i as u32;
+            }
         }
 
         {
@@ -427,7 +435,9 @@ mod test {
         {
             let mut src = Column::<u32>::new(&mut src_dyn);
             src.alloc(&pool, 8);
-            for (i, v) in src.iter_mut().enumerate() { *v = i as u32; }
+            for (i, v) in src.iter_mut().enumerate() {
+                *v = i as u32;
+            }
         }
 
         {
@@ -455,7 +465,9 @@ mod test {
         {
             let mut a = Column::<u32>::new(&mut a_dyn);
             a.alloc(&pool, 64);
-            for (i, v) in a.iter_mut().enumerate() { *v = i as u32; }
+            for (i, v) in a.iter_mut().enumerate() {
+                *v = i as u32;
+            }
         }
 
         {

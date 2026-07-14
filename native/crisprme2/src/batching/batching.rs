@@ -1,8 +1,8 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
 use crate::crispr::guide::Guide;
-use crate::crispr::{pam, guide};
+use crate::crispr::{guide, pam};
 use crate::memory::batch::AlignmentRingBatch;
-use crate::sequence::{scanner, iupac};
+use crate::sequence::{iupac, scanner};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use ahash::AHashMap;
 
@@ -54,7 +54,6 @@ static TARGET_BATCHER_NEXT_ID: AtomicUsize = AtomicUsize::new(0);
 /// TargetBatcher class
 #[pyclass]
 pub struct TargetBatcher {
-
     #[pyo3(get)]
     id: usize,
 
@@ -236,7 +235,6 @@ impl TargetBatcher {
     }
 
     pub fn flush_and_align(&mut self, max_mm: usize, bdna: usize, brna: usize) -> PyResult<()> {
-
         // Collect window batches on flush
         let batch: WindowBatch = self.flush_to_batch();
 
@@ -264,7 +262,6 @@ impl TargetBatcher {
 }
 
 impl TargetBatcher {
-
     pub fn id(&self) -> usize {
         self.id
     }
@@ -274,7 +271,7 @@ impl TargetBatcher {
     }
 
     // TODO: Check if this is the best way to do it
-    pub fn get_window_keys(&self) -> impl Iterator<Item=&WindowKey> {
+    pub fn get_window_keys(&self) -> impl Iterator<Item = &WindowKey> {
         self.map.keys()
     }
 
@@ -285,7 +282,7 @@ impl TargetBatcher {
     /// Convert the current batch (unique windows + occurrences) into a `WindowBatch`
     /// and clear internal state.
     pub fn flush_to_batch(&mut self) -> WindowBatch {
-        let cap = self.max_unique;  // invariant: max_unique <= miner src capacity
+        let cap = self.max_unique; // invariant: max_unique <= miner src capacity
 
         // Fast path: whole map fits
         if self.map.len() <= cap {
@@ -300,7 +297,11 @@ impl TargetBatcher {
                 occs.push(v);
             }
             self.hits_in_batch = 0;
-            return  WindowBatch { windows, occs, total_hits };
+            return WindowBatch {
+                windows,
+                occs,
+                total_hits,
+            };
         }
 
         // Overshoot path: emit exactly `cap` windows, keep the rest for the next submit
@@ -315,9 +316,12 @@ impl TargetBatcher {
                 occs.push(v);
             }
         }
-        self.hits_in_batch -= total_hits;  // retained windows stay counted
-        WindowBatch{ windows, occs, total_hits }
-        
+        self.hits_in_batch -= total_hits; // retained windows stay counted
+        WindowBatch {
+            windows,
+            occs,
+            total_hits,
+        }
     }
 
     #[inline(always)]
@@ -335,10 +339,13 @@ impl TargetBatcher {
         self.alignment_rx = Some(rx);
     }
 
-    pub fn get_sequence_len(&self) -> usize { self.size }
-    pub fn get_guide(&self) -> Guide { self.guide.clone() }
+    pub fn get_sequence_len(&self) -> usize {
+        self.size
+    }
+    pub fn get_guide(&self) -> Guide {
+        self.guide.clone()
+    }
 }
-
 
 /// WindowBatch
 #[derive(Debug)]

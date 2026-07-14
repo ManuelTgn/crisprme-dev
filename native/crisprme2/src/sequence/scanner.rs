@@ -1,7 +1,7 @@
 use rayon::prelude::*;
-use std::result::Result; 
+use std::result::Result;
 
-use crate::crispr::pam::{PAM, build_sparse};
+use crate::crispr::pam::{build_sparse, PAM};
 use crate::sequence::iupac::{matches_iupac, sequence_encoder};
 use crate::utils::threadpool;
 
@@ -36,10 +36,10 @@ pub fn scan_targets_bitmask(
     // get sequence length
     let slen = seq_bitmask.len();
     if slen == 0 || size == 0 || size > slen {
-        return  Ok((Vec::new(), Vec::new()));
+        return Ok((Vec::new(), Vec::new()));
     }
 
-    // get encoded pam 
+    // get encoded pam
     let pat = &pam.bytes;
     let rev = &pam.revcomp;
     let plen = pat.len();
@@ -95,29 +95,43 @@ pub fn scan_targets_bitmask(
                         let target_bitmask = unsafe { extended_chunk.get_unchecked(i..i + size) };
 
                         if target_bitmask.iter().any(|&b| b == N_MASK) {
-                            continue;  // skip if candidate contains any N
+                            continue; // skip if candidate contains any N
                         }
 
-                        if pam.unconstrained { // degenerate PAM -> skip PAM matching
+                        if pam.unconstrained {
+                            // degenerate PAM -> skip PAM matching
                             chunk_pos.push(global_pos);
                             chunk_strand.push(1);
                             chunk_pos.push(global_pos);
                             chunk_strand.push(0);
-                        } else {  // perform PAM matching to filter out candidates
+                        } else {
+                            // perform PAM matching to filter out candidates
                             let fwd_ok = if use_sparse_fwd {
-                                matches_pattern_sparse(target_bitmask, pam_start_fwd, &idx_fwd, &mask_fwd)
+                                matches_pattern_sparse(
+                                    target_bitmask,
+                                    pam_start_fwd,
+                                    &idx_fwd,
+                                    &mask_fwd,
+                                )
                             } else {
-                                let pam_slice_fwd = &target_bitmask[pam_start_fwd..pam_start_fwd + plen];
+                                let pam_slice_fwd =
+                                    &target_bitmask[pam_start_fwd..pam_start_fwd + plen];
                                 matches_pattern(pam_slice_fwd, pat)
                             };
 
                             let rev_ok = if use_sparse_rev {
-                                matches_pattern_sparse(target_bitmask, pam_start_rev, &idx_rev, &mask_rev)
+                                matches_pattern_sparse(
+                                    target_bitmask,
+                                    pam_start_rev,
+                                    &idx_rev,
+                                    &mask_rev,
+                                )
                             } else {
-                                let pam_slice_rev = &target_bitmask[pam_start_rev..pam_start_rev + plen];
+                                let pam_slice_rev =
+                                    &target_bitmask[pam_start_rev..pam_start_rev + plen];
                                 matches_pattern(pam_slice_rev, rev)
                             };
-                        if fwd_ok {
+                            if fwd_ok {
                                 chunk_pos.push(global_pos);
                                 chunk_strand.push(1);
                             }
@@ -130,7 +144,6 @@ pub fn scan_targets_bitmask(
                 }
 
                 Some((chunk_pos, chunk_strand))
-
             })
             .collect();
 
@@ -146,9 +159,7 @@ pub fn scan_targets_bitmask(
         }
 
         (pos, strand)
-
     })
-    
 }
 
 /// Checks if a sequence bitmask slice matches a PAM pattern bitmask slice (dense matching).
@@ -171,8 +182,6 @@ fn matches_pattern(seq: &[u8], pam: &[u8]) -> bool {
         .zip(pam.iter())
         .all(|(&a, &b)| matches_iupac(a, b))
 }
-
-
 
 /// Checks whether a target sequence matches a PAM pattern using a sparse representation.
 ///

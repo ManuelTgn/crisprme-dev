@@ -1,11 +1,14 @@
-
 pub mod sink;
-pub mod stage;
 pub mod source;
+pub mod stage;
 
 #[cfg(test)]
 pub mod test {
-    use columnar::{MemoryPool, memory::CHUNK_SIZE, pipeline::{Emit, PipelineError}};
+    use columnar::{
+        memory::CHUNK_SIZE,
+        pipeline::{Emit, PipelineError},
+        MemoryPool,
+    };
     use std::cell::RefCell;
 
     /// Creates a memory pool sized for use in unit tests.

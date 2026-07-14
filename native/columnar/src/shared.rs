@@ -14,19 +14,24 @@ use std::sync::Arc;
 pub enum ShareCell<T> {
     Frozen(Arc<T>),
     Owned(T),
-    Empty
+    Empty,
 }
 
 impl<T> ShareCell<T> {
-
     /// Create a new owned cell
     pub fn new(value: T) -> Self {
         Self::Owned(value)
     }
 
-    pub fn is_owned(&self)  -> bool { matches!(self, ShareCell::Owned(_))  }
-    pub fn is_frozen(&self) -> bool { matches!(self, ShareCell::Frozen(_)) }
-    pub fn is_empty(&self)  -> bool { matches!(self, ShareCell::Empty)     }
+    pub fn is_owned(&self) -> bool {
+        matches!(self, ShareCell::Owned(_))
+    }
+    pub fn is_frozen(&self) -> bool {
+        matches!(self, ShareCell::Frozen(_))
+    }
+    pub fn is_empty(&self) -> bool {
+        matches!(self, ShareCell::Empty)
+    }
 
     /// Move the inner value out, leaving `self` empty
     pub fn take(&mut self) -> ShareCell<T> {
@@ -68,16 +73,13 @@ impl<T> ShareCell<T> {
 
     /// Reference to inner data. Panics if empty.
     pub fn as_ref(&self) -> &T {
-        self.get_ref()
-            .expect("cell should not be empty")
+        self.get_ref().expect("cell should not be empty")
     }
 
     /// Mutable reference to inner data. Panics if not owned.
     pub fn as_mut(&mut self) -> &mut T {
-        self.get_mut()
-            .expect("cell should not empty or frozen")
+        self.get_mut().expect("cell should not empty or frozen")
     }
-
 }
 
 /// Produce a shared copy of `self`, freezing the source in the process.

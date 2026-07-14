@@ -1,17 +1,30 @@
 use bytemuck::Pod;
-use columnar::{MemoryPool, pipeline::{Emit, Stage, PipelineError}, Share};
+use columnar::{
+    pipeline::{Emit, PipelineError, Stage},
+    MemoryPool, Share,
+};
 use crossbeam_channel::Receiver;
 use itertools::izip;
 use rand::Rng;
 
-use crate::{bindings::{self, cuda}, model::{alignment::{SeqMinedBatch, SeqMinedFrame}, cigarx::{Cigarx, Cigarx64, CigarxOp}, input::{SeqBatch, SeqRowIdx}}, sequence::iupac::Iupac};
+use crate::{
+    bindings::{self, cuda},
+    model::{
+        alignment::{SeqMinedBatch, SeqMinedFrame},
+        cigarx::{Cigarx, Cigarx64, CigarxOp},
+        input::{SeqBatch, SeqRowIdx},
+    },
+    sequence::iupac::Iupac,
+};
 
 // ---------------------------------------------------------------------------
 // Fake miner
 // ---------------------------------------------------------------------------
 
 /// Fake miner for now, it only checks for match/mismatch
-pub struct Miner { pool: MemoryPool }
+pub struct Miner {
+    pool: MemoryPool,
+}
 
 impl Miner {
     pub fn new(pool: &MemoryPool) -> Self {
@@ -20,20 +33,23 @@ impl Miner {
 }
 
 impl Stage for Miner {
-
     type I = SeqBatch;
     type O = SeqMinedBatch;
 
-    fn name() -> &'static str { "Miner" }
+    fn name() -> &'static str {
+        "Miner"
+    }
 
     #[tracing::instrument(name = "pipeline:miner", skip_all)]
-    fn process(&mut self, mut input: Self::I, emitter: &impl Emit<Self::O>) -> Result<(), PipelineError> {
-        
-        let mut sequences  = input.sequences.share();
+    fn process(
+        &mut self,
+        mut input: Self::I,
+        emitter: &impl Emit<Self::O>,
+    ) -> Result<(), PipelineError> {
+        let mut sequences = input.sequences.share();
         let mut occurences = input.occurences.share();
 
         input.sequences.with_cols(|cols| {
-
             let rows = cols.content.rows();
             tracing::info!("received {} rows to mine", rows);
 
@@ -47,7 +63,6 @@ impl Stage for Miner {
                 );
 
                 for (sequence, mined_seq_row, cigarx, offset) in zipped {
-                     
                     *mined_seq_row = rand::rng().random_range(0..rows) as u32;
 
                     *cigarx = Cigarx64::default();
@@ -65,7 +80,6 @@ impl Stage for Miner {
                         }
                     }
                 }
-
             });
 
             emitter.emit(SeqMinedBatch {
@@ -86,7 +100,7 @@ struct GpuBuffer<T> {
     /// Maximum number of `T` that can fit
     capacity: usize,
     /// Pointer to GPU memory
-    dptr: *mut T
+    dptr: *mut T,
 }
 
 impl<T> GpuBuffer<T> {
@@ -103,7 +117,7 @@ impl<T> Drop for GpuBuffer<T> {
 }
 
 // This should be fine
-unsafe impl<T: Pod> Send for GpuBuffer<T> { }
+unsafe impl<T: Pod> Send for GpuBuffer<T> {}
 
 /// Contains all GPU buffers used by a miner
 struct GpuMinerBuffers {
@@ -111,12 +125,11 @@ struct GpuMinerBuffers {
     src_buffer_seq: GpuBuffer<Iupac>,
     // Staging area of GPU memory for output mined alignments
     dst_buffer_cigarx: GpuBuffer<Cigarx64>,
-    dst_buffer_idx:    GpuBuffer<SeqRowIdx>,
+    dst_buffer_idx: GpuBuffer<SeqRowIdx>,
     dst_buffer_offset: GpuBuffer<u8>,
 }
 
 pub struct GpuMiner {
-
     pool: MemoryPool,
     gpu: u32,
 
@@ -138,60 +151,64 @@ pub struct GpuMiner {
 }
 
 impl GpuMiner {
-
-    pub fn new(pool: &MemoryPool, 
-        src_seq_capacity: usize, src_seq_stride: usize, 
-        dst_capacity: usize, gpu: u32) -> Self 
-    {
-        Self { 
+    pub fn new(
+        pool: &MemoryPool,
+        src_seq_capacity: usize,
+        src_seq_stride: usize,
+        dst_capacity: usize,
+        gpu: u32,
+    ) -> Self {
+        Self {
             pool: pool.clone(),
-            total_mined: 0, 
+            total_mined: 0,
             total_uploaded: 0,
             buffers: None,
             src_seq_capacity,
             src_seq_stride,
             dst_capacity,
-            gpu 
+            gpu,
         }
     }
 }
 
 impl Stage for GpuMiner {
-
     type I = SeqBatch;
     type O = SeqMinedBatch;
 
-    fn name() -> &'static str { "GpuMiner" }
+    fn name() -> &'static str {
+        "GpuMiner"
+    }
 
     // Called by the asigned thread
     #[tracing::instrument(name = "pipeline:gpu_miner", skip_all)]
     fn initialize(&mut self) {
-        
         // Initialize mining kernel for this gpu/thread
         bindings::miner::initialize(self.gpu);
 
         // Allocate GPU memory for the asigned GPU
-        self.buffers = Some(GpuMinerBuffers { 
-            src_buffer_seq:    GpuBuffer::alloc(self.src_seq_capacity * self.src_seq_stride), 
-            dst_buffer_cigarx: GpuBuffer::alloc(self.dst_capacity), 
-            dst_buffer_idx:    GpuBuffer::alloc(self.dst_capacity), 
-            dst_buffer_offset: GpuBuffer::alloc(self.dst_capacity) 
+        self.buffers = Some(GpuMinerBuffers {
+            src_buffer_seq: GpuBuffer::alloc(self.src_seq_capacity * self.src_seq_stride),
+            dst_buffer_cigarx: GpuBuffer::alloc(self.dst_capacity),
+            dst_buffer_idx: GpuBuffer::alloc(self.dst_capacity),
+            dst_buffer_offset: GpuBuffer::alloc(self.dst_capacity),
         });
     }
 
     #[tracing::instrument(name = "pipeline:gpu_miner", skip_all)]
-    fn process(&mut self, mut input: Self::I, emitter: &impl Emit<Self::O>) -> Result<(), PipelineError> {
-
+    fn process(
+        &mut self,
+        mut input: Self::I,
+        emitter: &impl Emit<Self::O>,
+    ) -> Result<(), PipelineError> {
         // Allocated GPU buffers
         let buffers = self.buffers.as_mut().expect("Miner buffers not allocated!");
 
         // Prepare miner with context
         bindings::miner::prepare(&input.guide, input.seq_len, &input.thresholds);
-        
+
         // Copy data from column region to staging buffer
         let mut src_seq_count = 0;
         input.sequences.with_cols(|cols| {
-
             src_seq_count = cols.content.rows();
             self.total_uploaded += src_seq_count;
             assert!(
@@ -207,7 +224,7 @@ impl Stage for GpuMiner {
             // How many bytes for each sequence element
             let stride = cols.content.row_bytes();
             assert_eq!(stride, self.src_seq_stride);
-            
+
             let mut offset = 0;
             for region in cols.content.chunks() {
                 let len = region.len() * stride;
@@ -220,7 +237,7 @@ impl Stage for GpuMiner {
                 bindings::cuda::memcpy_to_gpu::<Iupac>(
                     region.as_ptr() as _,
                     unsafe { buffers.src_buffer_seq.dptr.add(offset) },
-                    len
+                    len,
                 );
                 offset += len;
             }
@@ -229,7 +246,7 @@ impl Stage for GpuMiner {
         });
 
         // Mine alignments in a loop — kernel yields partial results when output buffer is full
-        let mut sequences  = input.sequences.share();
+        let mut sequences = input.sequences.share();
         let mut occurences = input.occurences.share();
 
         loop {
@@ -240,7 +257,7 @@ impl Stage for GpuMiner {
                 buffers.dst_buffer_cigarx.dptr as _,
                 buffers.dst_buffer_idx.dptr as _,
                 buffers.dst_buffer_offset.dptr as _,
-                self.dst_capacity as u32
+                self.dst_capacity as u32,
             );
 
             self.total_mined += mined_count;
@@ -261,7 +278,7 @@ impl Stage for GpuMiner {
                         bindings::cuda::memcpy_to_cpu::<Cigarx64>(
                             region.as_mut_ptr(),
                             unsafe { buffers.dst_buffer_cigarx.dptr.add(offset) },
-                            region.len()
+                            region.len(),
                         );
                         offset += region.len();
                     }
@@ -271,7 +288,7 @@ impl Stage for GpuMiner {
                         bindings::cuda::memcpy_to_cpu::<SeqRowIdx>(
                             region.as_mut_ptr(),
                             unsafe { buffers.dst_buffer_idx.dptr.add(offset) },
-                            region.len()
+                            region.len(),
                         );
                         offset += region.len();
                     }
@@ -281,13 +298,15 @@ impl Stage for GpuMiner {
                         bindings::cuda::memcpy_to_cpu::<u8>(
                             region.as_mut_ptr(),
                             unsafe { buffers.dst_buffer_offset.dptr.add(offset) },
-                            region.len()
+                            region.len(),
                         );
                         offset += region.len();
                     }
 
                     assert!(
-                        cols.seq_row_idx.iter().all(|idx| (*idx as usize) < src_seq_count),
+                        cols.seq_row_idx
+                            .iter()
+                            .all(|idx| (*idx as usize) < src_seq_count),
                         "downloaded seq_row_idx outside current batch"
                     );
                 });
@@ -304,13 +323,15 @@ impl Stage for GpuMiner {
                     guide: input.guide.clone(),
                     sequences: sequences.share(),
                     occurences: occurences.share(),
-                    mined
+                    mined,
                 })?;
             }
-            if finish { break; }
+            if finish {
+                break;
+            }
         }
 
-        tracing::info!("Total mined: {}",    self.total_mined);
+        tracing::info!("Total mined: {}", self.total_mined);
         tracing::info!("Total uploaded: {}", self.total_uploaded);
         bindings::miner::post_mine();
         Ok(())

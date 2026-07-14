@@ -1,6 +1,5 @@
 use pyo3::{pyclass, pymethods};
 
-
 /// Threholds for filtering and alignment processes
 #[derive(Debug, Clone, Copy)]
 #[pyclass]

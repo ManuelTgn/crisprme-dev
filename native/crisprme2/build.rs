@@ -5,10 +5,7 @@ const ARCH: &str = "compute_86";
 const CODE: &str = "sm_86";
 
 /// Where the ffi bridges are located
-const BRIDGES: &[&str] = &[
-    "src/bindings/miner.rs",
-    "src/bindings/cuda.rs",
-];
+const BRIDGES: &[&str] = &["src/bindings/miner.rs", "src/bindings/cuda.rs"];
 
 /// Cuda source code
 const CUDA_SRC: &[&str] = &[
@@ -32,7 +29,7 @@ fn build_on_change(folder: &str) {
             if path.is_dir() {
                 visit(&path);
             }
-        } 
+        }
     }
 
     visit(dir);
@@ -55,9 +52,7 @@ fn main() {
 
     // Link CCCL and compile kernels
     cc.files(CUDA_SRC)
-        .includes(&[
-            "include",
-        ])
+        .includes(&["include"])
         .compile("crisprme-core-cuda.a");
 
     // Link CUDA runtime (libcudart.so)

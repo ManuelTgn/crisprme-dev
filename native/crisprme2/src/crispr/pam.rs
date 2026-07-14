@@ -81,7 +81,6 @@ pub struct PAM {
     /// The upper-cased IUPAC motif exactly as supplied (e.g. `"NGG"`, `"TTTV"`).
     /// Single source of truth for anything that renders the PAM as text.
     motif: Box<str>,
-
 }
 
 impl PAM {
@@ -108,7 +107,10 @@ impl PAM {
             match Iupac::try_from_ascii(b) {
                 Some(code) => bytes.push(code.as_u8()),
                 None => {
-                    let err = PamError::InvalidCharacter { position: i, byte: b };
+                    let err = PamError::InvalidCharacter {
+                        position: i,
+                        byte: b,
+                    };
                     tracing::error!("{err}");
                     return Err(err);
                 }
@@ -150,13 +152,21 @@ impl PAM {
         );
         tracing::info!("PAM {pam:?} ready ({variant_count} concrete variant(s))");
 
-        Ok(Self { bytes, revcomp, unconstrained, plen, variant_count,
-                    motif: motif.into_boxed_str() })
+        Ok(Self {
+            bytes,
+            revcomp,
+            unconstrained,
+            plen,
+            variant_count,
+            motif: motif.into_boxed_str(),
+        })
     }
 
     /// The degenerate IUPAC motif as ASCII, e.g. `"NGG"` or `"TTTV"`.
     #[inline]
-    pub fn motif(&self) -> &str { &self.motif }
+    pub fn motif(&self) -> &str {
+        &self.motif
+    }
 
     /// PAM length in bases.
     #[inline(always)]
@@ -205,9 +215,9 @@ impl PAM {
                 "concrete base is not allowed by the PAM at this position"
             );
 
-            let radix = mask.count_ones();                 // number of allowed bases here
-            let rank = (mask & (base - 1)).count_ones();   // allowed bases below `base`
-            index = index * radix + rank;                  // position 0 == most significant
+            let radix = mask.count_ones(); // number of allowed bases here
+            let rank = (mask & (base - 1)).count_ones(); // allowed bases below `base`
+            index = index * radix + rank; // position 0 == most significant
         }
 
         debug_assert!(index <= u16::MAX as u32);
@@ -363,7 +373,10 @@ mod tests {
     fn invalid_character_is_reported_with_position() {
         assert!(matches!(
             PAM::new("NXG"),
-            Err(PamError::InvalidCharacter { position: 1, byte: b'X' })
+            Err(PamError::InvalidCharacter {
+                position: 1,
+                byte: b'X'
+            })
         ));
     }
 }

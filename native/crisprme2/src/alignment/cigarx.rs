@@ -63,13 +63,13 @@ use num_traits::{PrimInt, Unsigned, Zero};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CigarxOp {
     // `=` (sequence match)
-    Match     = 0b00, 
-    // `X` (sequence mismatch)  
-    Mismatch  = 0b01, 
+    Match = 0b00,
+    // `X` (sequence mismatch)
+    Mismatch = 0b01,
     // `D` (deletion from reference)
-    Deletion  = 0b10, 
+    Deletion = 0b10,
     // `I` (insertion to reference)
-    Insertion = 0b11, 
+    Insertion = 0b11,
 }
 
 impl CigarxOp {
@@ -77,10 +77,10 @@ impl CigarxOp {
     #[inline(always)]
     pub fn to_utf8(self) -> char {
         match self {
-            CigarxOp::Match      => '=',
-            CigarxOp::Mismatch   => 'X',
-            CigarxOp::Deletion   => 'D',
-            CigarxOp::Insertion  => 'I',
+            CigarxOp::Match => '=',
+            CigarxOp::Mismatch => 'X',
+            CigarxOp::Deletion => 'D',
+            CigarxOp::Insertion => 'I',
         }
     }
 
@@ -94,10 +94,10 @@ impl CigarxOp {
             'X' => Some(CigarxOp::Mismatch),
             'I' => Some(CigarxOp::Insertion),
             'D' => Some(CigarxOp::Deletion),
-            _   => None,
+            _ => None,
         }
-    } 
-    
+    }
+
     /// Infallible conversion from a single-character representation.
     ///
     /// # Panics
@@ -145,7 +145,7 @@ impl CigarxOp {
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Cigarx<T: Hash> {
     storage: T,
-    bits: u8
+    bits: u8,
 }
 
 impl<T> Cigarx<T>
@@ -197,7 +197,9 @@ where
     /// Complexity: O(1).
     #[inline(always)]
     pub fn pop(&mut self) -> Option<CigarxOp> {
-        if self.bits == 0 { return None; }
+        if self.bits == 0 {
+            return None;
+        }
 
         // The last pushed op lives in the lowest 2 bits
         let val: T = self.storage & T::from(0b11).unwrap();
@@ -214,10 +216,9 @@ where
     pub fn operations(&self) -> CigarxIter<T> {
         CigarxIter {
             remaining_bits: self.bits,
-            storage: self.storage
+            storage: self.storage,
         }
     }
-
 }
 
 /// Iterator over packed operations (oldest -> newest).
@@ -228,9 +229,9 @@ pub struct CigarxIter<T: Hash> {
     storage: T,
 }
 
-impl<T> Iterator for CigarxIter<T> 
+impl<T> Iterator for CigarxIter<T>
 where
-    T: PrimInt + Unsigned + Zero + Hash
+    T: PrimInt + Unsigned + Zero + Hash,
 {
     type Item = CigarxOp;
 
@@ -254,21 +255,21 @@ where
 
 impl<T> Default for Cigarx<T>
 where
-    T: Zero + Hash
+    T: Zero + Hash,
 {
     /// Create an empty Cigarx (no operations).
     #[inline]
     fn default() -> Self {
         Self {
             storage: T::zero(),
-            bits: 0
+            bits: 0,
         }
     }
 }
 
-impl<T> From<&str> for Cigarx<T> 
-where 
-    T: PrimInt + Zero + Unsigned + Hash 
+impl<T> From<&str> for Cigarx<T>
+where
+    T: PrimInt + Zero + Unsigned + Hash,
 {
     /// Parse an ASCII CIGARX string (e.g. "==XDI") into a packed representation.
     ///
@@ -283,9 +284,9 @@ where
     }
 }
 
-impl<T> std::fmt::Display for Cigarx<T> 
+impl<T> std::fmt::Display for Cigarx<T>
 where
-    T: PrimInt + Unsigned + Zero + Hash
+    T: PrimInt + Unsigned + Zero + Hash,
 {
     // Pretty-print as a CIGARX string.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -296,9 +297,9 @@ where
     }
 }
 
-impl<T> std::fmt::Debug for Cigarx<T> 
+impl<T> std::fmt::Debug for Cigarx<T>
 where
-    T: PrimInt + Unsigned + Zero + Hash
+    T: PrimInt + Unsigned + Zero + Hash,
 {
     // Debug print includes length and rendered operations
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -314,7 +315,7 @@ where
 #[cfg(test)]
 pub mod test {
     use super::*;
-    
+
     #[test]
     fn encode_then_decode() {
         const OPERATIONS: [CigarxOp; 6] = [

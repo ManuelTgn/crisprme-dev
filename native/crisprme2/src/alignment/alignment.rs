@@ -194,7 +194,9 @@ impl AlignmentState {
     /// Interpretation: gap in target (query has extra base).
     #[inline(always)]
     pub fn op_insert(self) -> Self {
-        self.with_qgap(self.qgap() + 1).with_qidx(self.qidx() + 1).with_oper(0)
+        self.with_qgap(self.qgap() + 1)
+            .with_qidx(self.qidx() + 1)
+            .with_oper(0)
     }
 
     /// Apply a deletion transition:
@@ -205,7 +207,9 @@ impl AlignmentState {
     /// Interpretation: gap in query (target has extra base).
     #[inline(always)]
     pub fn op_delete(self) -> Self {
-        self.with_tgap(self.tgap() + 1).with_tidx(self.tidx() + 1).with_oper(0)
+        self.with_tgap(self.tgap() + 1)
+            .with_tidx(self.tidx() + 1)
+            .with_oper(0)
     }
 
     /// Apply a match transition:
@@ -213,7 +217,9 @@ impl AlignmentState {
     /// - resets operation cursor (`oper = 0`)
     #[inline(always)]
     pub fn op_match(self) -> Self {
-        self.with_qidx(self.qidx() + 1).with_tidx(self.tidx() + 1).with_oper(0)
+        self.with_qidx(self.qidx() + 1)
+            .with_tidx(self.tidx() + 1)
+            .with_oper(0)
     }
 
     /// Apply a mismatch transition:
@@ -272,7 +278,7 @@ impl Alignment {
             id,
             cigarx: cigarx.into(),
             offset,
-            strand
+            strand,
         }
     }
 

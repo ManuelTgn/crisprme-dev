@@ -105,7 +105,10 @@ def _validate_transforms(transforms: List[Any], loggers: CrisprmeLoggers) -> Non
                 Crisprme2PipelineConfigError,
             )
 
-def _contig_names_in_id_order(contig_ids: Dict[str, int], loggers: CrisprmeLoggers) -> List[str]:
+
+def _contig_names_in_id_order(
+    contig_ids: Dict[str, int], loggers: CrisprmeLoggers
+) -> List[str]:
     inverted: Dict[int, str] = {i: n for n, i in contig_ids.items()}
     assert len(inverted) == len(contig_ids)
     expected = set(range(len(contig_ids)))
@@ -127,6 +130,7 @@ def _contig_names_in_id_order(contig_ids: Dict[str, int], loggers: CrisprmeLogge
                 Crisprme2PipelineConfigError,
             )
     return names
+
 
 # ==============================================================================
 # public wrapper
@@ -200,7 +204,7 @@ class Pipeline:
         outpath: str,
         contig_ids: Dict[str, int],
         loggers: CrisprmeLoggers,
-    ) -> "Pipeline":        
+    ) -> "Pipeline":
         """
         Build and return a new :class:`Pipeline` instance.
 
@@ -227,7 +231,7 @@ class Pipeline:
         outpath : str
             Path of the CSV report. Truncated on open.
         contig_ids : dict[str, int]
-            Contig ids mapping. Ids must be dense ``0..N-1``; the report 
+            Contig ids mapping. Ids must be dense ``0..N-1``; the report
             resolves each ``Occurence``'s contig id through this table.
         loggers : CrisprmeLoggers
             Shared logger bundle.

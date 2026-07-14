@@ -18,7 +18,7 @@ use bytemuck::{Pod, Zeroable};
 /// All non-IUPAC or unrecognized characters map to `0b0000`, which is used as
 /// a sentinel value to signal invalid input during parsing.
 const IUPAC_LOOKUP_TABLE: [u8; 256] = {
-    // 0b1111 is the 'N' mask (Any base). We use 0b0000 (0) as the default for 
+    // 0b1111 is the 'N' mask (Any base). We use 0b0000 (0) as the default for
     // invalid/unrecognized characters to mark them distinctly.
     // The lookup function will handle the 0b0000 case for error reporting.
     let mut table = [0u8; 256];
@@ -30,12 +30,12 @@ const IUPAC_LOOKUP_TABLE: [u8; 256] = {
             table[$char.to_ascii_lowercase() as usize] = $mask;
         };
     }
-    
+
     set_iupac!(b'A', 0b0001);
     set_iupac!(b'C', 0b0010);
     set_iupac!(b'G', 0b0100);
     set_iupac!(b'T', 0b1000);
-    
+
     set_iupac!(b'R', 0b0101); // A or G
     set_iupac!(b'Y', 0b1010); // C or T
     set_iupac!(b'S', 0b0110); // G or C
@@ -47,13 +47,12 @@ const IUPAC_LOOKUP_TABLE: [u8; 256] = {
     set_iupac!(b'D', 0b1101); // A, G, or T (Not C)
     set_iupac!(b'H', 0b1011); // A, C, or T (Not G)
     set_iupac!(b'V', 0b0111); // A, C, or G (Not T)
-    
+
     // Any Base
     set_iupac!(b'N', 0b1111); // A, C, G, or T
 
     table
 };
-
 
 /// Represents a nucleotide encoded as a 4-bit IUPAC ambiguity mask.
 ///
@@ -72,11 +71,11 @@ const IUPAC_LOOKUP_TABLE: [u8; 256] = {
 /// - N (any base): `0b1111`
 #[repr(transparent)]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Iupac(u8);  // bit mask wrapper
+pub struct Iupac(u8); // bit mask wrapper
 
-unsafe impl Zeroable for Iupac { }
-unsafe impl Pod for Iupac { }
-unsafe impl Send for Iupac { }
+unsafe impl Zeroable for Iupac {}
+unsafe impl Pod for Iupac {}
+unsafe impl Send for Iupac {}
 
 impl Iupac {
     #[inline(always)]
@@ -92,7 +91,11 @@ impl Iupac {
     #[inline(always)]
     pub fn try_from_ascii(value: u8) -> Option<Self> {
         let code = IUPAC_LOOKUP_TABLE[value as usize];
-        if code == 0 { None } else { Some(Self(code)) }
+        if code == 0 {
+            None
+        } else {
+            Some(Self(code))
+        }
     }
 
     #[inline(always)]
@@ -108,32 +111,61 @@ impl Iupac {
     #[inline(always)]
     pub fn complement(self) -> Self {
         let mut code = 0;
-        if self.0 & 0b0001 != 0 { code |= 0b1000; }  // A -> T
-        if self.0 & 0b0010 != 0 { code |= 0b0100; }  // C -> G 
-        if self.0 & 0b0100 != 0 { code |= 0b0010; }  // G -> C
-        if self.0 & 0b1000 != 0 { code |= 0b0001; }  // T -> A
+        if self.0 & 0b0001 != 0 {
+            code |= 0b1000;
+        } // A -> T
+        if self.0 & 0b0010 != 0 {
+            code |= 0b0100;
+        } // C -> G
+        if self.0 & 0b0100 != 0 {
+            code |= 0b0010;
+        } // G -> C
+        if self.0 & 0b1000 != 0 {
+            code |= 0b0001;
+        } // T -> A
 
-        if self.0 & 0b0101 != 0 { code |= 0b1010; }  // R -> Y 
-        if self.0 & 0b1010 != 0 { code |= 0b0101; }  // Y -> R 
-        if self.0 & 0b0110 != 0 { code |= 0b0110; }  // S -> S 
-        if self.0 & 0b1001 != 0 { code |= 0b1001; }  // W -> W
-        if self.0 & 0b1100 != 0 { code |= 0b0011; }  // K -> M 
-        if self.0 & 0b0011 != 0 { code |= 0b1100; }  // M -> K 
+        if self.0 & 0b0101 != 0 {
+            code |= 0b1010;
+        } // R -> Y
+        if self.0 & 0b1010 != 0 {
+            code |= 0b0101;
+        } // Y -> R
+        if self.0 & 0b0110 != 0 {
+            code |= 0b0110;
+        } // S -> S
+        if self.0 & 0b1001 != 0 {
+            code |= 0b1001;
+        } // W -> W
+        if self.0 & 0b1100 != 0 {
+            code |= 0b0011;
+        } // K -> M
+        if self.0 & 0b0011 != 0 {
+            code |= 0b1100;
+        } // M -> K
 
-        if self.0 & 0b1110 != 0 { code |= 0b0111; }  // B -> V
-        if self.0 & 0b1101 != 0 { code |= 0b1011; }  // D -> H
-        if self.0 & 0b1011 != 0 { code |= 0b1101; }  // H -> D
-        if self.0 & 0b0111 != 0 { code |= 0b1110; }  // V -> B
+        if self.0 & 0b1110 != 0 {
+            code |= 0b0111;
+        } // B -> V
+        if self.0 & 0b1101 != 0 {
+            code |= 0b1011;
+        } // D -> H
+        if self.0 & 0b1011 != 0 {
+            code |= 0b1101;
+        } // H -> D
+        if self.0 & 0b0111 != 0 {
+            code |= 0b1110;
+        } // V -> B
 
-        if self.0 & 0b1111 != 0 { code |= 0b1111; }  // N -> N
-        
+        if self.0 & 0b1111 != 0 {
+            code |= 0b1111;
+        } // N -> N
+
         Self(code)
     }
 
     #[inline(always)]
     pub fn to_ascii(self) -> u8 {
-       match self.0 {
-
+        match self.0 {
             0b0001 => b'A',
             0b0010 => b'C',
             0b0100 => b'G',
@@ -145,21 +177,20 @@ impl Iupac {
             0b1001 => b'W',
             0b1100 => b'K',
             0b0011 => b'M',
-            
+
             0b1110 => b'B',
             0b1101 => b'D',
             0b1011 => b'H',
             0b0111 => b'V',
-            
+
             0b1111 => b'N',
-            _ => b'?',  // invalid / unknown code
+            _ => b'?', // invalid / unknown code
         }
     }
 
     #[inline(always)]
     pub fn to_ascii_lowercase(self) -> u8 {
-       match self.0 {
-
+        match self.0 {
             0b0001 => b'a',
             0b0010 => b'c',
             0b0100 => b'g',
@@ -171,14 +202,14 @@ impl Iupac {
             0b1001 => b'w',
             0b1100 => b'k',
             0b0011 => b'm',
-            
+
             0b1110 => b'b',
             0b1101 => b'd',
             0b1011 => b'h',
             0b0111 => b'v',
-            
+
             0b1111 => b'n',
-            _ => b'?',  // invalid / unknown code
+            _ => b'?', // invalid / unknown code
         }
     }
 
@@ -190,7 +221,7 @@ impl Iupac {
     #[inline(always)]
     pub fn from_utf8(value: char) -> Self {
         Self::from_utf8_lossy(value)
-    } 
+    }
 
     #[inline(always)]
     pub fn to_utf8(self) -> char {
@@ -221,7 +252,6 @@ impl Iupac {
     }
 }
 
-
 /// Checks whether a nucleotide bitmask matches a pattern bitmask.
 ///
 /// In IUPAC semantics, a match occurs if the set of possible bases encoded
@@ -240,7 +270,6 @@ impl Iupac {
 pub fn matches_iupac(nt: u8, pattern: u8) -> bool {
     (nt & pattern) != 0
 }
-
 
 pub fn sequence_encoder(sequence: &str) -> Vec<u8> {
     sequence

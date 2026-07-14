@@ -85,7 +85,7 @@ impl Guide {
             out.push(c.complement());
         }
         Self(out)
-    } 
+    }
 
     /// Render the guide as a UTF-8 string (IUPAC characters).
     ///
@@ -171,7 +171,7 @@ impl std::fmt::Debug for Guide {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Same representation as Display, but keeps Debug trait available
         write!(f, "{}", self)
-    }    
+    }
 }
 
 impl std::fmt::Display for Guide {

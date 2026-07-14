@@ -1,10 +1,13 @@
-use crate::{model::{
-    alignment::{SeqMinedBatch, SeqResolvedBatch, SeqResolvedFrame},
-    cigarx::{Cigarx, CigarxOp},
-    occurence::Strand,
-}, sequence::sequence::Sequence};
+use crate::{
+    model::{
+        alignment::{SeqMinedBatch, SeqResolvedBatch, SeqResolvedFrame},
+        cigarx::{Cigarx, CigarxOp},
+        occurence::Strand,
+    },
+    sequence::sequence::Sequence,
+};
 use columnar::{
-    pipeline::{Emit, Stage, PipelineError},
+    pipeline::{Emit, PipelineError, Stage},
     MemoryPool,
 };
 use itertools::izip;
@@ -29,7 +32,11 @@ impl Stage for Resolver {
     }
 
     #[tracing::instrument(name = "pipeline:resolver", skip_all)]
-    fn process(&mut self, mut input: Self::I, emitter: &impl Emit<Self::O>) -> Result<(), PipelineError> {
+    fn process(
+        &mut self,
+        mut input: Self::I,
+        emitter: &impl Emit<Self::O>,
+    ) -> Result<(), PipelineError> {
         let guide = input.guide.as_slice();
 
         // mined --1:1--> resolved
@@ -104,12 +111,13 @@ impl Stage for Resolver {
                         {
                             let rg = rguide.split(|&b| b == 0).next().unwrap();
                             let rs = rseq.split(|&b| b == 0).next().unwrap();
-                            tracing::debug!("resolved {:?}:{:?} with cigarx {:?}", 
-                                str::from_utf8(rg).unwrap(), 
-                                str::from_utf8(rs).unwrap(), 
-                                cigarx);
+                            tracing::debug!(
+                                "resolved {:?}:{:?} with cigarx {:?}",
+                                str::from_utf8(rg).unwrap(),
+                                str::from_utf8(rs).unwrap(),
+                                cigarx
+                            );
                         }
-
                     }
                 });
 

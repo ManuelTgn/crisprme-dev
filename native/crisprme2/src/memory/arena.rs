@@ -117,7 +117,7 @@ pub type Memory<'arena> = BumpScope<'arena>;
 /// - Reinterpreting raw byte buffers as structured types
 /// - Casting between repr(C) or repr(transparent) types
 /// - Performance-critical code where layout guarantees are externally enforced
-/// 
+///
 /// # Recommendation
 ///
 /// Prefer safe conversions unless this is strictly required for performance

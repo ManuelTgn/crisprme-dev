@@ -2,7 +2,6 @@ use std::fmt;
 
 use bytemuck::{Pod, Zeroable};
 
-
 /// Genomic strand of an occurrence.
 ///
 /// # Bit encoding
@@ -20,11 +19,17 @@ pub enum Strand {
 impl Strand {
     #[inline(always)]
     pub const fn from_bit(bit: u8) -> Self {
-        if bit & 1 == 1 { Self::Forward } else { Self::Reverse }
+        if bit & 1 == 1 {
+            Self::Forward
+        } else {
+            Self::Reverse
+        }
     }
 
     #[inline(always)]
-    pub const fn as_bit(self) -> u8 { self as u8 }
+    pub const fn as_bit(self) -> u8 {
+        self as u8
+    }
 
     /// Report representation: `"+"` forward, `"-"` reverse (BED / GFF convention).
     #[inline(always)]
@@ -41,7 +46,6 @@ impl fmt::Display for Strand {
         f.write_str(self.as_str())
     }
 }
-
 
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy)]
@@ -72,5 +76,5 @@ impl Occurence {
     }
 }
 
-unsafe impl Zeroable for Occurence { }
-unsafe impl Pod      for Occurence { }
+unsafe impl Zeroable for Occurence {}
+unsafe impl Pod for Occurence {}
