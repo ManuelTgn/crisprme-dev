@@ -1,4 +1,4 @@
-use crate::error::crisprme_errors::{AnnotationError, PamError};
+use crate::error::crisprme_errors::{AnnotationError, ContigLabelsError, PamError};
 
 use pyo3::exceptions::{PyIOError, PyValueError, PyIndexError};
 use pyo3::PyErr;
@@ -36,5 +36,12 @@ impl From<PamError> for PyErr {
             PamError::IndexOutOfRange { .. } =>
                 PyIndexError::new_err(err.to_string()),
         }
+    }
+}
+
+impl From<ContigLabelsError> for PyErr {
+    fn from(err: ContigLabelsError) -> PyErr {
+        // Both variants are bad configuration -> ValueError.
+        PyValueError::new_err(err.to_string())
     }
 }

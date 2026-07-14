@@ -8,6 +8,7 @@ use std::io;
 use columnar::pipeline::{PipelineError, Sink};
 use itertools::izip;
 
+use crate::error::crisprme_errors::ContigLabelsError;
 use crate::model::alignment::AlignmentFrame;
 use crate::crispr::pam::PAM;
 
@@ -65,6 +66,71 @@ impl PamContext {
     }
 }
 
+/// `contig` column renderer.
+///
+/// Contig ids are dense (`0..len`), assigned by `search._compute_contig_ids`
+/// and packed into every `Occurence` by `TargetBatcher::feed_chunk`. The
+/// name table is therefore a slice indexed by id (avoid using hashing).
+#[derive(Debug, Clone)]
+pub enum ContigLabels {
+    /// `names[id]` is the FASTA contig name.
+    Names(Box<[Box<str>]>),
+    /// No mapping supplied (e.g. `dataset_pipeline`): emit the raw id.
+    Ids,
+}
+
+impl ContigLabels {
+    /// Build a name table from `names` **in contig-id order**.
+    ///
+    /// # Errors
+    /// * [`ContigLabelsError::Empty`] — no names supplied.
+    /// * [`ContigLabelsError::InvalidName`] — a name is empty, or contains
+    ///   `,` `"` `\n` `\r`, which would break the CSV row.
+    pub fn from_names(names: Vec<String>) -> Result<Self, ContigLabelsError> {
+        if names.is_empty() {
+            let err = ContigLabelsError::Empty;
+            tracing::error!("{err}");
+            return Err(err);
+        }
+
+        for (id, name) in names.iter().enumerate() {
+            let bad = if name.is_empty() {
+                Some(0u8)
+            } else {
+                name.bytes().find(|b| matches!(b, b',' | b'"' | b'\n' | b'\r'))
+            };
+            if let Some(byte) = bad {
+                let err = ContigLabelsError::InvalidName {
+                    id: id as u32,
+                    name: name.clone(),
+                    byte,
+                };
+                tracing::error!("{err}");
+                return Err(err);
+            }
+        }
+
+        tracing::info!("contig labels: {} names", names.len());
+        Ok(Self::Names(
+            names.into_iter().map(String::into_boxed_str).collect(),
+        ))
+    }
+
+    /// The name for `id`, or `None` when unmapped / out of range.
+    #[inline(always)]
+    pub fn name(&self, id: u32) -> Option<&str> {
+        match self {
+            Self::Names(names) => names.get(id as usize).map(|n| &**n),
+            Self::Ids => None,
+        }
+    }
+
+    #[inline(always)]
+    pub fn is_named(&self) -> bool {
+        matches!(self, Self::Names(_))
+    }
+}
+
 /// Lock-free multi-threaded CSV writer.
 ///
 /// Each `CsvWriterSink` formats a batch into its own `buffer` (no contention),
@@ -75,6 +141,7 @@ pub struct CsvWriter {
     file: File,
     /// Shared, immutable: cloned into each sink at construction.
     pam: PamContext,
+    contigs: ContigLabels,
 }
 
 impl CsvWriter {
@@ -82,7 +149,7 @@ impl CsvWriter {
     ///
     /// Returns `io::Error` instead of panicking so the PyO3 layer can surface a
     /// descriptive `OSError` (bad path, no permission, read-only mount).
-    pub fn open(path: impl AsRef<Path>, pam: PamContext) -> io::Result<Arc<Self>> {
+    pub fn open(path: impl AsRef<Path>, pam: PamContext, contigs: ContigLabels) -> io::Result<Arc<Self>> {
         let path = path.as_ref();
         let file = OpenOptions::new()
             .truncate(true)
@@ -91,7 +158,7 @@ impl CsvWriter {
             .open(path)?;
 
         tracing::info!("CSV report -> {}", path.display());
-        Ok(Arc::new(Self { offset: AtomicUsize::new(0), file, pam }))
+        Ok(Arc::new(Self { offset: AtomicUsize::new(0), file, pam, contigs }))
     }
 
     /// Atomically reserve `bytes` of file space; returns the claimed offset.
@@ -105,6 +172,9 @@ pub struct CsvWriterSink {
     inner: Arc<CsvWriter>,
     /// Sink-local copy — keeps the row loop off the shared `Arc` cache line.
     pam: PamContext,
+    contigs: ContigLabels,
+    /// Fires the unmapped-contig error once per sink, not once per row.
+    warned_unmapped: bool,
     /// Per-sink row buffer — formatted here, then pwrite'd atomically.
     buffer: String,
 }
@@ -114,6 +184,8 @@ impl CsvWriterSink {
         Self { 
             inner: writer.clone(), 
             pam: writer.pam.clone(), 
+            contigs: writer.contigs.clone(),
+            warned_unmapped: false,
             buffer: String::new(),
         }
     }
@@ -143,11 +215,37 @@ impl Sink for CsvWriterSink {
                 cols.rguide.iter(),
                 cols.rseq.iter(),
             ) {
+                let contig_id = occ.contig();
+
+                // contig column
+                match self.contigs.name(contig_id) {
+                    Some(name) => self.buffer.push_str(name),
+                    None => {
+                        if self.contigs.is_named() && !self.warned_unmapped {
+                            // Invariant break: Python handed rust a name table 
+                            // shorter than the ids the batcher packed. Degrade
+                            // to the id rather than panicking! 
+                            // a panic here kills the sink worker silently and
+                            // the report ends up empty.
+                            tracing::error!(
+                                "contig id {} has no name (table holds {} entries); \
+                                falling back to numeric ids for this sink",
+                                contig_id,
+                                match &self.contigs {
+                                    ContigLabels::Names(n) => n.len(),
+                                    ContigLabels::Ids => 0,
+                                }
+                            );
+                            self.warned_unmapped = true;
+                        }
+                        write!(self.buffer, "{contig_id}").unwrap();
+                    }
+                }
+
                 // Layout is owned by `Occurence`; never unpack the u64 here.
                 write!(
                     self.buffer,
-                    "{},{},{},{}",
-                    occ.contig(),
+                    ",{},{},{}",
                     occ.position(),
                     occ.strand(),
                     offset,

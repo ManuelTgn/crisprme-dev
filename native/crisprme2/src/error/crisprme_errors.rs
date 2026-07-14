@@ -44,3 +44,18 @@ pub enum PamError {
     IndexOutOfRange { index: u16, count: u32 },
 }
 
+/// Errors raised while building the contig id -> name table for the report.
+///
+/// Both variants map to a Python `ValueError` through
+/// [`crate::python::pyerrors`], consistent with the other config-time errors.
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+pub enum ContigLabelsError {
+    /// The name table is empty; a report would have no contigs to label.
+    #[error("contig name table is empty")]
+    Empty,
+
+    /// A name is empty, or contains a byte that would corrupt the CSV row.
+    #[error("contig name {name:?} (id {id}) contains illegal byte {byte} \
+             (one of ',' '\"' '\\n' '\\r'), which would break the CSV")]
+    InvalidName { id: u32, name: String, byte: u8 },
+}

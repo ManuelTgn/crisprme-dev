@@ -263,7 +263,7 @@ def _scan_reference_genome(
     # compute report's output name
     outpath = _compute_report_name(guide, pam, outdir)
     # pipeline: one context for the entire genome run
-    with Pipeline.create(_PIPELINE_CHUNKS, thresholds, transforms, pam, upstream, outpath, loggers) as pipeline:
+    with Pipeline.create(_PIPELINE_CHUNKS, thresholds, transforms, pam, upstream, outpath, contig_ids, loggers) as pipeline:
         for contig, fasta in fastas.items():
             contig_id = contig_ids[contig]
             loggers.verboselog.debug(

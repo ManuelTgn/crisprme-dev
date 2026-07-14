@@ -79,7 +79,7 @@ pub mod _crisprme2_native {
             alignment::AlignmentFrame,
             input::{SEQ_MAX_LEN, SeqBatch, SeqFrame, SeqOccFrame}, occurence::Occurence,
         }, crispr::pam::PAM, pipeline::{
-            sink::{NullSink, writer::{CsvWriter, CsvWriterSink, PamContext, PamPlacement}}, source::reader::Reader, stage::{broadcast::Broadcast, miner::{GpuMiner, Miner}, resolve::Resolver, transform::PyTransform}
+            sink::{NullSink, writer::{CsvWriter, CsvWriterSink, ContigLabels, PamContext, PamPlacement}}, source::reader::Reader, stage::{broadcast::Broadcast, miner::{GpuMiner, Miner}, resolve::Resolver, transform::PyTransform}
         }, sequence::{iupac::Iupac, sequence::Sequence}
     };
 
@@ -312,19 +312,19 @@ pub mod _crisprme2_native {
         pam: &str,
         upstream: bool,
         outpath: PathBuf,
+        contigs: Vec<String>,
     ) -> PyResult<PyPipeline> {
 
         // Validate the PAM before allocating a multi-GB pool.
         let parsed_pam = PAM::new(pam)
             .map_err(|e| PyValueError::new_err(format!("invalid PAM {pam:?}: {e}")))?;
-
-        let placement = PamPlacement::from_upstream(upstream);
-        let pam_ctx = PamContext::new(&parsed_pam, placement);
-
+        let pam_ctx = PamContext::new(&parsed_pam, PamPlacement::from_upstream(upstream));
         tracing::info!(
             "guide column layout: {}",
             if upstream { "<PAM><guide>" } else { "<guide><PAM>" }
         );
+
+        let contigs = ContigLabels::from_names(contigs)?;
         
         // Create memory pool and pin all chunks for DMA from GPU
         let pool = MemoryPool::new(CHUNK_SIZE * chunks, |ptr, bytes| {
@@ -351,7 +351,7 @@ pub mod _crisprme2_native {
 
         // Add sink stage
         //let pipeline = pipeline.sink(2, |_, _| NullSink::<AlignmentFrame>::new());
-        let csv_writer = CsvWriter::open(&outpath, pam_ctx)
+        let csv_writer = CsvWriter::open(&outpath, pam_ctx, contigs)
             .map_err(|e| PyOSError::new_err(
                 format!("cannot open CSV report {}: {e}", outpath.display())))?;
 
