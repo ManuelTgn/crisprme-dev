@@ -21,16 +21,20 @@ type WindowKey = Box<[u8]>;
 type Occ = u64;
 
 #[inline(always)]
-fn pack_occ(contig_id: u32, pos: u32, strand_bit: u8) -> Occ {
-    ((contig_id as u64) << 33) | ((pos as u64) << 1) | ((strand_bit as u64) & 1)
+fn pack_occ(contig_id: u16, pam_id: u16, pos: u32, strand_bit: u8) -> Occ {
+    ((contig_id as u64) << 49)
+        | ((pam_id as u64) << 33)
+        | ((pos as u64) << 1)
+        | ((strand_bit as u64) & 1)
 }
 
 #[inline(always)]
-pub fn unpack_occ(occ: Occ) -> (u32, u32, u8) {
-    let contig_id = (occ >> 33) as u32;
+pub fn unpack_occ(occ: Occ) -> (u16, u16, u32, u8) {
+    let contig_id = (occ >> 49) as u16;
+    let pam_id = (occ >> 33) as u16;
     let pos = ((occ >> 1) & 0xFFFF_FFFF) as u32;
     let strand_bit = (occ & 1) as u8;
-    (contig_id, pos, strand_bit)
+    (contig_id, pam_id, pos, strand_bit)
 }
 
 #[pyclass]
@@ -124,7 +128,7 @@ impl TargetBatcher {
 
     pub fn feed_chunk(
         &mut self,
-        contig_id: u32,
+        contig_id: u16,
         chunk_start: u32,
         strand: u8,
         chunk_seq: &str,
@@ -201,13 +205,6 @@ impl TargetBatcher {
         let scanned_on_rc = Strand::from_bit(strand).scanned_on_revcomp(self.upstream);
         let plen = self.pam.bytes.len();
 
-        println!(
-            "Size: {}, extracted: {}, plen: {}",
-            self.size,
-            (self.size - plen),
-            plen
-        );
-
         for i in 0..pos_local.len() {
             let p = pos_local[i];
             if p < accept_lo || p >= accept_hi {
@@ -237,7 +234,7 @@ impl TargetBatcher {
                         "window [{start},{end}) escapes chunk (len={chunk_len})"
                     ))
                 })?;
-                chunk_start as usize + back
+                chunk_start as usize + back - plen + 1
             } else {
                 chunk_start as usize + start
             };
@@ -246,10 +243,16 @@ impl TargetBatcher {
                 return Err(PyErr::new::<PyValueError, _>("Position overflow"));
             }
 
+            // Read candidate target sequence
             let window = &seq_bitmask[start..end];
             let key: WindowKey = window.to_vec().into_boxed_slice();
 
-            let occ = pack_occ(contig_id, window_fwd_left as u32, strand);
+            // Read candidate target PAM sequence
+            let pstart = end - 1;
+            let wpam = &seq_bitmask[pstart..pstart + plen];
+            let pam_id = self.pam.pam_index(wpam);
+
+            let occ = pack_occ(contig_id, pam_id as u16, window_fwd_left as u32, strand);
 
             self.map.entry(key).or_default().push(occ);
             self.hits_in_batch += 1;
@@ -267,8 +270,6 @@ impl TargetBatcher {
     pub fn flush_and_align(&mut self, max_mm: usize, bdna: usize, brna: usize) -> PyResult<()> {
         // Collect window batches on flush
         let batch: WindowBatch = self.flush_to_batch();
-
-        println!("aligning");
         Ok(())
     }
 

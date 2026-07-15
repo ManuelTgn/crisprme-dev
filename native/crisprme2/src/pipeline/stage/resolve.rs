@@ -307,9 +307,9 @@ mod tests {
         let mut occs = SeqOccFrame::alloc(&pool, 2);
         occs.with_cols(|mut cols| {
             *cols.seq_row_idx.get_mut(0) = 0;
-            *cols.occurence.get_mut(0) = Occurence::new(1, 100, Strand::from_bit(0));
+            *cols.occurence.get_mut(0) = Occurence::new(1, 0, 100, Strand::from_bit(0));
             *cols.seq_row_idx.get_mut(1) = 0;
-            *cols.occurence.get_mut(1) = Occurence::new(2, 200, Strand::from_bit(1));
+            *cols.occurence.get_mut(1) = Occurence::new(2, 0, 200, Strand::from_bit(1));
         });
 
         let ops = cigar(&[CigarxOp::Match]);

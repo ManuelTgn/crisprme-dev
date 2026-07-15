@@ -150,7 +150,7 @@ impl ReadOccFrame for BinaryPositionReader {
                 for &pos in &positions[pos_offset..pos_offset + count] {
                     let (idx, occ) = occ_iter.next().expect("occ frame size mismatch");
 
-                    *occ = Occurence::new(0, pos, Strand::from_bit(0));
+                    *occ = Occurence::new(0, 0, pos, Strand::from_bit(0));
                     *idx = seq_idx as u32;
                 }
                 pos_offset += count;

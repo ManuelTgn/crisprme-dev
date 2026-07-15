@@ -16,6 +16,12 @@ use crate::error::crisprme_errors::ContigLabelsError;
 use crate::model::alignment::AlignmentFrame;
 use crate::model::occurence::Strand;
 
+/// `Occurence::pam_id()` sentinel meaning "no concrete PAM was recorded" — the
+/// target is then decorated with the degenerate motif instead. Produced by the
+/// raw-reader path and by `feed_chunk` when the reference base under the PAM is
+/// ambiguous.
+pub const PAM_ID_NONE: u16 = u16::MAX;
+
 /// Where the PAM sits relative to the protospacer.
 ///
 /// Named rather than a bare `bool` so call sites can't silently invert it —
@@ -52,25 +58,46 @@ impl PamPlacement {
 /// lookup, and the empty side compiles to a length-0 memcpy.
 #[derive(Debug, Clone)]
 pub struct PamContext {
+    /// Guide-column decoration: the degenerate motif, pre-split so exactly one
+    /// of prefix/suffix is non-empty (unchanged behaviour).
     prefix: Box<str>,
     suffix: Box<str>,
     placement: PamPlacement,
+    /// Target-column decoration: concrete PAM variants indexed by pam id
+    /// (reported-strand orientation), e.g. `variants[3] == "TGG"` for `NGG`.
+    variants: Box<[Box<str>]>,
+    /// Fallback when an occurrence carries no concrete PAM (`PAM_ID_NONE`, or an
+    /// id past the table): the degenerate motif.
+    motif: Box<str>,
 }
 
 impl PamContext {
     pub fn new(pam: &PAM, placement: PamPlacement) -> Self {
-        let motif = pam.motif();
-        match placement {
-            PamPlacement::Upstream => Self {
-                prefix: motif.into(),
-                suffix: Box::from(""),
-                placement,
-            },
-            PamPlacement::Downstream => Self {
-                prefix: Box::from(""),
-                suffix: motif.into(),
-                placement,
-            },
+        let motif: Box<str> = pam.motif().into();
+
+        // Guide decoration (degenerate motif) — resolved once into a
+        // prefix/suffix pair, exactly as before.
+        let (prefix, suffix) = match placement {
+            PamPlacement::Upstream => (motif.clone(), Box::<str>::from("")),
+            PamPlacement::Downstream => (Box::<str>::from(""), motif.clone()),
+        };
+
+        // Target decoration (concrete variants) — one small string per pam id.
+        // `variant_count <= 65_536` and every id in range is a valid variant.
+        let variants: Box<[Box<str>]> = (0..pam.variant_count())
+            .map(|id| {
+                pam.pam_variant_ascii(id as u16)
+                    .expect("id < variant_count is always a valid variant")
+                    .into_boxed_str()
+            })
+            .collect();
+
+        Self {
+            prefix,
+            suffix,
+            placement,
+            variants,
+            motif,
         }
     }
 
@@ -85,6 +112,37 @@ impl PamContext {
             buf.push(b as char);
         }
         buf.push_str(&self.suffix);
+    }
+
+    /// Render the aligned target `rseq`, decorated with its **concrete** matched
+    /// PAM, into `buf`.
+    ///
+    /// Mirrors [`render_guide`], but the decoration is the concrete PAM variant
+    /// (e.g. `TGG`) selected by `pam_id`, not the degenerate motif. An
+    /// out-of-range id — [`PAM_ID_NONE`], or any occurrence with no concrete PAM
+    /// (raw-reader path / ambiguous reference base) — falls back to the motif so
+    /// the column width stays consistent. Placement matches the guide: the PAM
+    /// is prepended when upstream, appended when downstream.
+    ///
+    /// `pam_id` is stored by `feed_chunk` in reported-strand orientation, so the
+    /// variant needs no strand handling here.
+    #[inline]
+    pub(crate) fn render_target(&self, buf: &mut String, rseq: &[u8], pam_id: u16) {
+        let pam: &str = self
+            .variants
+            .get(pam_id as usize)
+            .map(|v| &**v)
+            .unwrap_or(&self.motif);
+
+        if self.placement.is_upstream() {
+            buf.push_str(pam);
+        }
+        for &b in rseq.iter().take_while(|&&b| b != 0) {
+            buf.push(b as char);
+        }
+        if !self.placement.is_upstream() {
+            buf.push_str(pam);
+        }
     }
 
     #[inline(always)]
@@ -150,7 +208,7 @@ impl ContigLabels {
 
     /// The name for `id`, or `None` when unmapped / out of range.
     #[inline(always)]
-    pub fn name(&self, id: u32) -> Option<&str> {
+    pub fn name(&self, id: u16) -> Option<&str> {
         match self {
             Self::Names(names) => names.get(id as usize).map(|n| &**n),
             Self::Ids => None,
@@ -297,9 +355,7 @@ impl Sink for CsvWriterSink {
 
                 // Aligned target columns
                 self.buffer.push(',');
-                for &b in rseq.iter().take_while(|&&b| b != 0) {
-                    self.buffer.push(b as char);
-                }
+                self.pam.render_target(&mut self.buffer, rseq, occ.pam());
 
                 /*
                 for it in &mut feat_iters {

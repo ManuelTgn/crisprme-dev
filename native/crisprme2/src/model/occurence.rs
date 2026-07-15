@@ -72,13 +72,23 @@ pub struct Occurence(pub u64);
 
 impl Occurence {
     #[inline(always)]
-    pub fn new(contig: u32, position: u32, strand: Strand) -> Self {
-        Self(((contig as u64) << 33) | ((position as u64) << 1) | (strand.as_bit() as u64))
+    pub fn new(contig: u16, pam: u16, position: u32, strand: Strand) -> Self {
+        Self(
+            (((contig & 0x7FFF) as u64) << 49)
+                | ((pam as u64) << 33)
+                | ((position as u64) << 1)
+                | (strand.as_bit() as u64),
+        )
     }
 
     #[inline(always)]
-    pub fn contig(&self) -> u32 {
-        (self.0 >> 33) as u32
+    pub fn contig(&self) -> u16 {
+        ((self.0 >> 49) & 0x7FFF) as u16
+    }
+
+    #[inline(always)]
+    pub fn pam(&self) -> u16 {
+        ((self.0 >> 33) & 0xFFFF) as u16
     }
 
     /// Contig-local genomic position.
@@ -86,7 +96,7 @@ impl Occurence {
     /// `position` occupies bits 1..=32, so the mask is 32 bits wide.
     #[inline(always)]
     pub fn position(&self) -> u32 {
-        ((self.0 >> 1) & 0x7FFF_FFFF) as u32
+        ((self.0 >> 1) & 0x_FFFF_FFFF) as u32
     }
 
     #[inline(always)]
