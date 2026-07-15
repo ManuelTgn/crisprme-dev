@@ -204,7 +204,7 @@ impl Stage for GpuMiner {
         let buffers = self.buffers.as_mut().expect("Miner buffers not allocated!");
 
         // Prepare miner with context
-        bindings::miner::prepare(&input.guide, input.seq_len, &input.thresholds);
+        bindings::miner::prepare(&input.guide, input.seq_len, input.pam_len, &input.thresholds);
 
         // Copy data from column region to staging buffer
         let mut src_seq_count = 0;

@@ -235,6 +235,7 @@ impl Source for Reader {
 
         Ok(Some(SeqBatch {
             seq_len: self.sequences.sequence_len,
+            pam_len: 0, // raw pre-scanned windows carry no PAM context
             guide: self.guide.clone(),
             thresholds: self.thresholds,
             sequences: seqs,

@@ -31,6 +31,7 @@ __constant__ u8 GUIDE[64];
 
 __constant__ u32 GLEN;
 __constant__ u32 SLEN;
+__constant__ u32 PSTOP;   // == SLEN - PLEN: PAM start / protospacer end (exclusive)
 
 __constant__ u32 GGAP;
 __constant__ u32 SGAP;
@@ -116,7 +117,13 @@ __global__ void warp_reg_stack(
     // TODO: Load data to shared memory after the barrier
     __syncthreads();
 
-    for (u32 offset = start_sidx; offset <= (SLEN - GLEN + GGAP); offset += 1) {
+    // Only offsets that can satisfy the right-anchor are worth exploring:
+    //   offset = pad - ggap_used + sgap_used,  ggap_used <= GGAP, sgap_used <= SGAP
+    const u32 pad = PSTOP - GLEN;                        // left padding for DNA bulges
+    const u32 offset_lo = pad > GGAP ? pad - GGAP : 0;
+    const u32 offset_hi = pad + SGAP;
+
+    for (u32 offset = offset_lo; offset <= offset_hi; offset += 1) {
 
       // Initialize stack for this sequence if not already done
       if (miner.mem.len == 0) {
@@ -158,8 +165,8 @@ __global__ void warp_reg_stack(
 
         // Controllers, these depends on input data
         bool inside_thresholds = miner.inside_thresholds(MISM, GGAP, SGAP);
-        bool can_continue = miner.can_continue(SLEN, GLEN, offset, GGAP);
-        bool is_complete = miner.is_complete(GLEN);
+        bool can_continue = miner.can_continue(GLEN, PSTOP, offset);
+        bool is_complete = miner.is_complete(GLEN, PSTOP, offset);
 
 #if DEBUG
 	printf("inside_thresholds: %d\n", inside_thresholds);
@@ -193,6 +200,7 @@ __global__ void warp_reg_stack(
 
           // Add solution to alignment batch
           if (inside_thresholds) {
+            assert(miner.mem.state.sidx + offset == PSTOP);   // <-- NEW
             u32 write_idx = atomicAdd(&dev_alignment_write, 1);
             assert(write_idx < capacity && "ERR: too many alignments!");
             result[write_idx] = Alignment {
@@ -208,20 +216,20 @@ __global__ void warp_reg_stack(
           printf("push\n");
 #endif
          
-	  // If the target sequence is out of bound this means that we can only add deletions
-	  // NOTE: The mismatch flag is not needed as the deletion is the last type of step before
-	  // a backtrack, it will never be used.
-	  if (miner.mem.state.sidx + offset >= SLEN) {
-#if DEBUG
-	       printf("out-of-bound, pushing only deletions\n");
-#endif
-	       miner.push(Step::deletion(), false);
+	  // Guide exhausted but the alignment has not reached the PAM:
+	  // only DNA bulges can close the gap.
+	  if (miner.mem.state.gidx >= GLEN) {
+	       miner.push(Step::dna_bulge(), false);
 	       continue;
 	  }
 
-          // In the other cases we can proceed as normal and push a match/mismatch step
-	  //assert(miner.mem.state.sidx + offset < SLEN);
-	  //assert(miner.mem.state.gidx < GLEN);
+	  // DNA cursor is at the PAM but the guide is not exhausted:
+	  // only RNA bulges remain. Note the bound is PSTOP, not SLEN —
+	  // the guide must never align into the PAM.
+	  if (miner.mem.state.sidx + offset >= PSTOP) {
+	       miner.push(Step::rna_bulge(), false);
+	       continue;
+	  }
 
 	  u8 s = batch[bseq * SLEN + miner.mem.state.sidx + offset];
 	  u8 g = GUIDE[miner.mem.state.gidx];
@@ -257,13 +265,17 @@ namespace cuda::miner {
   }
 
   /// Invoked before a new batch is mined
-  void pre_mine(const u8* guide, u32 glen, u32 slen, u32 ggap, u32 sgap, u32 mism) {
-  
+  void pre_mine(const u8* guide, u32 glen, u32 slen, u32 plen, u32 ggap, u32 sgap, u32 mism) {
+
     // Copy guide to constant memory
     CUDA_CHECK(cudaMemcpyToSymbol(GUIDE, guide, glen, 0, cudaMemcpyHostToDevice));
 
     // Copy thresholds and lengths to constant memory
     CUDA_CHECK(cudaMemcpyToSymbol(SLEN, &slen, sizeof(u32), 0, cudaMemcpyHostToDevice));
+
+    // Protospacer must end exactly where the PAM begins.
+    u32 pstop = slen - plen;
+    CUDA_CHECK(cudaMemcpyToSymbol(PSTOP, &pstop, sizeof(u32), 0, cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpyToSymbol(GLEN, &glen, sizeof(u32), 0, cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpyToSymbol(SGAP, &sgap, sizeof(u32), 0, cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpyToSymbol(GGAP, &ggap, sizeof(u32), 0, cudaMemcpyHostToDevice));

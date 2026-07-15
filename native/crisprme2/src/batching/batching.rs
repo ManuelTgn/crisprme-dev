@@ -372,6 +372,9 @@ impl TargetBatcher {
     pub fn get_sequence_len(&self) -> usize {
         self.size
     }
+    pub fn get_pam_len(&self) -> usize {
+        self.pam.plen()
+    }
     pub fn get_guide(&self) -> Guide {
         self.guide.clone()
     }

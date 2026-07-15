@@ -139,6 +139,7 @@ pub mod _crisprme2_native {
                     .send(SeqBatch {
                         thresholds: Thresholds::new(1, 1, 2),
                         seq_len: sequence.len(),
+                        pam_len: 0, // debug batches carry no PAM
                         guide: Guide::new("GATTACA"),
                         sequences: seqs,
                         occurences: occs,
@@ -185,6 +186,7 @@ pub mod _crisprme2_native {
                     .send(SeqBatch {
                         thresholds: Thresholds::new(1, 1, 2),
                         seq_len,
+                        pam_len: 0, // debug batches carry no PAM
                         guide: Guide::new("GATTACAGATTACA"),
                         sequences: seqs,
                         occurences: occs,
@@ -244,6 +246,7 @@ pub mod _crisprme2_native {
                     .send(SeqBatch {
                         thresholds: self.threshold.clone(),
                         seq_len: batcher.get_sequence_len(),
+                        pam_len: batcher.get_pam_len(),
                         guide: batcher.get_guide(),
                         sequences: seqs,
                         occurences: occs,

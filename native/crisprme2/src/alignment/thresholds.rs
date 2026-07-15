@@ -4,13 +4,15 @@ use pyo3::{pyclass, pymethods};
 #[derive(Debug, Clone, Copy)]
 #[pyclass]
 pub struct Thresholds {
-    /// Max allowed gaps in guide
+    /// Maximum **RNA bulges**: gap in the target/DNA row (guide has an extra base).
+    /// Called `sgap` on the CUDA side. Python: `brna`.
     #[pyo3(get, set)]
     pub qgap: u32,
-    /// Max allowed gaps in target
+    /// Maximum **DNA bulges**: gap in the query/guide row (DNA has an extra base).
+    /// Called `ggap` on the CUDA side. Python: `bdna`.
     #[pyo3(get, set)]
     pub tgap: u32,
-    /// Max allowed mismatches
+    /// Maximum mismatches.
     #[pyo3(get, set)]
     pub mism: u32,
 }

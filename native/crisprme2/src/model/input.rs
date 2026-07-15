@@ -31,6 +31,8 @@ pub struct SeqOcc {
 pub struct SeqBatch {
     /// Length of the sequences
     pub seq_len: usize,
+    /// PAM length; protospacer ends at seq_len - pam_len
+    pub pam_len: usize,
     /// Guide used for the alignment process
     pub guide: Guide,
 
