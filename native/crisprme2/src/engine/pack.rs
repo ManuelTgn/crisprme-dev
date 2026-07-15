@@ -1,5 +1,5 @@
+use crate::batching::batching::{unpack_occ, WindowBatch};
 use crate::memory::batch::WindowRingBatch;
-use crate::batching::batching::{WindowBatch, unpack_occ};
 use crate::sequence::iupac::Iupac;
 
 /*

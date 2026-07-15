@@ -1,6 +1,9 @@
 use std::{fs::File, io::BufReader, io::Read, path::PathBuf};
 
-use columnar::{MemoryPool, pipeline::{PipelineError, Source}};
+use columnar::{
+    pipeline::{PipelineError, Source},
+    MemoryPool,
+};
 use itertools::izip;
 
 use crate::{
@@ -9,8 +12,11 @@ use crate::{
     model::{
         input::{SeqBatch, SeqFrame, SeqOccFrame},
         occurence::Occurence,
-    }, sequence::sequence::Sequence,
+    },
+    sequence::sequence::Sequence,
 };
+
+use crate::model::occurence::Strand;
 
 /// Allocates and fills a `SeqFrame` with exactly `n` sequences read from the binary stream.
 /// Returns `None` on clean EOF.
@@ -36,7 +42,10 @@ pub struct BinarySequenceReader {
 impl BinarySequenceReader {
     pub fn open(path: PathBuf, sequence_len: usize) -> Self {
         let file = File::open(path).expect("File not found");
-        let file_size = file.metadata().expect("File metadata could not be read").len();
+        let file_size = file
+            .metadata()
+            .expect("File metadata could not be read")
+            .len();
         assert!(
             file_size as usize % sequence_len == 0,
             "sequence file size ({file_size} bytes) is not divisible by sequence_len ({sequence_len})"
@@ -52,7 +61,10 @@ impl BinarySequenceReader {
 
 impl ReadSeqFrame for BinarySequenceReader {
     fn read(&mut self, pool: &MemoryPool, n: usize) -> Option<SeqFrame> {
-        assert!(self.sequence_len <= 32, "seq_len must be <= SEQ_MAX_LEN (32)");
+        assert!(
+            self.sequence_len <= 32,
+            "seq_len must be <= SEQ_MAX_LEN (32)"
+        );
 
         if self.read >= self.total {
             return None;
@@ -63,7 +75,9 @@ impl ReadSeqFrame for BinarySequenceReader {
         frame.with_cols(|mut cols| {
             for row in cols.content.iter_mut() {
                 let bytes = bytemuck::cast_slice_mut(&mut row[..self.sequence_len]);
-                self.reader.read_exact(bytes).expect("error reading sequence");
+                self.reader
+                    .read_exact(bytes)
+                    .expect("error reading sequence");
             }
         });
 
@@ -77,7 +91,7 @@ pub struct BinaryPositionReader {
     /// Scratch buffer for counts; reused across batches.
     counts: Vec<u32>,
     /// Scratch buffer for positions; reused across batches
-    positions: Vec<u32>
+    positions: Vec<u32>,
 }
 
 impl BinaryPositionReader {
@@ -111,7 +125,9 @@ impl ReadOccFrame for BinaryPositionReader {
 
             self.positions.resize(offset + len, 0);
             let bytes = bytemuck::cast_slice_mut(&mut self.positions[offset..]);
-            self.reader.read_exact(bytes).expect("unable to read positions");
+            self.reader
+                .read_exact(bytes)
+                .expect("unable to read positions");
 
             self.counts.push(len as u32);
         }
@@ -126,18 +142,15 @@ impl ReadOccFrame for BinaryPositionReader {
         let positions = &self.positions;
 
         frame.with_cols(|mut cols| {
-
             let mut pos_offset = 0;
-            let mut occ_iter = izip!(
-                cols.seq_row_idx.iter_mut(), cols.occurence.iter_mut());
+            let mut occ_iter = izip!(cols.seq_row_idx.iter_mut(), cols.occurence.iter_mut());
 
             for (seq_idx, &count) in counts.iter().enumerate() {
                 let count = count as usize;
                 for &pos in &positions[pos_offset..pos_offset + count] {
-                    let (idx, occ) = occ_iter.next()
-                        .expect("occ frame size mismatch");
+                    let (idx, occ) = occ_iter.next().expect("occ frame size mismatch");
 
-                    *occ = Occurence::new(0, pos, 0);
+                    *occ = Occurence::new(0, 0, pos, Strand::from_bit(0));
                     *idx = seq_idx as u32;
                 }
                 pos_offset += count;
@@ -181,10 +194,11 @@ impl Reader {
 }
 
 impl Source for Reader {
-
     type O = SeqBatch;
 
-    fn name() -> &'static str { "Reader" }
+    fn name() -> &'static str {
+        "Reader"
+    }
 
     fn next(&mut self) -> Result<Option<Self::O>, PipelineError> {
         let mut occs = match self.positions.read(&self.pool, self.batch_size) {
@@ -192,7 +206,9 @@ impl Source for Reader {
             Some(frame) => frame,
         };
         let n_seqs = self.positions.counts.len();
-        let mut seqs = self.sequences.read(&self.pool, n_seqs)
+        let mut seqs = self
+            .sequences
+            .read(&self.pool, n_seqs)
             .expect("position/sequence count mismatch");
 
         /*
@@ -212,11 +228,14 @@ impl Source for Reader {
         */
 
         self.total_sequences += n_seqs;
-        println!("Read batch: {} sequences, total so far: {}",
-            n_seqs, self.total_sequences);
+        println!(
+            "Read batch: {} sequences, total so far: {}",
+            n_seqs, self.total_sequences
+        );
 
         Ok(Some(SeqBatch {
             seq_len: self.sequences.sequence_len,
+            pam_len: 0, // raw pre-scanned windows carry no PAM context
             guide: self.guide.clone(),
             thresholds: self.thresholds,
             sequences: seqs,
@@ -227,26 +246,26 @@ impl Source for Reader {
 
 #[cfg(test)]
 mod test {
-    use std::{io::Write, path::PathBuf};
-    use columnar::pipeline::Source;
-    use crate::{
-        alignment::thresholds::Thresholds,
-        crispr::guide::Guide,
-        pipeline::test::make_pool,
-    };
     use super::{BinaryPositionReader, BinarySequenceReader, ReadOccFrame, ReadSeqFrame, Reader};
+    use crate::{
+        alignment::thresholds::Thresholds, crispr::guide::Guide, pipeline::test::make_pool,
+    };
+    use columnar::pipeline::Source;
+    use std::{io::Write, path::PathBuf};
 
     /// Owns a temp file path and deletes it on drop.
     struct TempFile(PathBuf);
 
     impl TempFile {
         fn new() -> Self {
-            let path = std::env::temp_dir()
-                .join(format!("crisprme_test_{}", rand::random::<u64>()));
+            let path =
+                std::env::temp_dir().join(format!("crisprme_test_{}", rand::random::<u64>()));
             Self(path)
         }
 
-        fn path(&self) -> PathBuf { self.0.clone() }
+        fn path(&self) -> PathBuf {
+            self.0.clone()
+        }
 
         fn writer(&self) -> std::fs::File {
             std::fs::File::create(&self.0).unwrap()
@@ -254,19 +273,26 @@ mod test {
     }
 
     impl Drop for TempFile {
-        fn drop(&mut self) { let _ = std::fs::remove_file(&self.0); }
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
     }
 
     /// Write sequences as flat raw bytes (one seq_len-byte row per sequence).
     fn write_seqs(f: &mut impl Write, seqs: &[Vec<u8>]) {
-        for s in seqs { f.write_all(s).unwrap(); }
+        for s in seqs {
+            f.write_all(s).unwrap();
+        }
     }
 
     /// Write positions as length-prefixed u32 LE arrays (one per sequence).
     fn write_positions(f: &mut impl Write, data: &[Vec<u32>]) {
         for pos_array in data {
-            f.write_all(&(pos_array.len() as u32).to_le_bytes()).unwrap();
-            for &p in pos_array { f.write_all(&p.to_le_bytes()).unwrap(); }
+            f.write_all(&(pos_array.len() as u32).to_le_bytes())
+                .unwrap();
+            for &p in pos_array {
+                f.write_all(&p.to_le_bytes()).unwrap();
+            }
         }
     }
 
@@ -335,9 +361,9 @@ mod test {
         let expected_pos: &[u32] = &[10, 20, 30, 40, 50, 60];
         frame.with_cols(|cols| {
             let idxs: Vec<u32> = cols.seq_row_idx.iter().copied().collect();
-            let pos:  Vec<u32> = cols.occurence.iter().map(occ_position).collect();
+            let pos: Vec<u32> = cols.occurence.iter().map(occ_position).collect();
             assert_eq!(idxs, expected_idx);
-            assert_eq!(pos,  expected_pos);
+            assert_eq!(pos, expected_pos);
         });
     }
 
@@ -372,18 +398,26 @@ mod test {
 
         let pool = make_pool();
         let mut reader = Reader::open(
-            seq_tmp.path(), pos_tmp.path(), seq_len, 2,
-            Guide::new("ACGT"), Thresholds::new(1, 1, 2), pool,
-        ).unwrap();
+            seq_tmp.path(),
+            pos_tmp.path(),
+            seq_len,
+            2,
+            Guide::new("ACGT"),
+            Thresholds::new(1, 1, 2),
+            pool,
+        )
+        .unwrap();
 
         // Batch 1: seqs 0,1 — 1+2 = 3 occs
         let mut b1 = reader.next().unwrap().unwrap();
         assert_eq!(b1.seq_len, seq_len);
-        b1.occurences.with_cols(|cols| assert_eq!(cols.seq_row_idx.iter().count(), 3));
+        b1.occurences
+            .with_cols(|cols| assert_eq!(cols.seq_row_idx.iter().count(), 3));
 
         // Batch 2: seqs 2,3 — 1+3 = 4 occs
         let mut b2 = reader.next().unwrap().unwrap();
-        b2.occurences.with_cols(|cols| assert_eq!(cols.seq_row_idx.iter().count(), 4));
+        b2.occurences
+            .with_cols(|cols| assert_eq!(cols.seq_row_idx.iter().count(), 4));
 
         assert!(reader.next().unwrap().is_none());
     }

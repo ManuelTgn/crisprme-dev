@@ -1,5 +1,5 @@
+use columnar::pipeline::{PipelineError, Sink};
 use std::marker::PhantomData;
-use columnar::pipeline::{Sink, PipelineError};
 
 pub mod writer;
 
@@ -12,13 +12,15 @@ impl<T> NullSink<T> {
     }
 }
 
-impl<T> Sink for NullSink<T> 
-where 
-    T: Send + 'static
+impl<T> Sink for NullSink<T>
+where
+    T: Send + 'static,
 {
     type I = T;
 
-    fn name() -> &'static str { "NullSink" }
+    fn name() -> &'static str {
+        "NullSink"
+    }
     fn consume(&mut self, _item: Self::I) -> Result<(), PipelineError> {
         Ok(())
     }

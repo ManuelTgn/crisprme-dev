@@ -36,26 +36,26 @@
 // - Completely removes unused mine_and_expand_pass() to avoid warnings/confusion.
 // - Keeps bindings import only for shutdown in Drop (as requested).
 
+use crate::alignment::alignment::Alignment;
+use crate::batching::batching::TargetBatcher;
+use crate::bindings;
+use crate::memory::arena::Arena;
+use crate::memory::batch::{AlignmentRingBatch, SequenceRingBatch};
+use crate::memory::ring::RingAdapter;
+use crate::memory::ring::{ring_buffer, Consumer, Producer};
+use crate::storage::writer::{AlignmentBatchDescr, AlignmentBatchWriter};
 use std::collections::HashMap;
 use std::thread::JoinHandle;
-use crate::bindings;
-use crate::alignment::alignment::Alignment;
-use crate::memory::batch::{AlignmentRingBatch, SequenceRingBatch};
-use crate::memory::ring::{ring_buffer, Consumer, Producer};
-use crate::memory::arena::Arena;
-use crate::storage::writer::{AlignmentBatchDescr, AlignmentBatchWriter};
-use crate::memory::ring::RingAdapter;
-use crate::batching::batching::TargetBatcher;
 
 use super::params::AlignmentParams;
 
-use std::time::Instant;
-use pyo3::{pyclass, pymethods, PyResult};
-use pyo3::exceptions::PyBufferError;
-use tracing::{error, info, trace, warn};
 use crate::python::views::AlignmentBatchView;
 use crate::sequence::iupac::Iupac;
 use crate::storage::reader::SequenceBatchDescr;
+use pyo3::exceptions::PyBufferError;
+use pyo3::{pyclass, pymethods, PyResult};
+use std::time::Instant;
+use tracing::{error, info, trace, warn};
 
 type SequenceSend = Producer<SequenceRingBatch>;
 type SequenceRecv = Consumer<SequenceRingBatch>;
@@ -141,7 +141,7 @@ impl HybridEngine {
     /// - Alignment ring: 6 slots × `alignment_batch_size × size_of::<Alignment>()` bytes.
     #[new]
     pub fn new(params: AlignmentParams) -> Self {
-        
+
         info!("running alignment (DEBUG): {params:#?}");
 
         // Window ring
@@ -392,7 +392,7 @@ fn th_miner_cuda(pipeline: AlignmentParams, input: SequenceRecv, output: Alignme
                 alignments.replace_pos_by_id(&batch);
                 output.commit_with_descriptor(alignments, AlignmentBatchDescr {
                     batcher_id: batch.descriptor.batcher_id,
-                    // NOTE: This can signal to the consumer that this is the last batch for this window batch, 
+                    // NOTE: This can signal to the consumer that this is the last batch for this window batch,
                     // so it can trigger any necessary finalization steps
                     output_tx: match complete {
                         true  => batch.descriptor.output_tx.take(),
@@ -435,12 +435,12 @@ fn th_aggregator(_pipeline: AlignmentParams, rx: AlignmentRecv) {
 
         trace!("received batch to aggregate (target_batcher: {})", batcher_id);
 
-        // Add batch to the corresponding batcher aggregate 
+        // Add batch to the corresponding batcher aggregate
         map.entry(batcher_id)
             .or_default()
             .push(batch);
 
-        // If there is a transmitter, this means that this is the last batch of the window batch, 
+        // If there is a transmitter, this means that this is the last batch of the window batch,
         // so we can trigger the finalization of the target batcher and submit all results
         if let Some(tx) = tx {
             let aggregates = map.remove(&batcher_id)

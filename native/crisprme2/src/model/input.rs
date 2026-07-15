@@ -1,8 +1,8 @@
 use columnar::{Columnar, Schema};
 
 use crate::alignment::thresholds::Thresholds;
-use crate::{crispr::guide::Guide, sequence::iupac::Iupac};
 use crate::model::occurence::Occurence;
+use crate::{crispr::guide::Guide, sequence::iupac::Iupac};
 
 /// Maximum length of a sequence.
 /// Must be a power of 2 so that sizeof([Iupac; SEQ_MAX_LEN]) divides CHUNK_SIZE (65536) evenly.
@@ -21,7 +21,6 @@ pub struct Seq {
 /// Definition of a single sequence occurrence
 #[derive(Debug, Columnar)]
 pub struct SeqOcc {
-
     /// Identifier for the owning sequence row
     pub seq_row_idx: SeqRowIdx,
     /// Where this sequence occures, packed (contig_id, position, strand)
@@ -30,9 +29,10 @@ pub struct SeqOcc {
 
 /// Metadata for a batch of sequences
 pub struct SeqBatch {
-
     /// Length of the sequences
     pub seq_len: usize,
+    /// PAM length; protospacer ends at seq_len - pam_len
+    pub pam_len: usize,
     /// Guide used for the alignment process
     pub guide: Guide,
 

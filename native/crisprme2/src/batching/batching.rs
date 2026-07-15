@@ -1,8 +1,10 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
 use crate::crispr::guide::Guide;
-use crate::crispr::{pam, guide};
+use crate::crispr::{guide, pam};
 use crate::memory::batch::AlignmentRingBatch;
-use crate::sequence::{scanner, iupac};
+use crate::model::occurence::Strand;
+use crate::sequence::{iupac, scanner};
+
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use ahash::AHashMap;
 
@@ -19,16 +21,20 @@ type WindowKey = Box<[u8]>;
 type Occ = u64;
 
 #[inline(always)]
-fn pack_occ(contig_id: u32, pos: u32, strand_bit: u8) -> Occ {
-    ((contig_id as u64) << 33) | ((pos as u64) << 1) | ((strand_bit as u64) & 1)
+fn pack_occ(contig_id: u16, pam_id: u16, pos: u32, strand_bit: u8) -> Occ {
+    ((contig_id as u64) << 49)
+        | ((pam_id as u64) << 33)
+        | ((pos as u64) << 1)
+        | ((strand_bit as u64) & 1)
 }
 
 #[inline(always)]
-pub fn unpack_occ(occ: Occ) -> (u32, u32, u8) {
-    let contig_id = (occ >> 33) as u32;
+pub fn unpack_occ(occ: Occ) -> (u16, u16, u32, u8) {
+    let contig_id = (occ >> 49) as u16;
+    let pam_id = (occ >> 33) as u16;
     let pos = ((occ >> 1) & 0xFFFF_FFFF) as u32;
     let strand_bit = (occ & 1) as u8;
-    (contig_id, pos, strand_bit)
+    (contig_id, pam_id, pos, strand_bit)
 }
 
 #[pyclass]
@@ -54,13 +60,12 @@ static TARGET_BATCHER_NEXT_ID: AtomicUsize = AtomicUsize::new(0);
 /// TargetBatcher class
 #[pyclass]
 pub struct TargetBatcher {
-
     #[pyo3(get)]
     id: usize,
 
     // config
     size: usize,
-    right: bool,
+    upstream: bool,
     threads: usize,
     batch_hits: usize,
     max_unique: usize,
@@ -70,7 +75,7 @@ pub struct TargetBatcher {
     alignment_rx: Option<Receiver<AlignmentRingBatch>>,
 
     // parsed PAM
-    pam: pam::ParsedPAM,
+    pam: pam::PAM,
 
     // guide
     guide: guide::Guide,
@@ -87,13 +92,13 @@ impl TargetBatcher {
         pam_seq: &str,
         guide_seq: &str,
         size: usize,
-        right: bool,
+        upstream: bool,
         threads: usize,
         batch_hits: usize,
         max_unique: usize,
         overlap_left: usize,
     ) -> PyResult<Self> {
-        let pam = pam::ParsedPAM::new(pam_seq)
+        let pam = pam::PAM::new(pam_seq)
             .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid PAM sequence: {e}")))?;
 
         let guide = guide::Guide::from(guide_seq);
@@ -109,7 +114,7 @@ impl TargetBatcher {
             id: TARGET_BATCHER_NEXT_ID.fetch_add(1, Ordering::SeqCst),
             alignment_rx: None,
             size,
-            right,
+            upstream,
             threads,
             batch_hits,
             max_unique,
@@ -123,23 +128,22 @@ impl TargetBatcher {
 
     pub fn feed_chunk(
         &mut self,
-        contig_id: u32,
+        contig_id: u16,
         chunk_start: u32,
+        strand: u8,
         chunk_seq: &str,
         valid_len: usize,
     ) -> PyResult<FeedStatus> {
         let seq_bitmask: Vec<u8> = iupac::sequence_encoder(chunk_seq);
 
-        let (pos_local, strand) = scanner::scan_targets_bitmask(
+        let pos_local = scanner::scan_targets_bitmask(
             &seq_bitmask,
             &self.pam,
             self.size,
-            self.right,
+            self.upstream,
             self.threads,
         )
         .map_err(|e| PyErr::new::<PyValueError, _>(e))?;
-
-        debug_assert_eq!(pos_local.len(), strand.len());
 
         if cfg!(debug_assertions) {
             eprintln!(
@@ -153,7 +157,7 @@ impl TargetBatcher {
                 eprintln!(
                     "  -> local_pos={} strand={}",
                     pos_local[i],
-                    if strand[i] == 1 { '+' } else { '-' }
+                    if strand == 1 { '+' } else { '-' }
                 );
             }
         }
@@ -197,32 +201,60 @@ impl TargetBatcher {
             });
         }
 
+        // Per-chunk, not per-hit: which physical orientation did the scanner see?
+        let scanned_on_rc = Strand::from_bit(strand).scanned_on_revcomp(self.upstream);
+        let plen = self.pam.bytes.len();
+
         for i in 0..pos_local.len() {
             let p = pos_local[i];
             if p < accept_lo || p >= accept_hi {
                 continue;
             }
 
-            let pos_global = chunk_start as usize + p;
-            if pos_global > (u32::MAX as usize) {
+            let start = p;
+            let end = start + (self.size - plen) + 1;
+
+            // Left-most FORWARD coordinate of this window.
+            //
+            // `chunk_start` is a forward coordinate; `p` indexes the *scanned*
+            // sequence. On a forward chunk the two frames agree and they simply
+            // add. On an RC chunk the scanned frame runs against the forward
+            // strand, so index `p` sits `chunk_len - p - size` bases from the
+            // chunk's forward start — the old `chunk_start + p` mixed the two
+            // frames.
+            //
+            //   forward chunk: chunk_start + p
+            //   RC chunk:      chunk_start + chunk_len - p - size
+            let window_fwd_left = if scanned_on_rc {
+                // `end <= chunk_len` holds because `p < max_start_excl`;
+                // checked anyway so a future change to the accept-window can't
+                // silently wrap
+                let back = chunk_len.checked_sub(end).ok_or_else(|| {
+                    PyErr::new::<PyValueError, _>(format!(
+                        "window [{start},{end}) escapes chunk (len={chunk_len})"
+                    ))
+                })?;
+                chunk_start as usize + back - plen + 1
+            } else {
+                chunk_start as usize + start
+            };
+
+            if window_fwd_left > u32::MAX as usize {
                 return Err(PyErr::new::<PyValueError, _>("Position overflow"));
             }
 
-            let strand_bit = strand[i]; // 1=fwd (+), 0=rev (-)
-
-            let start = p;
-            let end = start + self.size;
+            // Read candidate target sequence
             let window = &seq_bitmask[start..end];
             let key: WindowKey = window.to_vec().into_boxed_slice();
 
-            let occ = pack_occ(contig_id, pos_global as u32, strand_bit);
+            // Read candidate target PAM sequence
+            let pstart = end - 1;
+            let wpam = &seq_bitmask[pstart..pstart + plen];
+            let pam_id = self.pam.pam_index(wpam);
 
-            if let Some(v) = self.map.get_mut(&key) {
-                v.push(occ);
-            } else {
-                self.map.insert(key, vec![occ]);
-            }
+            let occ = pack_occ(contig_id, pam_id as u16, window_fwd_left as u32, strand);
 
+            self.map.entry(key).or_default().push(occ);
             self.hits_in_batch += 1;
         }
 
@@ -236,11 +268,8 @@ impl TargetBatcher {
     }
 
     pub fn flush_and_align(&mut self, max_mm: usize, bdna: usize, brna: usize) -> PyResult<()> {
-
         // Collect window batches on flush
         let batch: WindowBatch = self.flush_to_batch();
-
-        println!("aligning");
         Ok(())
     }
 
@@ -264,7 +293,6 @@ impl TargetBatcher {
 }
 
 impl TargetBatcher {
-
     pub fn id(&self) -> usize {
         self.id
     }
@@ -274,7 +302,7 @@ impl TargetBatcher {
     }
 
     // TODO: Check if this is the best way to do it
-    pub fn get_window_keys(&self) -> impl Iterator<Item=&WindowKey> {
+    pub fn get_window_keys(&self) -> impl Iterator<Item = &WindowKey> {
         self.map.keys()
     }
 
@@ -285,7 +313,7 @@ impl TargetBatcher {
     /// Convert the current batch (unique windows + occurrences) into a `WindowBatch`
     /// and clear internal state.
     pub fn flush_to_batch(&mut self) -> WindowBatch {
-        let cap = self.max_unique;  // invariant: max_unique <= miner src capacity
+        let cap = self.max_unique; // invariant: max_unique <= miner src capacity
 
         // Fast path: whole map fits
         if self.map.len() <= cap {
@@ -300,7 +328,11 @@ impl TargetBatcher {
                 occs.push(v);
             }
             self.hits_in_batch = 0;
-            return  WindowBatch { windows, occs, total_hits };
+            return WindowBatch {
+                windows,
+                occs,
+                total_hits,
+            };
         }
 
         // Overshoot path: emit exactly `cap` windows, keep the rest for the next submit
@@ -315,9 +347,12 @@ impl TargetBatcher {
                 occs.push(v);
             }
         }
-        self.hits_in_batch -= total_hits;  // retained windows stay counted
-        WindowBatch{ windows, occs, total_hits }
-        
+        self.hits_in_batch -= total_hits; // retained windows stay counted
+        WindowBatch {
+            windows,
+            occs,
+            total_hits,
+        }
     }
 
     #[inline(always)]
@@ -335,10 +370,16 @@ impl TargetBatcher {
         self.alignment_rx = Some(rx);
     }
 
-    pub fn get_sequence_len(&self) -> usize { self.size }
-    pub fn get_guide(&self) -> Guide { self.guide.clone() }
+    pub fn get_sequence_len(&self) -> usize {
+        self.size
+    }
+    pub fn get_pam_len(&self) -> usize {
+        self.pam.plen()
+    }
+    pub fn get_guide(&self) -> Guide {
+        self.guide.clone()
+    }
 }
-
 
 /// WindowBatch
 #[derive(Debug)]
@@ -361,7 +402,3 @@ impl WindowBatch {
         self.windows.is_empty()
     }
 }
-
-
-
-

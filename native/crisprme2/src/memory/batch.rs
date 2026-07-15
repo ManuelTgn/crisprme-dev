@@ -5,10 +5,10 @@ use bincode::de;
 use super::ring::{RingAdapter, RingSlotLease};
 
 // use crate::bindings;
+use crate::alignment::alignment::Alignment;
 use crate::crispr::guide::Guide;
 use crate::sequence::iupac::Iupac;
 use crate::sequence::sequence::Sequence;
-use crate::alignment::alignment::Alignment;
 use crate::storage::reader::SequenceBatchDescr;
 use crate::storage::writer::AlignmentBatchDescr;
 
@@ -50,7 +50,6 @@ impl RingAdapter for SequenceRingBatch {
 }
 
 impl SequenceRingBatch {
-
     /// Apply a mask to filter sequences, this compacts only valid sequences to the start of the batch
     /// and changes the size of the batch. No memory is deallocated in this operation.
     pub fn apply_mask(&mut self, mask: &[bool], sync: bool) {
@@ -73,10 +72,7 @@ impl SequenceRingBatch {
         for (r, keep) in mask.iter().enumerate() {
             if *keep {
                 if r != w {
-                    sequences.copy_within(
-                        r * slen..(r + 1) * slen,
-                        w * slen,
-                    );
+                    sequences.copy_within(r * slen..(r + 1) * slen, w * slen);
                 }
                 w += 1;
             }
@@ -191,7 +187,6 @@ pub struct AlignmentRingBatch {
 }
 
 impl AlignmentRingBatch {
-
     /// Return pointer to GPU memory
     pub fn gpu_ptr_mut(&mut self) -> *mut u8 {
         self.lease.gpu_ptr_mut()
@@ -234,7 +229,7 @@ impl AlignmentRingBatch {
     pub fn replace_pos_by_id(&mut self, batch: &SequenceRingBatch) {
         let ids = batch.ids();
         for align in self.alignments_mut() {
-            align.id = ids[align.id as usize]; 
+            align.id = ids[align.id as usize];
         }
     }
 
@@ -276,15 +271,12 @@ impl RingAdapter for AlignmentRingBatch {
     }
 }
 
-
-
-
 #[derive(Clone, Copy, Default, Debug)]
 pub struct WindowBatchDescr {
     // size (spacer+pam window length)
-    pub sequence_len: usize,  
+    pub sequence_len: usize,
     // number of unique windows
-    pub window_count: usize,  
+    pub window_count: usize,
     // total occurrences across all windows
     pub occ_count: usize,
 }
@@ -296,62 +288,85 @@ pub struct WindowRingBatch {
 
 impl Deref for WindowRingBatch {
     type Target = RingSlotLease;
-    fn deref(&self) -> &Self::Target { &self.lease }
+    fn deref(&self) -> &Self::Target {
+        &self.lease
+    }
 }
 
 impl RingAdapter for WindowRingBatch {
     type Descr = WindowBatchDescr;
 
     fn attach(lease: RingSlotLease, descr: Self::Descr) -> Self {
-        Self { descriptor: descr, lease }
+        Self {
+            descriptor: descr,
+            lease,
+        }
     }
 
     fn detach(self) -> (Self::Descr, RingSlotLease) {
         (self.descriptor, self.lease)
     }
 
-    fn as_mut(&mut self) -> &mut RingSlotLease { &mut self.lease }
+    fn as_mut(&mut self) -> &mut RingSlotLease {
+        &mut self.lease
+    }
 
-    fn as_ref(&self) -> &RingSlotLease { &self.lease }
+    fn as_ref(&self) -> &RingSlotLease {
+        &self.lease
+    }
 }
 
 impl WindowRingBatch {
-    #[inline] pub fn windows_len(&self) -> usize { self.descriptor.window_count }
+    #[inline]
+    pub fn windows_len(&self) -> usize {
+        self.descriptor.window_count
+    }
 
-    #[inline] pub fn occ_len(&self) -> usize { self.descriptor.occ_count }
+    #[inline]
+    pub fn occ_len(&self) -> usize {
+        self.descriptor.occ_count
+    }
 
-    #[inline] fn windows_bytes_len(&self) -> usize {
+    #[inline]
+    fn windows_bytes_len(&self) -> usize {
         self.descriptor.window_count * self.descriptor.sequence_len
     }
 
-    #[inline] fn off_windows_end(&self) -> usize {
+    #[inline]
+    fn off_windows_end(&self) -> usize {
         self.windows_bytes_len()
     }
 
-    #[inline] fn off_occ_starts(&self) -> usize {
+    #[inline]
+    fn off_occ_starts(&self) -> usize {
         // align to u32
         let a = align_of::<u32>();
         (self.off_windows_end() + a - 1) & !(a - 1)
     }
 
-    #[inline] fn off_occ_lens(&self) -> usize {
+    #[inline]
+    fn off_occ_lens(&self) -> usize {
         self.off_occ_starts() + self.descriptor.window_count * size_of::<u32>()
     }
 
-    #[inline] fn off_occ_contig(&self) -> usize {
+    #[inline]
+    fn off_occ_contig(&self) -> usize {
         self.off_occ_lens() + self.descriptor.window_count * size_of::<u32>()
     }
 
-    #[inline] fn off_occ_pos(&self) -> usize {
+    #[inline]
+    fn off_occ_pos(&self) -> usize {
         self.off_occ_contig() + self.descriptor.occ_count * size_of::<u32>()
     }
 
-    #[inline] fn off_occ_strand(&self) -> usize {
+    #[inline]
+    fn off_occ_strand(&self) -> usize {
         self.off_occ_pos() + self.descriptor.occ_count * size_of::<u32>()
     }
 
     /// The bytes that must be synced to GPU for mining (windows only).
-    #[inline] pub fn gpu_windows_bytes(&self) -> usize {
+    #[inline]
+    pub fn gpu_windows_bytes(&self) -> usize {
         // If your CUDA miner expects sequences at start of slot: perfect.
         self.windows_bytes_len()
     }
@@ -473,19 +488,15 @@ impl WindowRingBatch {
 }
 
 pub fn window_ring_slot_bytes(sequence_len: usize, max_windows: usize, max_occs: usize) -> usize {
-    let windows = max_windows * sequence_len;               // u8
-    let pad = align_of::<u32>();                            // padding
+    let windows = max_windows * sequence_len; // u8
+    let pad = align_of::<u32>(); // padding
     let starts = max_windows * size_of::<u32>();
-    let lens   = max_windows * size_of::<u32>();
-    let contig = max_occs   * size_of::<u32>();
-    let pos    = max_occs   * size_of::<u32>();
-    let strand = max_occs   * size_of::<u8>();
+    let lens = max_windows * size_of::<u32>();
+    let contig = max_occs * size_of::<u32>();
+    let pos = max_occs * size_of::<u32>();
+    let strand = max_occs * size_of::<u8>();
     windows + pad + starts + lens + contig + pos + strand
 }
-
-
-
-
 
 // =================================================================================
 // STD implementations

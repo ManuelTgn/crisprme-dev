@@ -12,7 +12,6 @@ use rayon::ThreadPoolBuilder;
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
-
 /// Global cache of Rayon thread pools indexed by thread count.
 ///
 /// Each distinct `threads` value corresponds to exactly one `ThreadPool`,
@@ -21,7 +20,6 @@ use std::sync::{Mutex, OnceLock};
 /// The cache is protected by a `Mutex` and initialized via `OnceLock`
 /// to ensure thread-safe, one-time construction.
 static POOLS: OnceLock<Mutex<HashMap<usize, ThreadPool>>> = OnceLock::new();
-
 
 /// Executes a closure inside a cached Rayon thread pool with a fixed
 /// number of threads.

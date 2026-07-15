@@ -18,43 +18,6 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::PyResult;
 
-/// Finds all potential target candidates (CRISPR gRNAs) within a given sequence.
-///
-/// This function converts the input sequence and PAM into IUPAC bitmasks and performs a
-/// parallelized scan to identify all positions where the target sequence and its
-/// associated PAM match the defined criteria.
-///
-/// # Arguments
-/// * `sequence` (str): The large DNA/RNA sequence to be scanned (e.g., a contig or chromosome).
-/// * `contig` (str): The name/identifier of the sequence (e.g., "chr1").
-/// * `pam_seq` (str): The Protospacer Adjacent Motif (PAM) sequence (e.g., "NGG").
-/// * `k` (usize): The length of the target/protospacer sequence, excluding the PAM.
-/// * `right` (bool): If `true`, the PAM is expected to be immediately *right* of the target sequence.
-///                   If `false`, the PAM is expected to be immediately *left* of the target sequence.
-/// * `threads` (usize): The number of threads to use for parallel scanning.
-///
-/// # Returns
-/// A `list` of `target::Target` objects, where each object contains the position,
-/// orientation, and bitmask sequence of a found target.
-///
-/// # Errors
-/// Returns a `PyValueError` if input constraints are violated (e.g., invalid sizes or PAM sequence).
-#[pyfunction]
-pub fn extract_targets_rs(
-    sequence: &str,
-    pam_seq: &str,
-    size: usize,
-    right: bool,
-    threads: usize,
-) -> PyResult<(Vec<usize>, Vec<u8>)> {
-    let pat = crispr::pam::ParsedPAM::new(pam_seq)
-        .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid PAM sequence: {e}")))?;
-
-    // Execute the core parallel scanning logic and return the results
-    sequence::scanner::scan_targets(sequence, &pat, size, right, threads)
-        .map_err(|e| PyErr::new::<PyValueError, _>(e))
-}
-
 /// Defines the Python module structure and exposes Rust functions
 #[pymodule]
 pub mod _crisprme2_native {
@@ -71,16 +34,34 @@ pub mod _crisprme2_native {
     };
     use itertools::izip;
     use pyo3::{
-        Bound, Py, PyResult, Python, pyclass, pyfunction, pymethods, pymodule, types::{PyAnyMethods, PyList, PyAny}
+        exceptions::{PyOSError, PyValueError},
+        pyclass, pyfunction, pymethods, pymodule,
+        types::{PyAny, PyAnyMethods, PyList},
+        Bound, Py, PyResult, Python,
     };
 
     use crate::{
-        bindings::cuda, model::{
+        bindings::cuda,
+        crispr::pam::PAM,
+        model::{
             alignment::AlignmentFrame,
-            input::{SEQ_MAX_LEN, SeqBatch, SeqFrame, SeqOccFrame}, occurence::Occurence,
-        }, pipeline::{
-            sink::{NullSink, writer::{CsvWriter, CsvWriterSink}}, source::reader::Reader, stage::{broadcast::Broadcast, miner::{GpuMiner, Miner}, resolve::Resolver, transform::PyTransform}
-        }, sequence::{iupac::Iupac, sequence::Sequence}
+            input::{SeqBatch, SeqFrame, SeqOccFrame, SEQ_MAX_LEN},
+            occurence::Occurence,
+        },
+        pipeline::{
+            sink::{
+                writer::{ContigLabels, CsvWriter, CsvWriterSink, PamContext, PamPlacement},
+                NullSink,
+            },
+            source::reader::Reader,
+            stage::{
+                broadcast::Broadcast,
+                miner::{GpuMiner, Miner},
+                resolve::Resolver,
+                transform::PyTransform,
+            },
+        },
+        sequence::{iupac::Iupac, sequence::Sequence},
     };
 
     #[pymodule_export]
@@ -99,14 +80,10 @@ pub mod _crisprme2_native {
     pub use crate::pipeline::stage::transform::PyAlignmentBatch;
 
     #[pymodule_export]
-    pub use crate::extract_targets_rs;
-
-    #[pymodule_export]
     pub use crate::crispr::guide::Guide;
 
     #[pymodule_export]
     pub use crate::alignment::thresholds::Thresholds;
-
 
     #[pyfunction]
     pub fn init_tracing() {
@@ -133,9 +110,7 @@ pub mod _crisprme2_native {
 
     #[pymethods]
     impl PyPipeline {
-
         fn send_debug_minable_data(&mut self, py: Python<'_>) -> PyResult<()> {
-
             const ROWS: usize = 500;
 
             let mut seqs = SeqFrame::alloc(&self.pool, ROWS);
@@ -164,6 +139,7 @@ pub mod _crisprme2_native {
                     .send(SeqBatch {
                         thresholds: Thresholds::new(1, 1, 2),
                         seq_len: sequence.len(),
+                        pam_len: 0, // debug batches carry no PAM
                         guide: Guide::new("GATTACA"),
                         sequences: seqs,
                         occurences: occs,
@@ -175,7 +151,6 @@ pub mod _crisprme2_native {
         }
 
         fn send_debug_data(&mut self, py: Python<'_>) -> PyResult<()> {
-
             const ROWS: usize = 10;
 
             let seq_len: usize = 24;
@@ -211,6 +186,7 @@ pub mod _crisprme2_native {
                     .send(SeqBatch {
                         thresholds: Thresholds::new(1, 1, 2),
                         seq_len,
+                        pam_len: 0, // debug batches carry no PAM
                         guide: Guide::new("GATTACAGATTACA"),
                         sequences: seqs,
                         occurences: occs,
@@ -223,9 +199,10 @@ pub mod _crisprme2_native {
 
         /// Submit the content of a TargetBatcher
         pub fn submit(&mut self, py: Python<'_>, batcher: &mut TargetBatcher) -> PyResult<()> {
-
-            assert!(batcher.get_sequence_len() <= SEQ_MAX_LEN,
-                "window sequence should fit inside a SeqFrame");
+            assert!(
+                batcher.get_sequence_len() <= SEQ_MAX_LEN,
+                "window sequence should fit inside a SeqFrame"
+            );
 
             // Create compact representation
             let batch = batcher.flush_to_batch();
@@ -251,7 +228,10 @@ pub mod _crisprme2_native {
                 let iter = izip!(
                     cols.seq_row_idx.iter_mut(),
                     cols.occurence.iter_mut(),
-                    batch.occs.iter().enumerate()
+                    batch
+                        .occs
+                        .iter()
+                        .enumerate()
                         .flat_map(|(w, s)| s.iter().map(move |occ| (w as u32, *occ))),
                 );
                 for (dst_seq_id, dst_occ, (w, src_occ)) in iter {
@@ -266,6 +246,7 @@ pub mod _crisprme2_native {
                     .send(SeqBatch {
                         thresholds: self.threshold.clone(),
                         seq_len: batcher.get_sequence_len(),
+                        pam_len: batcher.get_pam_len(),
                         guide: batcher.get_guide(),
                         sequences: seqs,
                         occurences: occs,
@@ -298,25 +279,45 @@ pub mod _crisprme2_native {
 
     impl Drop for PySourcedPipeline {
         fn drop(&mut self) {
-            tracing::info!("pipeline took {:.2} s", 
-                self.started_at.elapsed().as_secs_f32());
+            tracing::info!(
+                "pipeline took {:.2} s",
+                self.started_at.elapsed().as_secs_f32()
+            );
         }
     }
 
     /// Create a driven pipeline with transforms
     #[pyfunction]
     fn pipeline<'py>(
-        chunks: usize, 
+        chunks: usize,
         threshold: Thresholds,
-        transforms: Bound<'py, PyList>
+        transforms: Bound<'py, PyList>,
+        pam: &str,
+        upstream: bool,
+        outpath: PathBuf,
+        contigs: Vec<String>,
     ) -> PyResult<PyPipeline> {
-        
+        // Validate the PAM before allocating a multi-GB pool.
+        let parsed_pam = PAM::new(pam)
+            .map_err(|e| PyValueError::new_err(format!("invalid PAM {pam:?}: {e}")))?;
+        let pam_ctx = PamContext::new(&parsed_pam, PamPlacement::from_upstream(upstream));
+        tracing::info!(
+            "guide column layout: {}",
+            if upstream {
+                "<PAM><guide>"
+            } else {
+                "<guide><PAM>"
+            }
+        );
+
+        let contigs = ContigLabels::from_names(contigs)?;
+
         // Create memory pool and pin all chunks for DMA from GPU
         let pool = MemoryPool::new(CHUNK_SIZE * chunks, |ptr, bytes| {
             tracing::trace!("pinning chunk (ptr = {:?}, bytes = {})", ptr, bytes);
             cuda::pin(ptr, bytes);
         });
-        
+
         tracing::info!("building pipeline...");
         let (input, pipeline) = Pipeline::driven(10);
 
@@ -336,14 +337,15 @@ pub mod _crisprme2_native {
 
         // Add sink stage
         //let pipeline = pipeline.sink(2, |_, _| NullSink::<AlignmentFrame>::new());
-        let csv_writer = CsvWriter::open("results.csv".into());
+        let csv_writer = CsvWriter::open(&outpath, pam_ctx, contigs).map_err(|e| {
+            PyOSError::new_err(format!("cannot open CSV report {}: {e}", outpath.display()))
+        })?;
+
         let pipeline = pipeline.sink(2, {
             let csv_writer_clone = csv_writer.clone();
-            move |_, _| { 
-                CsvWriterSink::new(&csv_writer_clone)
-            }
+            move |_, _| CsvWriterSink::new(&csv_writer_clone)
         });
-        
+
         tracing::info!("pipeline ready!");
         let handle = pipeline.execute(&pool, 3);
         Ok(PyPipeline {
@@ -354,65 +356,64 @@ pub mod _crisprme2_native {
         })
     }
 
-
     /// Create a dataset pipeline that reads batches of sequences from disk, applies transforms, and writes results to disk.
-    #[pyfunction]
-    fn dataset_pipeline<'py>(
-        chunks: usize, 
-        transforms: Bound<'py, PyList>, 
-        folder: PathBuf,
-        batch_size: usize,
-        guide: Guide,
-        thresholds: Thresholds,
-        sequence_len: usize,
-    ) -> PyResult<PySourcedPipeline> {
+    // #[pyfunction]
+    // fn dataset_pipeline<'py>(
+    //     chunks: usize,
+    //     transforms: Bound<'py, PyList>,
+    //     folder: PathBuf,
+    //     batch_size: usize,
+    //     guide: Guide,
+    //     thresholds: Thresholds,
+    //     sequence_len: usize,
+    // ) -> PyResult<PySourcedPipeline> {
 
-        // Create memory pool and pin all chunks for DMA from GPU
-        let pool = MemoryPool::new(CHUNK_SIZE * chunks, |ptr, bytes| {
-            tracing::trace!("pinning chunk (ptr = {:?}, bytes = {})", ptr, bytes);
-            cuda::pin(ptr, bytes);
-        });
+    //     // Create memory pool and pin all chunks for DMA from GPU
+    //     let pool = MemoryPool::new(CHUNK_SIZE * chunks, |ptr, bytes| {
+    //         tracing::trace!("pinning chunk (ptr = {:?}, bytes = {})", ptr, bytes);
+    //         cuda::pin(ptr, bytes);
+    //     });
 
-        let seq_path = folder.join("sequences.bin");
-        let pos_path = folder.join("positions.bin");
+    //     let seq_path = folder.join("sequences.bin");
+    //     let pos_path = folder.join("positions.bin");
 
-        tracing::info!("building pipeline...");
-        let pipeline = Pipeline::source(1, move |pool, _| {
-                Reader::open(seq_path.clone(), pos_path.clone(), sequence_len, batch_size, guide.clone(), thresholds, pool.clone())
-                    .expect("unable to create reader")
-        });
+    //     tracing::info!("building pipeline...");
+    //     let pipeline = Pipeline::source(1, move |pool, _| {
+    //             Reader::open(seq_path.clone(), pos_path.clone(), sequence_len, batch_size, guide.clone(), thresholds, pool.clone())
+    //                 .expect("unable to create reader")
+    //     });
 
-        let mut pipeline = pipeline
-            .stage(1, |pool, _| GpuMiner::new(pool, 100_000, 32, 100_000, 0))
-            .stage(2, |pool, _| Resolver::new(pool))
-            .stage(2, |pool, _| Broadcast::new(pool));
+    //     let mut pipeline = pipeline
+    //         .stage(1, |pool, _| GpuMiner::new(pool, 100_000, 32, 100_000, 0))
+    //         .stage(2, |pool, _| Resolver::new(pool))
+    //         .stage(2, |pool, _| Broadcast::new(pool));
 
-        // Add all transform stages
-        tracing::info!("adding transform stages: ");
-        for elem in transforms {
-            tracing::info!("\t{:?}", elem.get_type().getattr("__name__").unwrap());
+    //     // Add all transform stages
+    //     tracing::info!("adding transform stages: ");
+    //     for elem in transforms {
+    //         tracing::info!("\t{:?}", elem.get_type().getattr("__name__").unwrap());
 
-            let transform = elem.unbind();
-            pipeline = pipeline.stage_once(|_| PyTransform::new(transform))
-        }
+    //         let transform = elem.unbind();
+    //         pipeline = pipeline.stage_once(|_| PyTransform::new(transform))
+    //     }
 
-        // Add sink stage
-        let csv_writer = CsvWriter::open("results.csv".into());
-        let pipeline = pipeline.sink(2, {
-            let csv_writer_clone = csv_writer.clone();
-            move |_, _| { 
-                CsvWriterSink::new(&csv_writer_clone)
-            }
-        });
+    //     // Add sink stage
+    //     let csv_writer = CsvWriter::open("results.csv".into());
+    //     let pipeline = pipeline.sink(2, {
+    //         let csv_writer_clone = csv_writer.clone();
+    //         move |_, _| {
+    //             CsvWriterSink::new(&csv_writer_clone)
+    //         }
+    //     });
 
-        tracing::info!("pipeline ready!");
-        let handle = pipeline.execute(&pool, 3);
-        Ok(PySourcedPipeline {
-            started_at: Instant::now(),
-            handle,
-            pool,
-        })
-    }
+    //     tracing::info!("pipeline ready!");
+    //     let handle = pipeline.execute(&pool, 3);
+    //     Ok(PySourcedPipeline {
+    //         started_at: Instant::now(),
+    //         handle,
+    //         pool,
+    //     })
+    // }
 
     /// Install the Rust -> Python logging bridge.
     ///
@@ -435,6 +436,6 @@ pub mod _crisprme2_native {
             .try_init()
             .is_ok();
 
-        Ok(installed)   // report install status instead of hiding it
+        Ok(installed) // report install status instead of hiding it
     }
 }

@@ -93,7 +93,16 @@ struct Step
 		return Step{Inner::B};
 	}
 
+	/// Gap in the GUIDE row: consumes 1 DNA base, 0 guide bases.
+	/// This is a DNA bulge; it increments `ggap`.
+	static __device__ __forceinline__ Step dna_bulge() { return Step{Inner::S}; }
+
+	/// Gap in the SEQUENCE row: consumes 1 guide base, 0 DNA bases.
+	/// This is an RNA bulge; it increments `sgap`.
+	static __device__ __forceinline__ Step rna_bulge() { return Step{Inner::G}; }
+
 	/// Create step as a deletion (last possible type)
+	/// NOTE: `deletion()` is `rna_bulge()`. Kept as an alias during migration.
 	static __device__ __forceinline__ Step deletion()
 	{
 		return Step{Inner::G};
@@ -287,19 +296,34 @@ struct ThreadMiner
 			mem.state.sgap <= max_sgap);
 	}
 
-	/// Check if we can continue with the exploration, that is if the guide is not completelly matched
-	/// and the target sequences index is not outside the relaxed bounds
-	__device__ __forceinline__ bool can_continue(u32 slen, u32 glen, u32 offset, u32 max_ggap)
+	/// Can this state still reach a complete alignment?
+	///
+	/// Remaining work is `glen - gidx` guide bases and `pstop - sidx - offset`
+	/// DNA bases. Steps consume: B = 1 guide + 1 DNA, S = 0 guide + 1 DNA,
+	/// G = 1 guide + 0 DNA. So the state is extendable iff nothing has
+	/// overshot and something still remains.
+	///
+	/// The `gidx <= glen` clause is load-bearing: `travel()` can turn a
+	/// trailing S into a G, pushing gidx to glen+1. Without it the DFS would
+	/// spin there forever.
+	__device__ __forceinline__ bool can_continue(u32 glen, u32 pstop, u32 offset)
 	{
-		return (
-			mem.state.gidx < glen &&
-			mem.state.sidx + offset < slen + max_ggap);
+		return (mem.state.gidx <= glen)
+			&& (mem.state.sidx + offset <= pstop)
+			&& (mem.state.gidx < glen || mem.state.sidx + offset < pstop);
 	}
 
-	/// Check if the current state is final, the guide has been completelly matched
-	__device__ __forceinline__ bool is_complete(u32 glen)
+	/// A state is a complete alignment iff BOTH:
+	///  1. the guide is fully consumed          (gidx == glen), and
+	///  2. its 3' end abuts the PAM             (offset + sidx == pstop).
+	///
+	/// (2) is what makes this a CRISPR alignment rather than a free local
+	/// alignment of the guide inside the window. The scanner pins the PAM to
+	/// the window's right edge, so `pstop` (= SLEN - PLEN) is a batch-wide
+	/// constant.
+	__device__ __forceinline__ bool is_complete(u32 glen, u32 pstop, u32 offset)
 	{
-		return mem.state.gidx == glen;
+		return mem.state.gidx == glen && mem.state.sidx + offset == pstop;
 	}
 
 	/// Get the current CIGARX

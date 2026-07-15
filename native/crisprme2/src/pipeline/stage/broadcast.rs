@@ -1,6 +1,6 @@
-
 use columnar::{
-    Column, MemoryPool, pipeline::{Emit, Stage, PipelineError}
+    pipeline::{Emit, PipelineError, Stage},
+    Column, MemoryPool,
 };
 use itertools::izip;
 
@@ -12,9 +12,8 @@ use crate::model::alignment::{AlignmentFrame, SeqResolvedBatch};
 /// Invariants:
 ///   - every resolved.seq_row_idx has at least one matching occurrence (not vice versa)
 ///   - all seq_row_idx values < source_seq_count
-/// 
+///
 pub struct Broadcast {
-
     /// Memory pool used to allocate outputs
     pool: MemoryPool,
 
@@ -36,14 +35,13 @@ pub struct Broadcast {
 }
 
 impl Broadcast {
-
     pub fn new(pool: &MemoryPool) -> Self {
-        Self { 
+        Self {
             pool: pool.clone(),
-            total_broadcasted: 0, 
-            table: vec![], 
-            flat_rows: vec![], 
-            written: vec![] 
+            total_broadcasted: 0,
+            table: vec![],
+            flat_rows: vec![],
+            written: vec![],
         }
     }
 
@@ -51,25 +49,31 @@ impl Broadcast {
     /// Two passes: count per slot, then fill flat_rows using table[slot].0 as a cursor.
     /// After this call: table[slot] = (end, count), range = flat_rows[end-count..end].
     fn build(&mut self, seq_row_idx: &Column<'_, u32>) {
-
         self.written.clear();
 
         for idx in seq_row_idx.iter() {
             let slot = *idx as usize;
 
             // Mark this slot as dirty
-            if self.table[slot].1 == 0 { 
-                self.written.push(slot); 
+            if self.table[slot].1 == 0 {
+                self.written.push(slot);
             }
 
             self.table[slot].1 += 1;
         }
 
-        tracing::debug!("source sequence for each alignment (0..A): {:?}",
-            seq_row_idx.iter().collect::<Vec<_>>());
+        tracing::debug!(
+            "source sequence for each alignment (0..A): {:?}",
+            seq_row_idx.iter().collect::<Vec<_>>()
+        );
 
-        tracing::debug!("alignments count for each source sequence (0..S): {:?}", 
-            self.table.iter().map(|(_, count)| count).collect::<Vec<_>>());
+        tracing::debug!(
+            "alignments count for each source sequence (0..S): {:?}",
+            self.table
+                .iter()
+                .map(|(_, count)| count)
+                .collect::<Vec<_>>()
+        );
 
         self.flat_rows.resize(seq_row_idx.rows(), 0);
 
@@ -89,14 +93,16 @@ impl Broadcast {
     /// Returns the number of output rows: each occurrence contributes
     /// as many rows as there are resolved entries for its seq_row_idx.
     fn count(&self, seq_row_idx: &Column<'_, u32>) -> usize {
-
-        tracing::debug!("alignments count for each occurence (0..C): {:?}",
-            seq_row_idx.iter()
+        tracing::debug!(
+            "alignments count for each occurence (0..C): {:?}",
+            seq_row_idx
+                .iter()
                 .map(|idx| self.table[*idx as usize].1)
                 .collect::<Vec<_>>()
         );
 
-        seq_row_idx.iter()
+        seq_row_idx
+            .iter()
             .map(|idx| self.table[*idx as usize].1)
             .sum()
     }
@@ -110,36 +116,38 @@ impl Broadcast {
 }
 
 impl Stage for Broadcast {
-
     type I = SeqResolvedBatch;
     type O = AlignmentFrame;
 
-    fn name() -> &'static str { "Broadcast" }
+    fn name() -> &'static str {
+        "Broadcast"
+    }
 
     #[tracing::instrument(name = "pipeline:broadcast", skip_all)]
-    fn process(&mut self, mut input: Self::I, emitter: &impl Emit<Self::O>) -> Result<(), PipelineError> {
-
+    fn process(
+        &mut self,
+        mut input: Self::I,
+        emitter: &impl Emit<Self::O>,
+    ) -> Result<(), PipelineError> {
         if self.table.len() < input.source_seq_count {
             self.table.resize(input.source_seq_count, (0, 0));
         }
 
         input.resolved.with_cols(|resolved| {
             input.occurences.with_cols(|occurence| {
-
-                tracing::info!("starting broadcast of {} resolved rows into {} occurences",
-                    resolved.seq_row_idx.rows(), occurence.seq_row_idx.rows());
+                tracing::info!(
+                    "starting broadcast of {} resolved rows into {} occurences",
+                    resolved.seq_row_idx.rows(),
+                    occurence.seq_row_idx.rows()
+                );
 
                 self.build(&resolved.seq_row_idx);
 
                 let out_rows = self.count(&occurence.seq_row_idx);
                 let mut alignment = AlignmentFrame::alloc(&self.pool, out_rows);
                 alignment.with_cols(|mut alignment| {
+                    let src_iter = izip!(occurence.seq_row_idx.iter(), occurence.occurence.iter(),);
 
-                    let src_iter = izip!(
-                        occurence.seq_row_idx.iter(),
-                        occurence.occurence.iter(),
-                    );
-                    
                     let mut dst_iter = izip!(
                         alignment.seq_row_idx.iter_mut(),
                         alignment.occurence.iter_mut(),
@@ -149,23 +157,16 @@ impl Stage for Broadcast {
                     );
 
                     for (seq_idx, src_occ) in src_iter {
-                        
                         let (end, count) = self.table[*seq_idx as usize];
                         for &row in &self.flat_rows[end - count..end] {
+                            let (dst_id, dst_occ, dst_offset, dst_rguide, dst_rseq) =
+                                dst_iter.next().unwrap();
 
-                            let (
-                                dst_id, 
-                                dst_occ, 
-                                dst_offset, 
-                                dst_rguide, 
-                                dst_rseq
-                            ) = dst_iter.next().unwrap();
-
-                            *dst_id     = *seq_idx;
-                            *dst_occ    = *src_occ;
+                            *dst_id = *seq_idx;
+                            *dst_occ = *src_occ;
                             *dst_offset = *resolved.offset.get(row);
                             *dst_rguide = *resolved.rguide.get(row);
-                            *dst_rseq   = *resolved.rseq.get(row);
+                            *dst_rseq = *resolved.rseq.get(row);
                         }
                     }
                 });
@@ -197,7 +198,7 @@ mod tests {
             input::SeqOccFrame,
             occurence::Occurence,
         },
-        pipeline::test::{Collector, make_pool},
+        pipeline::test::{make_pool, Collector},
     };
 
     use super::*;
@@ -220,7 +221,10 @@ mod tests {
         frame
     }
 
-    fn make_resolved(pool: &MemoryPool, rows: &[(u32, u8, [u8; 32], [u8; 32])]) -> SeqResolvedFrame {
+    fn make_resolved(
+        pool: &MemoryPool,
+        rows: &[(u32, u8, [u8; 32], [u8; 32])],
+    ) -> SeqResolvedFrame {
         let mut frame = SeqResolvedFrame::alloc(pool, rows.len());
         frame.with_cols(|mut cols| {
             for (i, (idx, offset, rguide, rseq)) in rows.iter().enumerate() {
@@ -240,11 +244,16 @@ mod tests {
         let collector = Collector(RefCell::new(vec![]));
         let mut broadcast = Broadcast::new(&pool);
 
-        broadcast.process(SeqResolvedBatch {
-            source_seq_count: 1,
-            occurences: make_occs(&pool, &[(0, 100)]),
-            resolved: make_resolved(&pool, &[(0, 42, arr(1), arr(2))]),
-        }, &collector).unwrap();
+        broadcast
+            .process(
+                SeqResolvedBatch {
+                    source_seq_count: 1,
+                    occurences: make_occs(&pool, &[(0, 100)]),
+                    resolved: make_resolved(&pool, &[(0, 42, arr(1), arr(2))]),
+                },
+                &collector,
+            )
+            .unwrap();
 
         let mut outputs = collector.into_inner();
         assert_eq!(outputs.len(), 1);
@@ -263,14 +272,19 @@ mod tests {
         let collector = Collector(RefCell::new(vec![]));
         let mut broadcast = Broadcast::new(&pool);
 
-        broadcast.process(SeqResolvedBatch {
-            source_seq_count: 1,
-            occurences: make_occs(&pool, &[(0, 100), (0, 200)]),
-            resolved: make_resolved(&pool, &[
-                (0, 10, arr(10), arr(11)),
-                (0, 20, arr(20), arr(21)),
-            ]),
-        }, &collector).unwrap();
+        broadcast
+            .process(
+                SeqResolvedBatch {
+                    source_seq_count: 1,
+                    occurences: make_occs(&pool, &[(0, 100), (0, 200)]),
+                    resolved: make_resolved(
+                        &pool,
+                        &[(0, 10, arr(10), arr(11)), (0, 20, arr(20), arr(21))],
+                    ),
+                },
+                &collector,
+            )
+            .unwrap();
 
         // Scatter order: for each occurrence, for each resolved row
         // occ[0]×res[0], occ[0]×res[1], occ[1]×res[0], occ[1]×res[1]
@@ -293,11 +307,16 @@ mod tests {
         let mut broadcast = Broadcast::new(&pool);
 
         // seq 0 has resolved; seq 1 does not
-        broadcast.process(SeqResolvedBatch {
-            source_seq_count: 2,
-            occurences: make_occs(&pool, &[(0, 100), (0, 200), (1, 300), (1, 400)]),
-            resolved: make_resolved(&pool, &[(0, 42, arr(1), arr(2))]),
-        }, &collector).unwrap();
+        broadcast
+            .process(
+                SeqResolvedBatch {
+                    source_seq_count: 2,
+                    occurences: make_occs(&pool, &[(0, 100), (0, 200), (1, 300), (1, 400)]),
+                    resolved: make_resolved(&pool, &[(0, 42, arr(1), arr(2))]),
+                },
+                &collector,
+            )
+            .unwrap();
 
         let mut outputs = collector.into_inner();
         assert_eq!(outputs.len(), 1);
@@ -315,15 +334,23 @@ mod tests {
         let mut broadcast = Broadcast::new(&pool);
 
         // Resolved arrives in reverse order: seq 2, 0, 1
-        broadcast.process(SeqResolvedBatch {
-            source_seq_count: 3,
-            occurences: make_occs(&pool, &[(0, 100), (1, 200), (2, 300)]),
-            resolved: make_resolved(&pool, &[
-                (2, 30, arr(30), arr(31)),
-                (0, 10, arr(10), arr(11)),
-                (1, 20, arr(20), arr(21)),
-            ]),
-        }, &collector).unwrap();
+        broadcast
+            .process(
+                SeqResolvedBatch {
+                    source_seq_count: 3,
+                    occurences: make_occs(&pool, &[(0, 100), (1, 200), (2, 300)]),
+                    resolved: make_resolved(
+                        &pool,
+                        &[
+                            (2, 30, arr(30), arr(31)),
+                            (0, 10, arr(10), arr(11)),
+                            (1, 20, arr(20), arr(21)),
+                        ],
+                    ),
+                },
+                &collector,
+            )
+            .unwrap();
 
         let mut outputs = collector.into_inner();
         outputs[0].with_cols(|cols| {
@@ -343,19 +370,29 @@ mod tests {
         let mut broadcast = Broadcast::new(&pool);
 
         // Batch 1: seq 0 has a resolved entry
-        broadcast.process(SeqResolvedBatch {
-            source_seq_count: 2,
-            occurences: make_occs(&pool, &[(0, 100)]),
-            resolved: make_resolved(&pool, &[(0, 10, arr(1), arr(2))]),
-        }, &collector).unwrap();
+        broadcast
+            .process(
+                SeqResolvedBatch {
+                    source_seq_count: 2,
+                    occurences: make_occs(&pool, &[(0, 100)]),
+                    resolved: make_resolved(&pool, &[(0, 10, arr(1), arr(2))]),
+                },
+                &collector,
+            )
+            .unwrap();
 
         // Batch 2: only seq 1 has a resolved entry; seq 0 does NOT
         // If the table were not reset, seq 0's occurrence would pick up the stale entry
-        broadcast.process(SeqResolvedBatch {
-            source_seq_count: 2,
-            occurences: make_occs(&pool, &[(0, 200), (1, 300)]),
-            resolved: make_resolved(&pool, &[(1, 20, arr(3), arr(4))]),
-        }, &collector).unwrap();
+        broadcast
+            .process(
+                SeqResolvedBatch {
+                    source_seq_count: 2,
+                    occurences: make_occs(&pool, &[(0, 200), (1, 300)]),
+                    resolved: make_resolved(&pool, &[(1, 20, arr(3), arr(4))]),
+                },
+                &collector,
+            )
+            .unwrap();
 
         let mut outputs = collector.into_inner();
         outputs[0].with_cols(|cols| assert_eq!(cols.seq_row_idx.rows(), 1)); // batch 1

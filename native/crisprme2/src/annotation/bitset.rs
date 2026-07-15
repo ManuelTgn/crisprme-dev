@@ -8,11 +8,12 @@ pub struct AnnotationBits {
 }
 
 impl AnnotationBits {
-
     /// Allocate bitset sized for `num_features`
     pub fn new(num_features: usize) -> Self {
         let num_bytes = (num_features + 7) >> 3;
-        Self { bits: vec![0u8; num_bytes] }
+        Self {
+            bits: vec![0u8; num_bytes],
+        }
     }
 
     /// Set feature bit
@@ -35,5 +36,4 @@ impl AnnotationBits {
     pub fn as_slice(&self) -> &[u8] {
         &self.bits
     }
-
 }

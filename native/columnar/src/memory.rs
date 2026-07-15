@@ -7,9 +7,13 @@
 
 use bytemuck::Pod;
 use crossbeam::queue::ArrayQueue;
+use std::{
+    mem::ManuallyDrop,
+    sync::{Arc, Weak},
+    time::Instant,
+};
 use thiserror::Error;
 use tracing::{Level, error, span};
-use std::{mem::ManuallyDrop, sync::{Arc, Weak}, time::Instant};
 
 /// Size of a single memory chunk (64 KB)
 pub const CHUNK_SIZE: usize = 65536;
@@ -22,7 +26,7 @@ pub enum MemoryError {
     #[error("Memory pool allocator reached maximum allowed seconds per allocation request")]
     MaximumTriesReached,
     #[error("Memory pool has no available memory left")]
-    OutOfMemory
+    OutOfMemory,
 }
 
 /// Raw backing storage for one chunk, cache-line aligned.
@@ -51,7 +55,6 @@ impl Drop for Chunk {
 }
 
 impl Chunk {
-
     /// How many elements of type T can a chunk hold
     pub const fn capacity_of<T: Pod>() -> usize {
         CHUNK_SIZE / std::mem::size_of::<T>()
@@ -75,14 +78,14 @@ impl Chunk {
 #[derive(Default)]
 pub struct ChunkArray {
     chunks: Vec<Chunk>,
-    len: usize
+    len: usize,
 }
 
 impl ChunkArray {
-
     /// Allocate enough chunks from `pool` to hold `count` of type `T`
     pub fn alloc<T: Pod>(pool: &MemoryPool, count: usize) -> Result<Self, MemoryError> {
-        let used_bytes = count.checked_mul(std::mem::size_of::<T>())
+        let used_bytes = count
+            .checked_mul(std::mem::size_of::<T>())
             .expect("overflow");
 
         let chunks_count = used_bytes.div_ceil(CHUNK_SIZE);
@@ -92,15 +95,27 @@ impl ChunkArray {
             chunks.push(pool.acquire_spinning());
         }
 
-        tracing::trace!("ChunkArray with {} chunks ({} bytes not used)",
-            chunks_count, chunks_count * CHUNK_SIZE - used_bytes);
+        tracing::trace!(
+            "ChunkArray with {} chunks ({} bytes not used)",
+            chunks_count,
+            chunks_count * CHUNK_SIZE - used_bytes
+        );
 
-        Ok(Self { chunks, len: used_bytes })
+        Ok(Self {
+            chunks,
+            len: used_bytes,
+        })
     }
 
-    pub fn len(&self) -> usize { self.len }
-    pub fn chunk_count(&self) -> usize { self.chunks.len() }
-    pub fn capacity(&self) -> usize { self.chunk_count() * CHUNK_SIZE }
+    pub fn len(&self) -> usize {
+        self.len
+    }
+    pub fn chunk_count(&self) -> usize {
+        self.chunks.len()
+    }
+    pub fn capacity(&self) -> usize {
+        self.chunk_count() * CHUNK_SIZE
+    }
 
     /// Total number of actual `T` elements across all chunks
     pub fn len_of<T: Pod>(&self) -> usize {
@@ -142,12 +157,10 @@ impl ChunkArray {
 
     /// Per-chunk slices of `T` (last slice may be shorter than a full chunk)
     pub fn chunks<T: Pod>(&self) -> impl Iterator<Item = &[T]> {
-
         let total_elements = self.len_of::<T>();
         let chunk_capacity = Chunk::capacity_of::<T>();
 
         self.chunks.iter().enumerate().map(move |(i, chunk)| {
-
             let start = i * chunk_capacity;
             let remaining = total_elements.saturating_sub(start);
             let len = remaining.min(chunk_capacity);
@@ -158,12 +171,10 @@ impl ChunkArray {
 
     /// Per-chunk mutable slices of `T`
     pub fn chunks_mut<T: Pod>(&mut self) -> impl Iterator<Item = &mut [T]> {
-
         let total_elements = self.len_of::<T>();
         let chunk_capacity = Chunk::capacity_of::<T>();
 
         self.chunks.iter_mut().enumerate().map(move |(i, chunk)| {
-
             let start = i * chunk_capacity;
             let remaining = total_elements.saturating_sub(start);
             let len = remaining.min(chunk_capacity);
@@ -175,23 +186,19 @@ impl ChunkArray {
     /// Slice into an index range within a single chunk
     pub fn subchunk<T: Pod>(&self, idx: usize, len: usize) -> &[T] {
         let (chunk, offset) = self.map_index::<T>(idx);
-        &self.chunks[chunk]
-            .as_slice::<T>()[offset .. offset + len]
+        &self.chunks[chunk].as_slice::<T>()[offset..offset + len]
     }
 
     /// Mutable slice into an index range within a single chunk
     pub fn subchunk_mut<T: Pod>(&mut self, idx: usize, len: usize) -> &mut [T] {
         let (chunk, offset) = self.map_index::<T>(idx);
-        &mut self.chunks[chunk]
-            .as_slice_mut::<T>()[offset .. offset + len]
+        &mut self.chunks[chunk].as_slice_mut::<T>()[offset..offset + len]
     }
 }
 
 /// Minimum elements-per-chunk across a set of element sizes
 pub fn region_min_size(element_sizes: &[usize]) -> usize {
-    element_sizes.iter()
-        .map(|s| CHUNK_SIZE / *s)
-        .min().unwrap()
+    element_sizes.iter().map(|s| CHUNK_SIZE / *s).min().unwrap()
 }
 
 type MemoryPoolQueue = ArrayQueue<Box<ChunkBytes>>;
@@ -207,23 +214,23 @@ pub struct MemoryPool {
 }
 
 impl MemoryPool {
-
     /// Allocate `bytes / CHUNK_SIZE` chunks, calling `visitor` for each one
     #[tracing::instrument(name = "memory:pool:new", skip_all)]
     pub fn new<V>(bytes: usize, visitor: V) -> Self
     where
-        V: Fn(*const u8, usize)
+        V: Fn(*const u8, usize),
     {
         let chunks_count = bytes.div_ceil(CHUNK_SIZE);
         let chunks = ArrayQueue::new(chunks_count);
         for _ in 0..chunks_count {
             let boxed = ChunkBytes::boxed();
             visitor(boxed.as_ref().0.as_ptr(), CHUNK_SIZE);
-            chunks.push(boxed)
-                .expect("Unable to create memory pool");
+            chunks.push(boxed).expect("Unable to create memory pool");
         }
 
-        Self { chunks: Arc::new(chunks) }
+        Self {
+            chunks: Arc::new(chunks),
+        }
     }
 
     /// Try to pop a chunk from the pool, returns `None` if empty
@@ -247,7 +254,6 @@ impl MemoryPool {
 
     /// Spin-wait for a chunk, fail after [`QUEUE_ACQUIRE_MAX_SECS`] seconds
     pub fn try_acquire_spinning(&self) -> Result<Chunk, MemoryError> {
-
         // Busy loop for some tries
         for _ in 0..100 {
             if let Some(chunk) = self.acquire() {
@@ -275,7 +281,7 @@ impl MemoryPool {
 
     /// Total number of chunk slots in the pool
     pub fn capacity(&self) -> usize {
-        return self.chunks.capacity()
+        return self.chunks.capacity();
     }
 }
 
@@ -285,20 +291,22 @@ pub mod test {
 
     #[test]
     fn iteration_mut() {
-        let pool = MemoryPool::new(1_000_000, |_, _| { });
-        let mut span = ChunkArray::alloc::<[u32; 4]>(&pool, 256)
-            .unwrap();
+        let pool = MemoryPool::new(1_000_000, |_, _| {});
+        let mut span = ChunkArray::alloc::<[u32; 4]>(&pool, 256).unwrap();
 
         for chunk in span.chunks_mut::<[u32; 4]>() {
             for v in chunk {
-                v[0] = 0; v[1] = 1; v[2] = 2; v[3] = 3;
+                v[0] = 0;
+                v[1] = 1;
+                v[2] = 2;
+                v[3] = 3;
             }
         }
     }
 
     #[test]
     fn chunk_returns_to_pool_on_drop() {
-        let pool = MemoryPool::new(CHUNK_SIZE, |_, _| { });
+        let pool = MemoryPool::new(CHUNK_SIZE, |_, _| {});
         assert_eq!(pool.capacity(), 1);
 
         let chunk = pool.acquire().unwrap();
@@ -310,7 +318,7 @@ pub mod test {
 
     #[test]
     fn chunk_span_correct_chunk_count() {
-        let pool = MemoryPool::new(CHUNK_SIZE * 4, |_, _| { });
+        let pool = MemoryPool::new(CHUNK_SIZE * 4, |_, _| {});
 
         // Exactly one chunk worth of u32s
         let elems_per_chunk = CHUNK_SIZE / std::mem::size_of::<u32>();
@@ -332,7 +340,7 @@ pub mod test {
 
     #[test]
     fn write_then_read_back() {
-        let pool = MemoryPool::new(CHUNK_SIZE * 4, |_, _| { });
+        let pool = MemoryPool::new(CHUNK_SIZE * 4, |_, _| {});
         let mut span = ChunkArray::alloc::<u64>(&pool, 1024).unwrap();
 
         // Write sequential values
@@ -357,7 +365,7 @@ pub mod test {
 
     #[test]
     fn pool_exhaustion() {
-        let pool = MemoryPool::new(CHUNK_SIZE * 2, |_, _| { });
+        let pool = MemoryPool::new(CHUNK_SIZE * 2, |_, _| {});
 
         let _c1 = pool.acquire().unwrap();
         let _c2 = pool.acquire().unwrap();
@@ -384,7 +392,7 @@ pub mod test {
 
     #[test]
     fn chunk_span_capacity_vs_used() {
-        let pool = MemoryPool::new(CHUNK_SIZE * 4, |_, _| { });
+        let pool = MemoryPool::new(CHUNK_SIZE * 4, |_, _| {});
 
         // Allocate slightly more than one chunk
         let elems = CHUNK_SIZE / std::mem::size_of::<u32>() + 1;
@@ -397,7 +405,7 @@ pub mod test {
 
     #[test]
     fn last_chunk_slice_is_truncated() {
-        let pool = MemoryPool::new(CHUNK_SIZE * 4, |_, _| { });
+        let pool = MemoryPool::new(CHUNK_SIZE * 4, |_, _| {});
         let elems_per_chunk = CHUNK_SIZE / std::mem::size_of::<u32>();
 
         // 1.5 chunks worth of elements

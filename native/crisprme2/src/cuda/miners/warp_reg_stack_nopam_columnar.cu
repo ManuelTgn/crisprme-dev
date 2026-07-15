@@ -27,6 +27,7 @@ __constant__ u8 GUIDE[KERNEL_GUIDE_CAPACITY];
 
 __constant__ u32 GLEN;
 __constant__ u32 SLEN;
+__constant__ u32 PSTOP;   // == SLEN - PLEN: PAM start / protospacer end (exclusive)
 
 // Thresholds
 __constant__ u32 GGAP;
@@ -117,13 +118,19 @@ __global__ void kmine(
         start_offset = 0;
     }
 
+    // Only offsets that can satisfy the right-anchor are worth exploring:
+    //   offset = pad - ggap_used + sgap_used,  ggap_used <= GGAP, sgap_used <= SGAP
+    const u32 pad = PSTOP - GLEN;                        // left padding for DNA bulges
+    const u32 offset_lo = pad > GGAP ? pad - GGAP : 0;
+    const u32 offset_hi = pad + SGAP;
+
     /// Process all sequences and starting offset
     for (u32 bseq = start_bseq; bseq < sequence_count; bseq += stride)
     {
         // A resumed thread must continue from the checkpointed offset only for the
-        // interrupted sequence. All later sequences need to restart from offset 0.
-        const u8 seq_start_offset = (bseq == start_bseq) ? start_offset : 0;
-        for (u8 offset = seq_start_offset; offset <= (SLEN - GLEN + GGAP); offset += 1)
+        // interrupted sequence. All later sequences need to restart from offset_lo.
+        const u8 seq_start_offset = (bseq == start_bseq) ? start_offset : (u8)offset_lo;
+        for (u8 offset = seq_start_offset; offset <= offset_hi; offset += 1)
         {
             // Check if another thread signalled output full
             if (output_full)
@@ -161,8 +168,8 @@ __global__ void kmine(
 
                 // Controllers, these depends on input data
                 bool inside_thresholds = miner.inside_thresholds(MISM, GGAP, SGAP);
-                bool can_continue = miner.can_continue(SLEN, GLEN, offset, GGAP);
-                bool is_complete = miner.is_complete(GLEN);
+                bool can_continue = miner.can_continue(GLEN, PSTOP, offset);
+                bool is_complete  = miner.is_complete(GLEN, PSTOP, offset);
 
                 // Skip initial I
                 // NOTE: I will kill whoever says that goto should not be used >:(
@@ -178,6 +185,7 @@ __global__ void kmine(
                         assert(miner.mem.state.ggap <= GGAP);
                         assert(miner.mem.state.sgap <= SGAP);
                         assert(miner.mem.state.mism <= MISM);
+                        assert(miner.mem.state.sidx + offset == PSTOP);   // <-- NEW
 
                         // Write all output columns
                         u32 write_idx = atomicAdd(&write_cursor, 1);
@@ -203,19 +211,26 @@ __global__ void kmine(
                 // If some thread can push they all push
                 if (warp.any(inside_thresholds && can_continue))
                 {
-                    // If the target sequence is out of bound this means that we can only add deletions
-                    // NOTE: The mismatch flag is not needed as the deletion is the last type of step before
-                    // a backtrack, it will never be used.
-                    if (miner.mem.state.sidx + offset >= SLEN)
+                    // Guide exhausted but the alignment has not reached the PAM:
+                    // only DNA bulges can close the gap. Push directly —
+                    // Step::initial() is a B step and would advance gidx past GLEN.
+                    if (miner.mem.state.gidx >= GLEN)
                     {
-                        miner.push(Step::deletion(), false);
+                        miner.push(Step::dna_bulge(), false);
                         continue;
                     }
 
-                    // In the other cases we can proceed as normal and push a match/mismatch step
+                    // DNA cursor is at the PAM but the guide is not exhausted:
+                    // only RNA bulges remain. Note the bound is PSTOP, not SLEN —
+                    // the guide must never align into the PAM.
+                    if (miner.mem.state.sidx + offset >= PSTOP)
+                    {
+                        miner.push(Step::rna_bulge(), false);
+                        continue;
+                    }
+
                     u8 s = sequences[bseq * KERNEL_SEQ_CAPACITY + miner.mem.state.sidx + offset];
                     u8 g = GUIDE[miner.mem.state.gidx];
-
                     miner.push(Step::initial(), !iupac_match(g, s));
                     continue;
                 }
@@ -262,6 +277,11 @@ namespace cuda::miner
 
         // Copy thresholds and lengths to constant memory
         CUDA_CHECK(cudaMemcpyToSymbol(SLEN, &config.slen, sizeof(u32), 0, cudaMemcpyHostToDevice));
+
+        // Protospacer must end exactly where the PAM begins.
+        u32 pstop = config.slen - config.plen;
+        CUDA_CHECK(cudaMemcpyToSymbol(PSTOP, &pstop, sizeof(u32), 0, cudaMemcpyHostToDevice));
+
         CUDA_CHECK(cudaMemcpyToSymbol(GLEN, &config.glen, sizeof(u32), 0, cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemcpyToSymbol(SGAP, &config.sgap, sizeof(u32), 0, cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemcpyToSymbol(GGAP, &config.ggap, sizeof(u32), 0, cudaMemcpyHostToDevice));

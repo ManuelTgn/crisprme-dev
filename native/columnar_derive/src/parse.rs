@@ -1,6 +1,5 @@
 use syn::{Data, DeriveInput, Fields, Ident, LitStr, Type, spanned::Spanned};
 
-
 /// Raw parsed information for a single struct field.
 pub struct ParsedField<'a> {
     /// The field's identifier (e.g. `id`, `score`).
@@ -17,21 +16,28 @@ pub struct ParsedStruct<'a> {
     /// The struct's identifier (e.g. `Foo`).
     pub struct_name: &'a Ident,
     /// All named fields, in declaration order.
-    pub fields: Vec<ParsedField<'a>>
+    pub fields: Vec<ParsedField<'a>>,
 }
 
 /// Extract field and struct attributes from a [`DeriveInput`].
 /// Returns an error if the input is not a struct with named fields.
 pub fn parse(input: &DeriveInput) -> syn::Result<ParsedStruct<'_>> {
-
     let fields = match &input.data {
         Data::Struct(s) => match &s.fields {
             Fields::Named(f) => &f.named,
-            _ => return Err(syn::Error::new(input.span(),
-                "Columnar requires a struct with named fields")),
+            _ => {
+                return Err(syn::Error::new(
+                    input.span(),
+                    "Columnar requires a struct with named fields",
+                ));
+            }
         },
-        _ => return Err(syn::Error::new(input.span(),
-            "Columnar can only be derived for structs")),
+        _ => {
+            return Err(syn::Error::new(
+                input.span(),
+                "Columnar can only be derived for structs",
+            ));
+        }
     };
 
     let mut parsed_fields = Vec::new();
@@ -43,7 +49,9 @@ pub fn parse(input: &DeriveInput) -> syn::Result<ParsedStruct<'_>> {
         for attr in &field.attrs {
             if attr.path().is_ident("columnar") {
                 let _ = attr.parse_nested_meta(|meta| {
-                    if meta.path.is_ident("group") { group = true; }
+                    if meta.path.is_ident("group") {
+                        group = true;
+                    }
                     Ok(())
                 });
             }
@@ -54,6 +62,6 @@ pub fn parse(input: &DeriveInput) -> syn::Result<ParsedStruct<'_>> {
 
     Ok(ParsedStruct {
         struct_name: &input.ident,
-        fields: parsed_fields
+        fields: parsed_fields,
     })
 }

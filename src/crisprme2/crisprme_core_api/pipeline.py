@@ -35,12 +35,13 @@ Notes
 from __future__ import annotations
 
 from types import TracebackType
-from typing import Any, List, Optional, Type
+from typing import Any, Dict, List, Optional, Type
 
 import os
 
 
 from ..logger import CrisprmeLoggers
+from ..pam import PAM
 
 from .crisprme2_api_error import (
     Crisprme2PipelineConfigError,
@@ -103,6 +104,32 @@ def _validate_transforms(transforms: List[Any], loggers: CrisprmeLoggers) -> Non
                 os.EX_DATAERR,
                 Crisprme2PipelineConfigError,
             )
+
+
+def _contig_names_in_id_order(
+    contig_ids: Dict[str, int], loggers: CrisprmeLoggers
+) -> List[str]:
+    inverted: Dict[int, str] = {i: n for n, i in contig_ids.items()}
+    assert len(inverted) == len(contig_ids)
+    expected = set(range(len(contig_ids)))
+    if set(inverted) != expected:
+        missing = sorted(expected - set(inverted))
+        loggers.errorlog.log_raise_exception(
+            f"'contig_ids' must be dense 0..{len(contig_ids) - 1}; missing {missing}",
+            os.EX_DATAERR,
+            Crisprme2PipelineConfigError,
+        )
+    names = [inverted[i] for i in range(len(inverted))]
+    # mirror the Rust guard so the failure names the offending contig
+    for name in names:
+        bad = next((c for c in ',"\n\r' if c in name), None)
+        if bad is not None:
+            loggers.errorlog.log_raise_exception(
+                f"Contig name {name} contains {bad}, which would break the report structure",
+                os.EX_DATAERR,
+                Crisprme2PipelineConfigError,
+            )
+    return names
 
 
 # ==============================================================================
@@ -172,6 +199,10 @@ class Pipeline:
         chunks: int,
         thresholds: Thresholds,
         transforms: List[Any],
+        pam: PAM,
+        upstream: bool,
+        outpath: str,
+        contig_ids: Dict[str, int],
         loggers: CrisprmeLoggers,
     ) -> "Pipeline":
         """
@@ -191,6 +222,17 @@ class Pipeline:
             ``max_mm``, ``max_bdna``, and ``max_brna`` limits.
         transforms : list[callable]
             Non-empty list of Python callables forming the transform chain.
+        pam : PAM
+            Parsed PAM; ``.pam`` (str) is forwarded to Rust and rendered into
+            the guide column of the CSV report.
+        upstream : bool
+            ``True``  -> guide column is ``<PAM><aligned-guide>`` (Cas12a TTTV)
+            ``False`` -> guide column is ``<aligned-guide><PAM>`` (SpCas9 NGG)
+        outpath : str
+            Path of the CSV report. Truncated on open.
+        contig_ids : dict[str, int]
+            Contig ids mapping. Ids must be dense ``0..N-1``; the report
+            resolves each ``Occurence``'s contig id through this table.
         loggers : CrisprmeLoggers
             Shared logger bundle.
 
@@ -206,11 +248,13 @@ class Pipeline:
         """
         _require_native(loggers)  # ensure native rust api is installed
         _validate_transforms(transforms, loggers)  # ensure transforms are callable
+        contigs = _contig_names_in_id_order(contig_ids, loggers)
         loggers.verboselog.debug(
-            f"Constructing Pipeline (chunks={chunks}). num_transforms={len(transforms)}"
+            f"Constructing Pipeline (chunks={chunks}). num_transforms={len(transforms)} "
+            f"pam={pam.pam!r}, upstream={upstream}, output={outpath!r}, contigs={len(contigs)}))"
         )
         try:
-            rust_handle = _rust_pipeline_factory(chunks, thresholds.rust_handle, transforms)  # type: ignore
+            rust_handle = _rust_pipeline_factory(chunks, thresholds.rust_handle, transforms, pam.pam, upstream, outpath, contigs)  # type: ignore
         except Exception as e:
             loggers.errorlog.log_raise_exception(
                 f"Rust pipeline initialization failed: {e}",
@@ -218,7 +262,8 @@ class Pipeline:
                 Crisprme2PipelineConfigError,
             )
         loggers.basiclog.info(
-            f"Pipeline created (chunks={chunks}, transforms={len(transforms)})"
+            f"Pipeline created (chunks={chunks}, transforms={len(transforms)} "
+            f"pam={pam.pam!r}, upstream={upstream}, contigs={len(contigs)}))"
         )
         return cls(rust_handle, loggers)
 

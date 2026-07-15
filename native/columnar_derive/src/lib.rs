@@ -1,9 +1,9 @@
 use proc_macro::TokenStream;
-use syn::{parse_macro_input, DeriveInput};
+use syn::{DeriveInput, parse_macro_input};
 
+mod codegen;
 mod parse;
 mod repr;
-mod codegen;
 
 #[proc_macro_derive(Columnar, attributes(columnar))]
 pub fn derive_columnar_schema(input: TokenStream) -> TokenStream {

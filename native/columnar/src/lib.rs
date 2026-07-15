@@ -1,18 +1,17 @@
-
-pub mod memory;
+pub mod column;
 pub mod frame;
+pub mod memory;
+pub mod pipeline;
+pub mod python;
 pub mod shared;
 pub mod typed;
-pub mod column;
-pub mod python;
-pub mod pipeline;
 
 // Re-export derive macro
 pub use columnar_derive::Columnar;
 
-pub use shared::Share;
-pub use memory::{MemoryPool, ChunkArray};
 pub use column::{Column, ColumnGroup};
+pub use memory::{ChunkArray, MemoryPool};
+pub use shared::Share;
 pub use typed::{Schema, TypedFrame};
 
 #[cfg(test)]
@@ -26,15 +25,15 @@ mod test {
 
     #[derive(Columnar)]
     pub struct Example {
-        pub a: u32,         // Scalar
-        pub b: [u32; 10],   // Array
+        pub a: u32,       // Scalar
+        pub b: [u32; 10], // Array
         #[columnar(group)]
-        pub c: [u32; 4],    // Group
+        pub c: [u32; 4], // Group
     }
 
     #[test]
     fn new_allocates_all_columns() {
-        let pool = MemoryPool::new(CHUNK_SIZE * 10, |_, _| { });
+        let pool = MemoryPool::new(CHUNK_SIZE * 10, |_, _| {});
         let mut frame = ExampleFrame::alloc(&pool, 100);
         frame.with_cols(|c| {
             assert_eq!(c.a.rows(), 100);
@@ -45,7 +44,7 @@ mod test {
 
     #[test]
     fn with_cols_shared_and_split() {
-        let pool = MemoryPool::new(CHUNK_SIZE * 10, |_, _| { });
+        let pool = MemoryPool::new(CHUNK_SIZE * 10, |_, _| {});
 
         let mut src = ExampleFrame::alloc(&pool, 100);
         let mut dst = ExampleFrame::empty();
@@ -83,18 +82,16 @@ mod test {
     pub struct Merged {
         pub seq_id: u32,
         pub sequence: [u8; 2],
-        pub position: u64
+        pub position: u64,
     }
 
     #[test]
     fn merge() {
-        let pool = MemoryPool::new(CHUNK_SIZE * 10, |_, _| { });
+        let pool = MemoryPool::new(CHUNK_SIZE * 10, |_, _| {});
 
         let mut sequences = SequencesFrame::alloc(&pool, 100);
         sequences.with_cols(|mut c| {
-            for (i, (id, sequence)) in
-                c.id.iter_mut().zip(c.sequence.iter_mut()).enumerate()
-            {
+            for (i, (id, sequence)) in c.id.iter_mut().zip(c.sequence.iter_mut()).enumerate() {
                 *id = i as u32;
                 *sequence = [0, 1];
             }

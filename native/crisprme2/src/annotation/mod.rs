@@ -1,3 +1,3 @@
-pub mod features;
-pub mod bitset;
 pub mod annotate;
+pub mod bitset;
+pub mod features;

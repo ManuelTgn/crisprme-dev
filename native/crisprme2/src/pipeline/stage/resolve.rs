@@ -1,9 +1,13 @@
-use crate::{model::{
-    alignment::{SeqMinedBatch, SeqResolvedBatch, SeqResolvedFrame},
-    cigarx::{Cigarx, CigarxOp},
-}, sequence::sequence::Sequence};
+use crate::{
+    model::{
+        alignment::{SeqMinedBatch, SeqResolvedBatch, SeqResolvedFrame},
+        cigarx::{Cigarx, CigarxOp},
+        occurence::Strand,
+    },
+    sequence::sequence::Sequence,
+};
 use columnar::{
-    pipeline::{Emit, Stage, PipelineError},
+    pipeline::{Emit, PipelineError, Stage},
     MemoryPool,
 };
 use itertools::izip;
@@ -28,7 +32,11 @@ impl Stage for Resolver {
     }
 
     #[tracing::instrument(name = "pipeline:resolver", skip_all)]
-    fn process(&mut self, mut input: Self::I, emitter: &impl Emit<Self::O>) -> Result<(), PipelineError> {
+    fn process(
+        &mut self,
+        mut input: Self::I,
+        emitter: &impl Emit<Self::O>,
+    ) -> Result<(), PipelineError> {
         let guide = input.guide.as_slice();
 
         // mined --1:1--> resolved
@@ -70,9 +78,15 @@ impl Stage for Resolver {
 
                         for op in cigarx.iter() {
                             match op {
-                                CigarxOp::Match | CigarxOp::Mismatch => {
+                                CigarxOp::Match => {
                                     rguide[opos] = guide[gpos].to_ascii();
                                     rseq[opos] = sequence[spos].to_ascii();
+                                    gpos += 1;
+                                    spos += 1;
+                                }
+                                CigarxOp::Mismatch => {
+                                    rguide[opos] = guide[gpos].to_ascii();
+                                    rseq[opos] = sequence[spos].to_ascii_lowercase();
                                     gpos += 1;
                                     spos += 1;
                                 }
@@ -97,12 +111,13 @@ impl Stage for Resolver {
                         {
                             let rg = rguide.split(|&b| b == 0).next().unwrap();
                             let rs = rseq.split(|&b| b == 0).next().unwrap();
-                            tracing::debug!("resolved {:?}:{:?} with cigarx {:?}", 
-                                str::from_utf8(rg).unwrap(), 
-                                str::from_utf8(rs).unwrap(), 
-                                cigarx);
+                            tracing::debug!(
+                                "resolved {:?}:{:?} with cigarx {:?}",
+                                str::from_utf8(rg).unwrap(),
+                                str::from_utf8(rs).unwrap(),
+                                cigarx
+                            );
                         }
-
                     }
                 });
 
@@ -292,9 +307,9 @@ mod tests {
         let mut occs = SeqOccFrame::alloc(&pool, 2);
         occs.with_cols(|mut cols| {
             *cols.seq_row_idx.get_mut(0) = 0;
-            *cols.occurence.get_mut(0) = Occurence::new(1, 100, 0);
+            *cols.occurence.get_mut(0) = Occurence::new(1, 0, 100, Strand::from_bit(0));
             *cols.seq_row_idx.get_mut(1) = 0;
-            *cols.occurence.get_mut(1) = Occurence::new(2, 200, 1);
+            *cols.occurence.get_mut(1) = Occurence::new(2, 0, 200, Strand::from_bit(1));
         });
 
         let ops = cigar(&[CigarxOp::Match]);

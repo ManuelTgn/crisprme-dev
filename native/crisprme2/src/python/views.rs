@@ -21,14 +21,14 @@
 //! `#[pymethods]` that require data check for this state and raise
 //! [`PyValueError`] / [`PyBufferError`] accordingly.
 
-use std::ffi::{c_int, c_void};
-use std::ptr;
-use pyo3::{ffi, pyclass, pymethods, PyRef, PyResult};
-use pyo3::exceptions::{PyBufferError, PyValueError};
-use pyo3::ffi::Py_buffer;
-use tracing::trace;
 use crate::alignment::alignment::Alignment;
 use crate::memory::batch::{AlignmentRingBatch, SequenceRingBatch};
+use pyo3::exceptions::{PyBufferError, PyValueError};
+use pyo3::ffi::Py_buffer;
+use pyo3::{ffi, pyclass, pymethods, PyRef, PyResult};
+use std::ffi::{c_int, c_void};
+use std::ptr;
+use tracing::trace;
 
 /// A Python-visible, zero-copy view over an [`AlignmentRingBatch`].
 ///
@@ -71,7 +71,7 @@ use crate::memory::batch::{AlignmentRingBatch, SequenceRingBatch};
 #[pyclass]
 pub struct AlignmentBatchView {
     /// The underlying ring buffer slot. `None` when the view is empty.
-    inner: Option<AlignmentRingBatch>
+    inner: Option<AlignmentRingBatch>,
 }
 
 impl AlignmentBatchView {
@@ -100,7 +100,6 @@ impl Drop for AlignmentBatchView {
 
 #[pymethods]
 impl AlignmentBatchView {
-
     /// Return the ID of the [`TargetBatcher`] whose sequences produced this
     /// batch.
     ///
@@ -113,7 +112,7 @@ impl AlignmentBatchView {
     fn batcher_id(&self) -> PyResult<usize> {
         match &self.inner {
             None => Err(PyValueError::new_err("View is empty")),
-            Some(inner) => Ok(inner.id())
+            Some(inner) => Ok(inner.id()),
         }
     }
 
@@ -130,7 +129,7 @@ impl AlignmentBatchView {
     fn size(&self) -> PyResult<usize> {
         match &self.inner {
             None => Err(PyValueError::new_err("View is empty")),
-            Some(inner) => Ok(inner.len())
+            Some(inner) => Ok(inner.len()),
         }
     }
 
@@ -161,8 +160,11 @@ impl AlignmentBatchView {
     /// All pointer fields (`shape`, `strides`, `suboffsets`, `internal`) are
     /// set to well-defined values; `shape` and `strides` point into the view
     /// struct itself, which CPython guarantees outlives this call.
-    unsafe fn __getbuffer__(slf: PyRef<'_, Self>, view: *mut Py_buffer, flags: c_int) -> PyResult<()> {
-
+    unsafe fn __getbuffer__(
+        slf: PyRef<'_, Self>,
+        view: *mut Py_buffer,
+        flags: c_int,
+    ) -> PyResult<()> {
         if view.is_null() {
             return Err(PyBufferError::new_err("view is null"));
         }
@@ -222,7 +224,7 @@ impl AlignmentBatchView {
 #[pyclass]
 pub struct SequenceBatchView {
     /// The underlying ring buffer slot. `None` when the view is empty.
-    inner: Option<SequenceRingBatch>
+    inner: Option<SequenceRingBatch>,
 }
 
 impl SequenceBatchView {
@@ -249,14 +251,17 @@ impl Drop for SequenceBatchView {
 
 #[pymethods]
 impl SequenceBatchView {
-
     /// Expose the sequence batch as a read-only `memoryview`.
     ///
     /// # Not yet implemented
     ///
     /// Will expose a 1-D array of `u8` IUPAC bytes with format `"B"` once
     /// the sequence ring batch layout is finalised.
-    unsafe fn __getbuffer__(_slf: PyRef<'_, Self>, _view: *mut Py_buffer, _flags: c_int) -> PyResult<()> {
+    unsafe fn __getbuffer__(
+        _slf: PyRef<'_, Self>,
+        _view: *mut Py_buffer,
+        _flags: c_int,
+    ) -> PyResult<()> {
         unimplemented!()
     }
 }

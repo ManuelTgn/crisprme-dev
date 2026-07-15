@@ -31,6 +31,7 @@ __constant__ u8 GUIDE[64];
 
 __constant__ u32 GLEN;
 __constant__ u32 SLEN;
+__constant__ u32 PSTOP;   // == SLEN - PLEN: PAM start / protospacer end (exclusive)
 
 __constant__ u32 GGAP;
 __constant__ u32 SGAP;
@@ -101,14 +102,16 @@ struct ThreadState {
     return (curr_mism <= max_mism && curr_ggap <= max_ggap && curr_sgap <= max_sgap);
   }
 
-  /// Check if we can proceed to the next index
-  __device__ __forceinline__ bool can_continue(u32 slen, u32 glen, u32 offset) {
-    return (next_sidx + offset < slen || next_gidx < glen);
+  /// Can this state still reach a complete alignment?
+  __device__ __forceinline__ bool can_continue(u32 glen, u32 pstop, u32 offset) {
+    return (next_gidx <= glen)
+        && (next_sidx + offset <= pstop)
+        && (next_gidx < glen || next_sidx + offset < pstop);
   }
 
-  /// Check if state is final
-  __device__ __forceinline__ bool can_be_solution(u32 glen, u32 slen) {
-    return (next_gidx == glen && next_sidx <= slen);
+  /// Check if state is a complete, PAM-anchored alignment
+  __device__ __forceinline__ bool can_be_solution(u32 glen, u32 pstop, u32 offset) {
+    return (next_gidx == glen && next_sidx + offset == pstop);
   }
 
   /// Check if state is final
@@ -199,8 +202,12 @@ __global__ void warp_reg_stack(
 
   /// Process all sequences and starting offset
   for (u32 bseq = start_bseq; bseq < batch_size; bseq += gridDim.x * blockDim.x) {
-    // TODO: Here the ending offset must take into consideration the gaps allowed! (for now +3)
-    for (u32 offset = start_sidx; offset <= (SLEN - GLEN + GGAP + SGAP); offset += 1) {
+    // Only offsets that can satisfy the right-anchor are worth exploring:
+    //   offset = pad - ggap_used + sgap_used,  ggap_used <= GGAP, sgap_used <= SGAP
+    const u32 pad = PSTOP - GLEN;                        // left padding for DNA bulges
+    const u32 offset_lo = pad > GGAP ? pad - GGAP : 0;
+    const u32 offset_hi = pad + SGAP;
+    for (u32 offset = offset_lo; offset <= offset_hi; offset += 1) {
 
       // Initialize stack for this sequence if not already done
       if (state.stack.len() == 0) {
@@ -242,8 +249,8 @@ __global__ void warp_reg_stack(
 
         // Controllers, these depends on input data
         bool inside_thresholds = state.inside_thresholds(SLEN, MISM, GGAP, SGAP);
-        bool can_continue = state.can_continue(SLEN, GLEN, offset);
-        bool can_be_solution = state.can_be_solution(GLEN, SLEN);
+        bool can_continue = state.can_continue(GLEN, PSTOP, offset);
+        bool can_be_solution = state.can_be_solution(GLEN, PSTOP, offset);
 
 #if DEBUG
 	printf("inside_thresholds: %d\n", inside_thresholds);
@@ -288,6 +295,7 @@ __global__ void warp_reg_stack(
 
           // Add solution to alignment batch
           if (inside_thresholds) {
+            assert(state.next_sidx + offset == PSTOP);   // <-- NEW
             u32 write_idx = atomicAdd(&dev_alignment_write, 1);
             assert(write_idx < capacity && "ERR: too many alignments!");
             result[write_idx] = Alignment {
@@ -303,10 +311,12 @@ __global__ void warp_reg_stack(
           printf("push\n");
 #endif
           
-	  // If the target sequence is out-of-bounds we can only add deletions
-	  if (state.next_sidx + offset >= SLEN) {
+	  // DNA cursor is at the PAM but the guide is not exhausted: only RNA
+	  // bulges remain. Bound is PSTOP, not SLEN — the guide must never align
+	  // into the PAM.
+	  if (state.next_sidx + offset >= PSTOP) {
 #if DEBUG
-	  	printf("out-of-bound, push deletion\n");
+	  	printf("at PAM boundary, push deletion (RNA bulge)\n");
 #endif
 		step = Step::deletion();
 		state.push(step);
@@ -315,7 +325,7 @@ __global__ void warp_reg_stack(
 
 	  // Otherwise we can continue as normal
           assert(state.next_gidx < GLEN);
-          assert(state.next_sidx + offset < SLEN);
+          assert(state.next_sidx + offset < PSTOP);
 
 	  u8 s = batch[bseq * SLEN + state.next_sidx + offset];
           u8 g = GUIDE[state.next_gidx];
@@ -348,13 +358,17 @@ namespace cuda::miner {
   }
 
   /// Invoked before a new batch is mined
-  void pre_mine(const u8* guide, u32 glen, u32 slen, u32 ggap, u32 sgap, u32 mism) {
-  
+  void pre_mine(const u8* guide, u32 glen, u32 slen, u32 plen, u32 ggap, u32 sgap, u32 mism) {
+
     // Copy guide to constant memory
     CUDA_CHECK(cudaMemcpyToSymbol(GUIDE, guide, glen, 0, cudaMemcpyHostToDevice));
 
     // Copy thresholds and lengths to constant memory
     CUDA_CHECK(cudaMemcpyToSymbol(SLEN, &slen, sizeof(u32), 0, cudaMemcpyHostToDevice));
+
+    // Protospacer must end exactly where the PAM begins.
+    u32 pstop = slen - plen;
+    CUDA_CHECK(cudaMemcpyToSymbol(PSTOP, &pstop, sizeof(u32), 0, cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpyToSymbol(GLEN, &glen, sizeof(u32), 0, cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpyToSymbol(SGAP, &sgap, sizeof(u32), 0, cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpyToSymbol(GGAP, &ggap, sizeof(u32), 0, cudaMemcpyHostToDevice));

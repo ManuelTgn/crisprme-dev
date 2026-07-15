@@ -1,12 +1,11 @@
 use proc_macro2::{Span, TokenStream};
-use quote::{quote, format_ident};
+use quote::{format_ident, quote};
 use syn::Ident;
 
 use crate::repr::{FieldKindIR, SchemaIR};
 
 /// Top-level code generation entry point.
 pub fn generate(ir: &SchemaIR) -> TokenStream {
-
     // Number of slots required for this schema
     let total_slots = compute_total_slots(ir);
 
@@ -34,9 +33,7 @@ fn field_slot_count(kind: &FieldKindIR) -> usize {
 }
 
 fn compute_total_slots(ir: &SchemaIR) -> usize {
-    ir.fields.iter()
-        .map(|f| field_slot_count(&f.kind))
-        .sum()
+    ir.fields.iter().map(|f| field_slot_count(&f.kind)).sum()
 }
 
 fn generate_schema(ir: &SchemaIR, total_slots: usize) -> TokenStream {
@@ -49,17 +46,10 @@ fn generate_schema(ir: &SchemaIR, total_slots: usize) -> TokenStream {
 }
 
 fn generate_cols(ir: &SchemaIR, total_slots: usize) -> TokenStream {
-
     let struct_name = ir.struct_name;
-    let cols_name = Ident::new(
-        &format!("{}Cols", ir.struct_name),
-        Span::call_site(),
-    );
+    let cols_name = Ident::new(&format!("{}Cols", ir.struct_name), Span::call_site());
 
-    let typed_struct_name = Ident::new(
-        &format!("{}Frame", ir.struct_name), 
-        Span::call_site()
-    );
+    let typed_struct_name = Ident::new(&format!("{}Frame", ir.struct_name), Span::call_site());
 
     // Compute cumulative slot offsets
     let mut slot_offsets: Vec<usize> = Vec::new();
@@ -70,46 +60,61 @@ fn generate_cols(ir: &SchemaIR, total_slots: usize) -> TokenStream {
     }
 
     // Generate the Cols struct fields
-    let cols_struct_fields: Vec<_> = ir.fields.iter().map(|f| {
-        let name = f.name;
-        let ty = f.ty;
-        match &f.kind {
-            FieldKindIR::Scalar => {
-                quote! { pub #name: ::columnar::Column<'a, #ty> }
+    let cols_struct_fields: Vec<_> = ir
+        .fields
+        .iter()
+        .map(|f| {
+            let name = f.name;
+            let ty = f.ty;
+            match &f.kind {
+                FieldKindIR::Scalar => {
+                    quote! { pub #name: ::columnar::Column<'a, #ty> }
+                }
+                FieldKindIR::Array { len } => {
+                    quote! { pub #name: ::columnar::Column<'a, [#ty; #len]> }
+                }
+                FieldKindIR::Group { len } => {
+                    quote! { pub #name: ::columnar::ColumnGroup<'a, #ty, #len> }
+                }
             }
-            FieldKindIR::Array { len } => {
-                quote! { pub #name: ::columnar::Column<'a, [#ty; #len]> }
-            }
-            FieldKindIR::Group { len } => {
-                quote! { pub #name: ::columnar::ColumnGroup<'a, #ty, #len> }
-            }
-        }
-    }).collect();
+        })
+        .collect();
 
     // Generate field initializers using unsafe raw pointer indexing
-    let field_inits: Vec<_> = ir.fields.iter().enumerate().map(|(i, f)| {
-        let name = f.name;
-        let off = slot_offsets[i];
-        match &f.kind {
-            FieldKindIR::Scalar | FieldKindIR::Array { .. } => {
-                quote! { #name: ::columnar::Column::new(unsafe { &mut *__ptr.add(#off) }) }
+    let field_inits: Vec<_> = ir
+        .fields
+        .iter()
+        .enumerate()
+        .map(|(i, f)| {
+            let name = f.name;
+            let off = slot_offsets[i];
+            match &f.kind {
+                FieldKindIR::Scalar | FieldKindIR::Array { .. } => {
+                    quote! { #name: ::columnar::Column::new(unsafe { &mut *__ptr.add(#off) }) }
+                }
+                FieldKindIR::Group { .. } => {
+                    let n = field_slot_count(&f.kind);
+                    let group_slots: Vec<_> = (0..n)
+                        .map(|j| {
+                            let idx = off + j;
+                            quote! { unsafe { &mut *__ptr.add(#idx) } }
+                        })
+                        .collect();
+                    quote! { #name: ::columnar::ColumnGroup::new([#( #group_slots ),*]) }
+                }
             }
-            FieldKindIR::Group { .. } => {
-                let n = field_slot_count(&f.kind);
-                let group_slots: Vec<_> = (0..n).map(|j| {
-                    let idx = off + j;
-                    quote! { unsafe { &mut *__ptr.add(#idx) } }
-                }).collect();
-                quote! { #name: ::columnar::ColumnGroup::new([#( #group_slots ),*]) }
-            }
-        }
-    }).collect();
+        })
+        .collect();
 
     // Generate alloc calls for `new()`
-    let alloc_calls: Vec<_> = ir.fields.iter().map(|f| {
-        let name = f.name;
-        quote! { __cols.#name.alloc(__pool, __rows); }
-    }).collect();
+    let alloc_calls: Vec<_> = ir
+        .fields
+        .iter()
+        .map(|f| {
+            let name = f.name;
+            quote! { __cols.#name.alloc(__pool, __rows); }
+        })
+        .collect();
 
     quote! {
 
@@ -146,9 +151,9 @@ fn generate_cols(ir: &SchemaIR, total_slots: usize) -> TokenStream {
             /// # Safety
             /// The caller must ensure the frame's layout matches `S`.
             pub unsafe fn attach(frame: ::columnar::frame::DynFrame) -> Self {
-                Self(::columnar::TypedFrame { 
-                    _schema: ::std::marker::PhantomData, 
-                    frame 
+                Self(::columnar::TypedFrame {
+                    _schema: ::std::marker::PhantomData,
+                    frame
                 })
             }
 

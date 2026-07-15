@@ -4,10 +4,9 @@ use crate::annotation::features::FeatureRegistry;
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
-
 /*
 /// Python wrapper around FeatureRegistry
-/// 
+///
 /// Exposes only safe operations needed for annotation
 #[pyclass]
 pub struct PyRegistry {
@@ -18,10 +17,10 @@ pub struct PyRegistry {
 impl PyRegistry {
 
     /// Create a registry from a BED file
-    /// 
+    ///
     /// Args:
     ///     paths (str): Path to BED file
-    /// 
+    ///
     /// Raises:
     ///     IOError: If file cannot be read
     ///     ValueError: If BED file is malformed
@@ -45,12 +44,12 @@ impl PyRegistry {
 
     /// Annotate a batch of targets
     /// Args:
-    ///     hits (List[List[int]]): Each inner list contains feature IDs 
+    ///     hits (List[List[int]]): Each inner list contains feature IDs
     ///         overlapping a target
-    /// 
+    ///
     /// Returns:
     ///     List[bytes]: Compact byte arrays encoding feature overlaps
-    /// 
+    ///
     /// Raises:
     ///     ValueError: If feature IDs are invalid
     ///     ValueError: If input is empty
@@ -60,7 +59,7 @@ impl PyRegistry {
         hits: Vec<Vec<usize>>
     ) -> PyResult<Vec<&'py PyBytes>> {
         let results = annotate_batch(
-            hits, 
+            hits,
             self.inner.num_features()
         )?;
 

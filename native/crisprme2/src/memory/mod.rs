@@ -1,7 +1,10 @@
 use crate::bindings;
 use arena::Memory;
 use bump_scope::NoDrop;
-use std::{ops::{Deref, DerefMut}, ptr::NonNull};
+use std::{
+    ops::{Deref, DerefMut},
+    ptr::NonNull,
+};
 use tracing::trace;
 
 pub mod arena;
@@ -23,9 +26,8 @@ impl<T> GpuPtr<T> {
     pub fn alloc(len: usize) -> Self {
         let ptr = bindings::cuda::malloc::<T>(len);
         trace!("allocated gpu buffer ({len} elements)");
-        Self { 
-            ptr: NonNull::new(ptr)
-                .expect("failed CUDA malloc") 
+        Self {
+            ptr: NonNull::new(ptr).expect("failed CUDA malloc"),
         }
     }
 
@@ -113,8 +115,8 @@ impl<'s, T: 'static> HybridBuffer<'s, T> {
             if let Some(gpu) = &self.gpu {
                 unsafe {
                     bindings::cuda::memcpy_to_gpu::<T>(
-                        self.cpu.as_ptr(),  // *const T
-                        gpu.as_ptr(),  // *mut T
+                        self.cpu.as_ptr(), // *const T
+                        gpu.as_ptr(),      // *mut T
                         self.capacity,
                     );
                 }
@@ -128,11 +130,11 @@ impl<'s, T: 'static> HybridBuffer<'s, T> {
     pub fn sync_to_cpu(&mut self) {
         if self.gpu_dirty {
             if let Some(gpu) = &self.gpu {
-                unsafe{
+                unsafe {
                     bindings::cuda::memcpy_to_cpu(
-                        self.cpu.as_mut_ptr(),  // *mut T 
-                        gpu.as_ptr() as *const T,  // *const T
-                        self.capacity
+                        self.cpu.as_mut_ptr(),    // *mut T
+                        gpu.as_ptr() as *const T, // *const T
+                        self.capacity,
                     );
                 }
             }

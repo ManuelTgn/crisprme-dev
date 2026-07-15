@@ -17,11 +17,10 @@ pub unsafe trait Schema {
 /// A [`DynFrame`] tagged with a compile-time schema `S`.
 pub struct TypedFrame<S: Schema> {
     pub _schema: PhantomData<S>,
-    pub frame: DynFrame
+    pub frame: DynFrame,
 }
 
 impl<S: Schema> TypedFrame<S> {
-
     /// Create an empty frame with this schema
     pub fn empty() -> Self {
         Self {
@@ -31,24 +30,29 @@ impl<S: Schema> TypedFrame<S> {
     }
 
     /// Mutable access to the inner frame (used by derive macro)
-    pub fn frame_mut(&mut self) -> &mut DynFrame { &mut self.frame }
+    pub fn frame_mut(&mut self) -> &mut DynFrame {
+        &mut self.frame
+    }
 
     /// Attach a schema to an existing frame.
     /// # Safety
     /// The caller must ensure the frame's layout matches `S`.
     pub unsafe fn attach(frame: DynFrame) -> Self {
-        Self { _schema: PhantomData, frame }
+        Self {
+            _schema: PhantomData,
+            frame,
+        }
     }
 
     /// Consume the wrapper and return the inner frame
-    pub fn detach(self) -> DynFrame { self.frame }
+    pub fn detach(self) -> DynFrame {
+        self.frame
+    }
 }
 
 impl<S: Schema> Share for TypedFrame<S> {
     fn share(&mut self) -> Self {
-        unsafe { 
-            Self::attach(self.frame.share())
-        }
+        unsafe { Self::attach(self.frame.share()) }
     }
 }
 

@@ -1,11 +1,11 @@
 use std::ffi::CStr;
 
-use columnar::{Columnar, Schema};
 use columnar::python::PyBufferFormat;
+use columnar::{Columnar, Schema};
 
 use crate::crispr::guide::Guide;
 use crate::model::cigarx::Cigarx64;
-use crate::model::input::{SeqBatch, SeqFrame, SeqRowIdx, SeqOccFrame};
+use crate::model::input::{SeqBatch, SeqFrame, SeqOccFrame, SeqRowIdx};
 use crate::model::occurence::Occurence;
 use crate::sequence::iupac::Iupac;
 
@@ -39,7 +39,6 @@ pub struct SeqResolved {
 /// Definition of a complete alignment
 #[derive(Debug, Columnar)]
 pub struct Alignment {
-
     pub seq_row_idx: SeqRowIdx,
 
     /// Resolved guide
@@ -63,13 +62,10 @@ pub struct Alignment {
 
 /// Inform columnar that iupac characters are just u8 in python
 impl PyBufferFormat for Iupac {
-    const FORMAT: &'static CStr = unsafe { 
-        CStr::from_bytes_with_nul_unchecked("B\0".as_bytes()) 
-    };
+    const FORMAT: &'static CStr = unsafe { CStr::from_bytes_with_nul_unchecked("B\0".as_bytes()) };
 }
 
 pub struct SeqMinedBatch {
-
     pub guide: Guide,
 
     pub sequences: SeqFrame,
@@ -78,7 +74,6 @@ pub struct SeqMinedBatch {
 }
 
 pub struct SeqResolvedBatch {
-
     /// The number of sequences that were present at the beginning
     /// of the pipeline, we know that any seq_row_idx < source_seq_count
     pub source_seq_count: usize,
@@ -88,5 +83,5 @@ pub struct SeqResolvedBatch {
 }
 
 pub struct AlignmentBatch {
-    content: AlignmentFrame
+    content: AlignmentFrame,
 }

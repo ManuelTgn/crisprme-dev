@@ -335,45 +335,17 @@ class TargetBatcher:
     # ==========================================================================
 
     def feed_chunk(
-        self, contig_id: int, chunk_start: int, chunk_seq: str, valid_len: int
+        self,
+        contig_id: int,
+        chunk_start: int,
+        chunk_seq: str,
+        strand: int,
+        valid_len: int,
     ) -> FeedResult:
-        """
-        Feed a sequence chunk to the batcher.
-
-        The batcher encodes the chunk into IUPAC bitmasks, runs the parallel
-        PAM/target scanner, filters positions to the valid core window, and
-        accumulates (window -> occurrences) entries into its internal map.
-
-        Parameters
-        ----------
-        contig_id : int
-            Index of the current contig (0-based, fits in u32).
-        chunk_start : int
-            Absolute genomic start of this chunk in the contig (fits in u32).
-            Pass ``0`` for the first chunk.
-        chunk_seq : str
-            Raw nucleotide string for this chunk (may include overlap region).
-        valid_len : int
-            Length of the *core* (non-overlap) region within ``chunk_seq``.
-            Positions outside this core are discarded by the batcher.
-
-        Returns
-        -------
-        FeedResult
-            ``result.flushed`` is ``True`` when the batch has reached its
-            capacity threshold.  The caller **must** submit the batcher to
-            the pipeline before feeding the next chunk.
-
-        Raises
-        ------
-        Crisprme2BatcherError
-            On argument validation failure or Rust-side errors (e.g.
-            position overflow, encoding failure).
-        """
         self._total_chunks_fed += 1  # increase number of actual chunks fed
         try:
             rust_status = self._batcher.feed_chunk(
-                contig_id, chunk_start, chunk_seq, valid_len
+                contig_id, chunk_start, strand, chunk_seq, valid_len
             )
         except Exception as e:
             self._loggers.errorlog.log_raise_exception(
