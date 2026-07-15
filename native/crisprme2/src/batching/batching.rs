@@ -1,7 +1,9 @@
 use crate::crispr::guide::Guide;
 use crate::crispr::{guide, pam};
 use crate::memory::batch::AlignmentRingBatch;
+use crate::model::occurence::Strand;
 use crate::sequence::{iupac, scanner};
+
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use ahash::AHashMap;
@@ -124,12 +126,13 @@ impl TargetBatcher {
         &mut self,
         contig_id: u32,
         chunk_start: u32,
+        strand: u8,
         chunk_seq: &str,
         valid_len: usize,
     ) -> PyResult<FeedStatus> {
         let seq_bitmask: Vec<u8> = iupac::sequence_encoder(chunk_seq);
 
-        let (pos_local, strand) = scanner::scan_targets_bitmask(
+        let pos_local = scanner::scan_targets_bitmask(
             &seq_bitmask,
             &self.pam,
             self.size,
@@ -137,8 +140,6 @@ impl TargetBatcher {
             self.threads,
         )
         .map_err(|e| PyErr::new::<PyValueError, _>(e))?;
-
-        debug_assert_eq!(pos_local.len(), strand.len());
 
         if cfg!(debug_assertions) {
             eprintln!(
@@ -152,7 +153,7 @@ impl TargetBatcher {
                 eprintln!(
                     "  -> local_pos={} strand={}",
                     pos_local[i],
-                    if strand[i] == 1 { '+' } else { '-' }
+                    if strand == 1 { '+' } else { '-' }
                 );
             }
         }
@@ -196,32 +197,61 @@ impl TargetBatcher {
             });
         }
 
+        // Per-chunk, not per-hit: which physical orientation did the scanner see?
+        let scanned_on_rc = Strand::from_bit(strand).scanned_on_revcomp(self.upstream);
+        let plen = self.pam.bytes.len();
+
+        println!(
+            "Size: {}, extracted: {}, plen: {}",
+            self.size,
+            (self.size - plen),
+            plen
+        );
+
         for i in 0..pos_local.len() {
             let p = pos_local[i];
             if p < accept_lo || p >= accept_hi {
                 continue;
             }
 
-            let pos_global = chunk_start as usize + p;
-            if pos_global > (u32::MAX as usize) {
+            let start = p;
+            let end = start + (self.size - plen) + 1;
+
+            // Left-most FORWARD coordinate of this window.
+            //
+            // `chunk_start` is a forward coordinate; `p` indexes the *scanned*
+            // sequence. On a forward chunk the two frames agree and they simply
+            // add. On an RC chunk the scanned frame runs against the forward
+            // strand, so index `p` sits `chunk_len - p - size` bases from the
+            // chunk's forward start — the old `chunk_start + p` mixed the two
+            // frames.
+            //
+            //   forward chunk: chunk_start + p
+            //   RC chunk:      chunk_start + chunk_len - p - size
+            let window_fwd_left = if scanned_on_rc {
+                // `end <= chunk_len` holds because `p < max_start_excl`;
+                // checked anyway so a future change to the accept-window can't
+                // silently wrap
+                let back = chunk_len.checked_sub(end).ok_or_else(|| {
+                    PyErr::new::<PyValueError, _>(format!(
+                        "window [{start},{end}) escapes chunk (len={chunk_len})"
+                    ))
+                })?;
+                chunk_start as usize + back
+            } else {
+                chunk_start as usize + start
+            };
+
+            if window_fwd_left > u32::MAX as usize {
                 return Err(PyErr::new::<PyValueError, _>("Position overflow"));
             }
 
-            let strand_bit = strand[i]; // 1=fwd (+), 0=rev (-)
-
-            let start = p;
-            let end = start + self.size;
             let window = &seq_bitmask[start..end];
             let key: WindowKey = window.to_vec().into_boxed_slice();
 
-            let occ = pack_occ(contig_id, pos_global as u32, strand_bit);
+            let occ = pack_occ(contig_id, window_fwd_left as u32, strand);
 
-            if let Some(v) = self.map.get_mut(&key) {
-                v.push(occ);
-            } else {
-                self.map.insert(key, vec![occ]);
-            }
-
+            self.map.entry(key).or_default().push(occ);
             self.hits_in_batch += 1;
         }
 

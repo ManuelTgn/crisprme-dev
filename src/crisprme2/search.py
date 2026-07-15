@@ -33,19 +33,21 @@ Data flow
     TargetBatcher.finalize()    flush tail + clear internal map
 """
 
-from .crisprme_core_api import TargetBatcher, Pipeline, Thresholds
-from .crisprme2_error import Crisprme2SearchError
-from .fasta_utils import read_fasta_files
-from .logger import CrisprmeLoggers
-from .fasta import Fasta
-from .guide import Guide
-from .pam import PAM
-from .protocol import Transformer
-
-from typing import List, Dict, Tuple
 from time import time
+from typing import List, Dict, Tuple
 
 import os
+
+
+from .crisprme_core_api import TargetBatcher, Pipeline, Thresholds
+from .crisprme2_error import Crisprme2SearchError
+from .dna_alphabet import reverse_complement
+from .fasta import Fasta
+from .fasta_utils import read_fasta_files
+from .guide import Guide
+from .logger import CrisprmeLoggers
+from .pam import PAM
+from .protocol import Transformer
 
 
 # ==============================================================================
@@ -129,6 +131,15 @@ def _chunk_sequence(
     return sequence.chunk(CHUNKSIZE, overlap), len(sequence)
 
 
+def _compute_chunk_seq_stran_pairs(
+    chunk_seq: str, upstream: bool, loggers: CrisprmeLoggers
+) -> List[Tuple[str, int]]:
+    chunk_seq_rc = reverse_complement(chunk_seq, loggers)
+    if upstream:  # force pam downstream the target sequence
+        return [(chunk_seq_rc, 1), (chunk_seq, 0)]
+    return [(chunk_seq, 1), (chunk_seq_rc, 0)]
+
+
 def _submit_and_log(
     pipeline: Pipeline, batcher: TargetBatcher, label: str, loggers: CrisprmeLoggers
 ) -> None:
@@ -154,16 +165,9 @@ def _process_contig(
     contig_id: int,
     overlap: int,
     size: int,
+    upstream: bool,
     loggers: CrisprmeLoggers,
-):
-    """
-    Open a FASTA handle, chunk its sequence, and feed each chunk to
-    *batcher*, submitting to *pipeline* whenever the batch is full.
-
-    This function owns the ``with fasta`` context for one contig.
-    It delegates chunking to :func:`_chunk_sequence` and submission
-    to :func:`_submit_and_log`.
-    """
+) -> None:
     with fasta as fa:
         chunk_seqs, seqlen = _chunk_sequence(fa, contig, overlap, loggers)
         for i, chunk_seq in enumerate(chunk_seqs):
@@ -179,11 +183,17 @@ def _process_contig(
                     f"shorter than window size ({size}), skipping"
                 )
                 continue
-            result = batcher.feed_chunk(contig_id, chunk_start, chunk_seq, core_len)
-            if result.flushed:
-                _submit_and_log(
-                    pipeline, batcher, f"contig={contig!r} chunk={i}", loggers
+            # assign chunk sequence-strand pairs based on PAM position
+            for seq, strand in _compute_chunk_seq_stran_pairs(
+                chunk_seq, upstream, loggers
+            ):
+                result = batcher.feed_chunk(
+                    contig_id, chunk_start, seq, strand, core_len
                 )
+                if result.flushed:
+                    _submit_and_log(
+                        pipeline, batcher, f"contig={contig!r} chunk={i}", loggers
+                    )
 
 
 def _scan_reference_genome(
@@ -283,7 +293,15 @@ def _scan_reference_genome(
             contig_start = time()  # trace contig processing running time
             try:
                 _process_contig(
-                    fasta, batcher, pipeline, contig, contig_id, overlap, size, loggers
+                    fasta,
+                    batcher,
+                    pipeline,
+                    contig,
+                    contig_id,
+                    overlap,
+                    size,
+                    upstream,
+                    loggers,
                 )
             except Crisprme2SearchError:
                 raise  # already formatted; propagate as-is

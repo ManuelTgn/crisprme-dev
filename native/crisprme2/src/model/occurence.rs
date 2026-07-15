@@ -39,6 +39,25 @@ impl Strand {
             Self::Reverse => "-",
         }
     }
+
+    /// Was a window on this strand found by scanning the **reverse-complemented**
+    /// chunk?
+    ///
+    /// The miner requires the PAM at the window's right edge, so Python feeds the
+    /// scanner the chunk orientation that puts it there. Which physical chunk that
+    /// is depends on *both* the reported strand and where the PAM sits relative to
+    /// the protospacer:
+    ///
+    /// | PAM placement          | `+` strand   | `−` strand   |
+    /// |------------------------|--------------|--------------|
+    /// | downstream (Cas9, NGG) | forward chunk| **RC chunk** |
+    /// | upstream (Cas12, TTTV) | **RC chunk** | forward chunk|
+    ///
+    /// which collapses to `is_forward == upstream`.
+    #[inline(always)]
+    pub const fn scanned_on_revcomp(self, upstream: bool) -> bool {
+        matches!(self, Self::Forward) == upstream
+    }
 }
 
 impl fmt::Display for Strand {

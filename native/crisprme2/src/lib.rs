@@ -18,43 +18,6 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::PyResult;
 
-/// Finds all potential target candidates (CRISPR gRNAs) within a given sequence.
-///
-/// This function converts the input sequence and PAM into IUPAC bitmasks and performs a
-/// parallelized scan to identify all positions where the target sequence and its
-/// associated PAM match the defined criteria.
-///
-/// # Arguments
-/// * `sequence` (str): The large DNA/RNA sequence to be scanned (e.g., a contig or chromosome).
-/// * `contig` (str): The name/identifier of the sequence (e.g., "chr1").
-/// * `pam_seq` (str): The Protospacer Adjacent Motif (PAM) sequence (e.g., "NGG").
-/// * `k` (usize): The length of the target/protospacer sequence, excluding the PAM.
-/// * `upstream` (bool): If `true`, the PAM is expected to be immediately *upstream* of the target sequence.
-///                   If `false`, the PAM is expected to be immediately *downstream* of the target sequence.
-/// * `threads` (usize): The number of threads to use for parallel scanning.
-///
-/// # Returns
-/// A `list` of `target::Target` objects, where each object contains the position,
-/// orientation, and bitmask sequence of a found target.
-///
-/// # Errors
-/// Returns a `PyValueError` if input constraints are violated (e.g., invalid sizes or PAM sequence).
-#[pyfunction]
-pub fn extract_targets_rs(
-    sequence: &str,
-    pam_seq: &str,
-    size: usize,
-    upstream: bool,
-    threads: usize,
-) -> PyResult<(Vec<usize>, Vec<u8>)> {
-    let pat = crispr::pam::PAM::new(pam_seq)
-        .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid PAM sequence: {e}")))?;
-
-    // Execute the core parallel scanning logic and return the results
-    sequence::scanner::scan_targets(sequence, &pat, size, upstream, threads)
-        .map_err(|e| PyErr::new::<PyValueError, _>(e))
-}
-
 /// Defines the Python module structure and exposes Rust functions
 #[pymodule]
 pub mod _crisprme2_native {
@@ -115,9 +78,6 @@ pub mod _crisprme2_native {
 
     #[pymodule_export]
     pub use crate::pipeline::stage::transform::PyAlignmentBatch;
-
-    #[pymodule_export]
-    pub use crate::extract_targets_rs;
 
     #[pymodule_export]
     pub use crate::crispr::guide::Guide;

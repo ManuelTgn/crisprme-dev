@@ -14,6 +14,7 @@ use itertools::izip;
 use crate::crispr::pam::PAM;
 use crate::error::crisprme_errors::ContigLabelsError;
 use crate::model::alignment::AlignmentFrame;
+use crate::model::occurence::Strand;
 
 /// Where the PAM sits relative to the protospacer.
 ///
@@ -36,6 +37,11 @@ impl PamPlacement {
             Self::Downstream
         }
     }
+
+    #[inline(always)]
+    pub const fn is_upstream(self) -> bool {
+        matches!(self, Self::Upstream)
+    }
 }
 
 /// Run-level, immutable rendering context for the guide column.
@@ -48,6 +54,7 @@ impl PamPlacement {
 pub struct PamContext {
     prefix: Box<str>,
     suffix: Box<str>,
+    placement: PamPlacement,
 }
 
 impl PamContext {
@@ -57,10 +64,12 @@ impl PamContext {
             PamPlacement::Upstream => Self {
                 prefix: motif.into(),
                 suffix: Box::from(""),
+                placement,
             },
             PamPlacement::Downstream => Self {
                 prefix: Box::from(""),
                 suffix: motif.into(),
+                placement,
             },
         }
     }
@@ -76,6 +85,15 @@ impl PamContext {
             buf.push(b as char);
         }
         buf.push_str(&self.suffix);
+    }
+
+    #[inline(always)]
+    pub fn target_start(&self, window_fwd_left: u32, offset: u8, strand: Strand) -> u32 {
+        if strand.scanned_on_revcomp(self.placement.is_upstream()) {
+            window_fwd_left
+        } else {
+            window_fwd_left + offset as u32
+        }
     }
 }
 
@@ -266,15 +284,12 @@ impl Sink for CsvWriterSink {
                     }
                 }
 
+                let strand = occ.strand();
+                let position = self.pam.target_start(occ.position(), *offset, strand) + 1;
+
                 // Layout is owned by `Occurence`; never unpack the u64 here.
-                write!(
-                    self.buffer,
-                    ",{},{},{}",
-                    occ.position(),
-                    occ.strand(),
-                    offset,
-                )
-                .expect("fmt::Write for String is infallible");
+                write!(self.buffer, ",{},{}", position, strand)
+                    .expect("fmt::Write for String is infallible");
 
                 // Aligned guide (PAM decorated) columns
                 self.buffer.push(',');

@@ -12,19 +12,19 @@ use crate::utils::threadpool;
 /// In the scanner, k-mers containing `N` are skipped (see `scan_targets`).
 const N_MASK: u8 = 0b1111;
 
-pub fn scan_targets(
-    sequence: &str,
-    pam: &PAM,
-    size: usize,
-    upstream: bool,
-    threads: usize,
-) -> Result<(Vec<usize>, Vec<u8>), String> {
-    // encode contig chunk sequence in bits
-    let seq_bitmask = sequence_encoder(sequence);
+// pub fn scan_targets(
+//     sequence: &str,
+//     pam: &PAM,
+//     size: usize,
+//     upstream: bool,
+//     threads: usize,
+// ) -> Result<Vec<usize>, String> {
+//     // encode contig chunk sequence in bits
+//     let seq_bitmask = sequence_encoder(sequence);
 
-    // extract target candidates from contig chunk
-    scan_targets_bitmask(&seq_bitmask, pam, size, upstream, threads)
-}
+//     // extract target candidates from contig chunk
+//     scan_targets_bitmask(&seq_bitmask, pam, size, upstream, threads)
+// }
 
 pub fn scan_targets_bitmask(
     seq_bitmask: &[u8],
@@ -32,37 +32,32 @@ pub fn scan_targets_bitmask(
     size: usize,
     upstream: bool,
     threads: usize,
-) -> Result<(Vec<usize>, Vec<u8>), String> {
+) -> Result<Vec<usize>, String> {
     // get sequence length
     let slen = seq_bitmask.len();
     if slen == 0 || size == 0 || size > slen {
-        return Ok((Vec::new(), Vec::new()));
+        return Ok((Vec::new()));
     }
 
     // get encoded pam
-    let pat = &pam.bytes;
-    let rev = &pam.revcomp;
+    let pat = if upstream { &pam.revcomp } else { &pam.bytes };
     let plen = pat.len();
     if plen == 0 || plen > size {
         return Err(format!("Invalid PAM length: plen={plen}, size={size}"));
     }
 
     // decide whether perform sparse pam matching (sparse pam example NNNRGG)
-    let (idx_fwd, mask_fwd) = build_sparse(pat);
-    let (idx_rev, mask_rev) = build_sparse(rev);
-
-    let use_sparse_fwd = !pam.unconstrained && idx_fwd.len() < plen;
-    let use_sparse_rev = !pam.unconstrained && idx_rev.len() < plen;
+    let (idx, mask) = build_sparse(pat);
+    let use_sparse = !pam.unconstrained && idx.len() < plen;
 
     // compute start positions for pam
-    let pam_start_fwd = if upstream { 0 } else { size - plen };
-    let pam_start_rev = if upstream { size - plen } else { 0 };
+    let pam_start = size - plen;
 
     threadpool::with_pool(threads, || {
         // define chunk sizes for threads spawning over sequences
         let chunk_size = (slen + threads - 1) / threads;
 
-        let per_chunk: Vec<(Vec<usize>, Vec<u8>)> = (0..threads)
+        let per_chunk: Vec<Vec<usize>> = (0..threads)
             .into_par_iter()
             .filter_map(|chunk_idx| {
                 // compute start/stop positions for current chunk
@@ -80,7 +75,6 @@ pub fn scan_targets_bitmask(
 
                 // define positions and strands arrays for current chunk
                 let mut chunk_pos: Vec<usize> = Vec::new();
-                let mut chunk_strand: Vec<u8> = Vec::new(); // 1 = +; 0 = -
 
                 if chunk_len >= size {
                     for i in 0..=(chunk_len - size) {
@@ -101,64 +95,35 @@ pub fn scan_targets_bitmask(
                         if pam.unconstrained {
                             // degenerate PAM -> skip PAM matching
                             chunk_pos.push(global_pos);
-                            chunk_strand.push(1);
-                            chunk_pos.push(global_pos);
-                            chunk_strand.push(0);
                         } else {
                             // perform PAM matching to filter out candidates
-                            let fwd_ok = if use_sparse_fwd {
-                                matches_pattern_sparse(
-                                    target_bitmask,
-                                    pam_start_fwd,
-                                    &idx_fwd,
-                                    &mask_fwd,
-                                )
+                            let found_match = if use_sparse {
+                                matches_pattern_sparse(target_bitmask, pam_start, &idx, &mask)
                             } else {
-                                let pam_slice_fwd =
-                                    &target_bitmask[pam_start_fwd..pam_start_fwd + plen];
-                                matches_pattern(pam_slice_fwd, pat)
+                                let pam_slice = &target_bitmask[pam_start..pam_start + plen];
+                                matches_pattern(pam_slice, pat)
                             };
 
-                            let rev_ok = if use_sparse_rev {
-                                matches_pattern_sparse(
-                                    target_bitmask,
-                                    pam_start_rev,
-                                    &idx_rev,
-                                    &mask_rev,
-                                )
-                            } else {
-                                let pam_slice_rev =
-                                    &target_bitmask[pam_start_rev..pam_start_rev + plen];
-                                matches_pattern(pam_slice_rev, rev)
-                            };
-                            if fwd_ok {
+                            if found_match {
                                 chunk_pos.push(global_pos);
-                                chunk_strand.push(1);
-                            }
-                            if rev_ok {
-                                chunk_pos.push(global_pos);
-                                chunk_strand.push(0);
                             }
                         }
                     }
                 }
 
-                Some((chunk_pos, chunk_strand))
+                Some((chunk_pos))
             })
             .collect();
 
         // collect results from targets extraction
-        let total_hits: usize = per_chunk.iter().map(|(p, _)| p.len()).sum();
+        let total_hits: usize = per_chunk.iter().map(|(p)| p.len()).sum();
         let mut pos: Vec<usize> = Vec::with_capacity(total_hits);
-        let mut strand: Vec<u8> = Vec::with_capacity(total_hits);
 
-        for (p, s) in per_chunk {
-            debug_assert_eq!(p.len(), s.len());
+        for (p) in per_chunk {
             pos.extend(p);
-            strand.extend(s);
         }
 
-        (pos, strand)
+        (pos)
     })
 }
 
