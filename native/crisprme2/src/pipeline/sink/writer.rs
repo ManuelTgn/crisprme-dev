@@ -22,6 +22,17 @@ use crate::model::occurence::Strand;
 /// ambiguous.
 pub const PAM_ID_NONE: u16 = u16::MAX;
 
+/// Categorical bulge tag for the report derived from the per-row bulge counts
+#[inline(always)]
+const fn bulge_type(bdna: u8, brna: u8) -> &'static str {
+    match (bdna > 0, brna > 0) {
+        (true, true) => "DNA/RNA",
+        (true, false) => "DNA",
+        (false, true) => "RNA",
+        (false, false) => "X", // no bulge -> default
+    }
+}
+
 /// Where the PAM sits relative to the protospacer.
 ///
 /// Named rather than a bare `bool` so call sites can't silently invert it —
@@ -362,8 +373,16 @@ impl Sink for CsvWriterSink {
 
                 // Edit distnce columns
                 let edit = *mm + *bdna + *brna;
-                write!(self.buffer, ",{},{},{},{}", mm, bdna, brna, edit)
-                    .expect("fmt::Write for String is infallible");
+                write!(
+                    self.buffer,
+                    ",{},{},{},{},{}",
+                    mm,
+                    bdna,
+                    brna,
+                    bulge_type(*bdna, *brna),
+                    edit
+                )
+                .expect("fmt::Write for String is infallible");
 
                 /*
                 for it in &mut feat_iters {
