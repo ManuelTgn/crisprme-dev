@@ -146,6 +146,17 @@ impl Stage for Broadcast {
                 let out_rows = self.count(&occurence.seq_row_idx);
                 let mut alignment = AlignmentFrame::alloc(&self.pool, out_rows);
                 alignment.with_cols(|mut alignment| {
+                    // Mark every score slot "not computed" (NaN) up front
+                    // rather than zeros
+                    {
+                        let mut scores = alignment.scores.split();
+                        for col in scores.iter_mut() {
+                            for s in col.iter_mut() {
+                                *s = f32::NAN;
+                            }
+                        }
+                    }
+
                     let src_iter = izip!(occurence.seq_row_idx.iter(), occurence.occurence.iter(),);
 
                     let mut dst_iter = izip!(

@@ -391,7 +391,12 @@ impl Sink for CsvWriterSink {
                 */
 
                 for it in &mut score_iters {
-                    write!(self.buffer, ",{:.6}", it.next().unwrap()).unwrap();
+                    let v = *it.next().unwrap();
+                    if v.is_nan() {
+                        self.buffer.push_str(",NA");
+                    } else {
+                        write!(self.buffer, ",{:.2}", v).unwrap();
+                    }
                 }
 
                 self.buffer.push('\n');
