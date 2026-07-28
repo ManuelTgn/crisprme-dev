@@ -95,11 +95,6 @@ def _build_thresholds(
     )
 
 
-class ExampleTransformer:
-    def __call__(self, *args, **kwds):
-        pass
-
-
 def _build_transforms(pam: PAM, loggers: CrisprmeLoggers) -> List[Transformer]:
     transforms: List[Transformer] = []
     # ---- scoring transform
@@ -107,16 +102,14 @@ def _build_transforms(pam: PAM, loggers: CrisprmeLoggers) -> List[Transformer]:
         # CFD score + slot 0
         # CFD pam is the last two bases of the PAM sequence
         # For NGG the key is "GG"; for NGA it is "GA", etc.
-        pam_key = pam.pam[-2:]
-        transforms.append(CfdScorer(pam=pam_key, loggers=loggers))
+        transforms.append(CfdScorer(pam=pam.pam, loggers=loggers))
 
     # ---> future scorers <---
 
     loggers.verboselog.debug(
         "Transform chain assembled: " f"{[type(t).__name__ for t in transforms]}"
     )
-    # return transforms
-    return [ExampleTransformer()]
+    return transforms
 
 
 def execute_complete_search(args: Crisprme2SearchInputArgs) -> None:

@@ -438,4 +438,19 @@ pub mod _crisprme2_native {
 
         Ok(installed) // report install status instead of hiding it
     }
+
+    /// Concrete PAM variants in `pam_id` order: entry i is the ASCII PAM whose
+    /// `Occurence::pam_id() == i`. Lets Python build a weight table aligned to the
+    /// `pam_id` column.
+    #[pyfunction]
+    fn pam_variants_ascii(motif: &str) -> PyResult<Vec<String>> {
+        let pam =
+            PAM::new(motif).map_err(|e| PyValueError::new_err(format!("Invalid PAM: {e}")))?;
+        (0..pam.variant_count() as u16)
+            .map(|id| {
+                pam.pam_variant_ascii(id)
+                    .map_err(|e| PyValueError::new_err(format!("variant {id}: {e}")))
+            })
+            .collect()
+    }
 }

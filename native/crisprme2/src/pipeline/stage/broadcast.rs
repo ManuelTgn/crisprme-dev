@@ -157,6 +157,7 @@ impl Stage for Broadcast {
                         alignment.mm.iter_mut(),
                         alignment.bdna.iter_mut(),
                         alignment.brna.iter_mut(),
+                        alignment.pam_id.iter_mut(),
                     );
 
                     for (seq_idx, src_occ) in src_iter {
@@ -171,6 +172,7 @@ impl Stage for Broadcast {
                                 dst_mm,
                                 dst_bdna,
                                 dst_brna,
+                                dst_pam_id,
                             ) = dst_iter.next().unwrap();
 
                             *dst_id = *seq_idx;
@@ -181,6 +183,7 @@ impl Stage for Broadcast {
                             *dst_mm = *resolved.mm.get(row);
                             *dst_bdna = *resolved.bdna.get(row);
                             *dst_brna = *resolved.brna.get(row);
+                            *dst_pam_id = src_occ.pam();
                         }
                     }
                 });
