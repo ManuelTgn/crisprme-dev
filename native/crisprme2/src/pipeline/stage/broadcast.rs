@@ -154,19 +154,33 @@ impl Stage for Broadcast {
                         alignment.offset.iter_mut(),
                         alignment.rguide.iter_mut(),
                         alignment.rseq.iter_mut(),
+                        alignment.mm.iter_mut(),
+                        alignment.bdna.iter_mut(),
+                        alignment.brna.iter_mut(),
                     );
 
                     for (seq_idx, src_occ) in src_iter {
                         let (end, count) = self.table[*seq_idx as usize];
                         for &row in &self.flat_rows[end - count..end] {
-                            let (dst_id, dst_occ, dst_offset, dst_rguide, dst_rseq) =
-                                dst_iter.next().unwrap();
+                            let (
+                                dst_id,
+                                dst_occ,
+                                dst_offset,
+                                dst_rguide,
+                                dst_rseq,
+                                dst_mm,
+                                dst_bdna,
+                                dst_brna,
+                            ) = dst_iter.next().unwrap();
 
                             *dst_id = *seq_idx;
                             *dst_occ = *src_occ;
                             *dst_offset = *resolved.offset.get(row);
                             *dst_rguide = *resolved.rguide.get(row);
                             *dst_rseq = *resolved.rseq.get(row);
+                            *dst_mm = *resolved.mm.get(row);
+                            *dst_bdna = *resolved.bdna.get(row);
+                            *dst_brna = *resolved.brna.get(row);
                         }
                     }
                 });

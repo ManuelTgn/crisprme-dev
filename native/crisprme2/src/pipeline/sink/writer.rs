@@ -309,11 +309,14 @@ impl Sink for CsvWriterSink {
             let mut feat_iters = std::array::from_fn::<_, 10, _>(|i| features[i].iter());
             let mut score_iters = std::array::from_fn::<_, 4, _>(|i| scores[i].iter());
 
-            for (occ, offset, rguide, rseq) in izip!(
+            for (occ, offset, rguide, rseq, mm, bdna, brna) in izip!(
                 cols.occurence.iter(),
                 cols.offset.iter(),
                 cols.rguide.iter(),
                 cols.rseq.iter(),
+                cols.mm.iter(),
+                cols.bdna.iter(),
+                cols.brna.iter(),
             ) {
                 let contig_id = occ.contig();
 
@@ -356,6 +359,11 @@ impl Sink for CsvWriterSink {
                 // Aligned target columns
                 self.buffer.push(',');
                 self.pam.render_target(&mut self.buffer, rseq, occ.pam());
+
+                // Edit distnce columns
+                let edit = *mm + *bdna + *brna;
+                write!(self.buffer, ",{},{},{},{}", mm, bdna, brna, edit)
+                    .expect("fmt::Write for String is infallible");
 
                 /*
                 for it in &mut feat_iters {

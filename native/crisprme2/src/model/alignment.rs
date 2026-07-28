@@ -34,6 +34,12 @@ pub struct SeqResolved {
     pub rseq: [u8; ALIGN_RESOLVED_MAX_LEN],
     /// Offset from the start of the sequence
     pub offset: u8,
+    /// Mismatches (CIGARX `X`)
+    pub mm: u8,
+    /// DNA bulge (CIGARX `I`)
+    pub bdna: u8,
+    /// RNA bulge (CIGARX `D`)
+    pub brna: u8,
 }
 
 /// Definition of a complete alignment
@@ -50,6 +56,12 @@ pub struct Alignment {
     pub occurence: Occurence,
     /// Offset from the start of the sequence
     pub offset: u8,
+    /// Mismatches (CIGARX `X`)
+    pub mm: u8,
+    /// DNA bulge (CIGARX `I`)
+    pub bdna: u8,
+    /// RNA bulge (CIGARX `D`)
+    pub brna: u8,
 
     /// Features
     #[columnar(group)]
