@@ -33,14 +33,14 @@ from __future__ import annotations
 from typing import List, Tuple
 
 from .crisprme_core_api import Thresholds, init_native_logging
-from .crisprme2_argparse import Crisprme2SearchInputArgs
-from .crisprme2 import TOOLNAME
+from .crisprme2_inputargs import Crisprme2SearchInputArgs
 from .guide import read_guides, GuidesList
 from .logger import CrisprmeLoggers
 from .pam import read_pam, PAM, SPCAS9, XCAS9
 from .protocol import Transformer
 from .scores import CfdScorer
 from .search import search_offtargets_reference_genome
+from .utils import TOOLNAME
 
 
 def _build_pam_and_guides(

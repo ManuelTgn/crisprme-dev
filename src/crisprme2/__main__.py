@@ -18,21 +18,19 @@ Usage:
 Run 'crisprme2 -h/--help' to display the complete help
 """
 
-from .crisprme2_argparse import Crisprme2ArgumentParser, Crisprme2SearchInputArgs
-from .complete_search import execute_complete_search
-from .exception_handlers import sigint_handler
-from .version import __version__
-from .crisprme2 import TOOLNAME
-
 from argparse import _SubParsersAction
 from time import time
 
 import sys
 import os
 
-# crisprhawk commands
-SEARCH = "complete-search"
-COMMANDS = [SEARCH]
+
+from .crisprme2_argparse import Crisprme2ArgumentParser
+from .crisprme2_inputargs import Crisprme2SearchInputArgs
+from .complete_search import execute_complete_search
+from .exception_handlers import sigint_handler
+from .utils import COMMANDS, TOOLNAME
+from .version import __version__
 
 
 def create_parser_crisprme2() -> Crisprme2ArgumentParser:
@@ -84,7 +82,7 @@ def create_search_parser(subparser: _SubParsersAction) -> _SubParsersAction:
         _SubParsersAction: The configured search command parser.
     """
     parser_search = subparser.add_parser(
-        SEARCH,
+        COMMANDS[0],
         usage="CRISPRme2 complete-search {version}\n\nUsage:\n"
         "\ncrisprme2 complete-search --genome <genome-dir> --vcf <vcf-dir> "
         "--guide <guide> --pam <pam> --outdir <output-dir>\n\n",
@@ -107,7 +105,7 @@ def create_search_parser(subparser: _SubParsersAction) -> _SubParsersAction:
         type=str,
         metavar="GENOME-DIR",
         required=True,
-        dest="genome_dir",
+        dest="genome",
         help="folder containing genome FASTA files for off-targets search. Each "
         "chromosome must be in a separate FASTA file (e.g., chr1.fa, chr2.fa). "
         "All files in the folder will be used as the reference genome",
@@ -120,7 +118,7 @@ def create_search_parser(subparser: _SubParsersAction) -> _SubParsersAction:
         dest="pam",
         help="PAM sequence (e.g., NGG, NRG, TTTV, etc.)",
     )
-    guide_group = parser_search.add_mutually_exclusive_group(required=True)
+    guide_group = required_group.add_mutually_exclusive_group(required=True)
     guide_group.add_argument(
         "--guide",
         type=str,
@@ -155,7 +153,6 @@ def create_search_parser(subparser: _SubParsersAction) -> _SubParsersAction:
         help="maximum number of mismatches allowed between the guide and off-targets",
     )
     required_group.add_argument(
-        "-o",
         "--outdir",
         type=str,
         metavar="OUTDIR",
@@ -195,6 +192,30 @@ def create_search_parser(subparser: _SubParsersAction) -> _SubParsersAction:
         help="maximum number of RNA bulges allowed in the search (default: 0)",
     )
     optional_group.add_argument(
+        "--annotation",
+        type=str,
+        metavar="ANNOTATION-BED",
+        dest="annotations",
+        nargs="*",
+        default=[],
+        help="one or more BED files specifying genomic regions used to annotate "
+        "guide candidates. Each file should follow the standard BED format "
+        "(at least: chrom, start, end), and should include additional annotation "
+        "on the 4th column (default: no annotation)",
+    )
+    optional_group.add_argument(
+        "--annotation-colnames",
+        type=str,
+        metavar="ANNOTATION-COLNAMES",
+        dest="annotation_colnames",
+        nargs="*",
+        default=[],
+        help="list of custom column names to use in the final report. Each name "
+        "corresponds to one of the input BED files provided with '--annotation'. "
+        "Must match the number and order of files in '--annotation' (default: "
+        "annotation columns are named 'annotation_<i>')",
+    )
+    optional_group.add_argument(
         "--upstream",
         action="store_true",
         dest="upstream",
@@ -221,7 +242,7 @@ def main():
         if not sys.argv[1:]:  # no input args -> print help and exit
             parser.error_noargs()
         args = parser.parse_args(sys.argv[1:])  # parse input args
-        if args.command == SEARCH:  # complete-search command
+        if args.command == COMMANDS[0]:  # complete-search command
             execute_complete_search(Crisprme2SearchInputArgs(args, parser))
     except KeyboardInterrupt:
         sigint_handler()  # catch SIGINT and exit gracefully

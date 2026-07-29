@@ -1,16 +1,17 @@
 """ """
 
-from .crisprme2_warning import warning
-from .crisprme2 import TOOLNAME
-
-from typing import Optional, Dict, NoReturn
-from logging.handlers import RotatingFileHandler
 from colorama import Fore, Style
+from logging.handlers import RotatingFileHandler
+from typing import Optional, Dict, NoReturn
 
 import logging
+import os
 import shutil
 import sys
-import os
+
+
+from .crisprme2_warning import warning
+from .utils import TOOLNAME
 
 
 # define log levels
