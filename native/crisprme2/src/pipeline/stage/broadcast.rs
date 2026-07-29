@@ -146,6 +146,17 @@ impl Stage for Broadcast {
                 let out_rows = self.count(&occurence.seq_row_idx);
                 let mut alignment = AlignmentFrame::alloc(&self.pool, out_rows);
                 alignment.with_cols(|mut alignment| {
+                    // Mark every score slot "not computed" (NaN) up front
+                    // rather than zeros
+                    {
+                        let mut scores = alignment.scores.split();
+                        for col in scores.iter_mut() {
+                            for s in col.iter_mut() {
+                                *s = f32::NAN;
+                            }
+                        }
+                    }
+
                     let src_iter = izip!(occurence.seq_row_idx.iter(), occurence.occurence.iter(),);
 
                     let mut dst_iter = izip!(
@@ -154,19 +165,36 @@ impl Stage for Broadcast {
                         alignment.offset.iter_mut(),
                         alignment.rguide.iter_mut(),
                         alignment.rseq.iter_mut(),
+                        alignment.mm.iter_mut(),
+                        alignment.bdna.iter_mut(),
+                        alignment.brna.iter_mut(),
+                        alignment.pam_id.iter_mut(),
                     );
 
                     for (seq_idx, src_occ) in src_iter {
                         let (end, count) = self.table[*seq_idx as usize];
                         for &row in &self.flat_rows[end - count..end] {
-                            let (dst_id, dst_occ, dst_offset, dst_rguide, dst_rseq) =
-                                dst_iter.next().unwrap();
+                            let (
+                                dst_id,
+                                dst_occ,
+                                dst_offset,
+                                dst_rguide,
+                                dst_rseq,
+                                dst_mm,
+                                dst_bdna,
+                                dst_brna,
+                                dst_pam_id,
+                            ) = dst_iter.next().unwrap();
 
                             *dst_id = *seq_idx;
                             *dst_occ = *src_occ;
                             *dst_offset = *resolved.offset.get(row);
                             *dst_rguide = *resolved.rguide.get(row);
                             *dst_rseq = *resolved.rseq.get(row);
+                            *dst_mm = *resolved.mm.get(row);
+                            *dst_bdna = *resolved.bdna.get(row);
+                            *dst_brna = *resolved.brna.get(row);
+                            *dst_pam_id = src_occ.pam();
                         }
                     }
                 });

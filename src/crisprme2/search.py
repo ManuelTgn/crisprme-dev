@@ -73,7 +73,7 @@ _PIPELINE_CHUNKS: int = 10_000
 
 
 def _compute_report_name(guide: Guide, pam: PAM, outdir: str) -> str:
-    return os.path.join(outdir, f"{guide.sequence}_{pam.pam}.csv")
+    return os.path.join(outdir, f"{guide.sequence}_{pam.pam}.tsv")
 
 
 def _safe_fasta_contig(fasta: Fasta, contig: str, loggers: CrisprmeLoggers) -> str:

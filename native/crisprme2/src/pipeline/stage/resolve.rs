@@ -53,21 +53,29 @@ impl Stage for Resolver {
                     resolved.seq_row_idx.shared(&mut mined.seq_row_idx);
                     resolved.offset.shared(&mut mined.offset);
 
-                    // Allocate columns (rguide, rseq)
+                    // Allocate columns (rguide, rseq, mm, bdna, brna)
                     resolved.rguide.alloc(&self.pool, rows);
                     resolved.rseq.alloc(&self.pool, rows);
+                    resolved.mm.alloc(&self.pool, rows);
+                    resolved.bdna.alloc(&self.pool, rows);
+                    resolved.brna.alloc(&self.pool, rows);
 
                     // Zipped iterator over all used columns
                     let zipper = izip!(
                         resolved.seq_row_idx.iter(),
                         resolved.rguide.iter_mut(),
                         resolved.rseq.iter_mut(),
+                        resolved.mm.iter_mut(),
+                        resolved.bdna.iter_mut(),
+                        resolved.brna.iter_mut(),
                         mined.cigarx.iter(),
                         mined.offset.iter()
                     );
 
                     // Resolve the guide and sequence
-                    for (seq_row_idx, rguide, rseq, cigarx, offset) in zipper {
+                    for (seq_row_idx, rguide, rseq, mm_out, bdna_out, brna_out, cigarx, offset) in
+                        zipper
+                    {
                         // Indirect look-up to sequence content
                         // NOTE: it should be fast enough
                         let sequence = sequences.content.get(*seq_row_idx as usize);
@@ -75,6 +83,8 @@ impl Stage for Resolver {
                         let mut gpos = 0usize;
                         let mut spos = *offset as usize; // start at alignment position in sequence
                         let mut opos = 0usize;
+
+                        let (mut mm, mut bdna, mut brna) = (0u8, 0u8, 0u8);
 
                         for op in cigarx.iter() {
                             match op {
@@ -89,20 +99,27 @@ impl Stage for Resolver {
                                     rseq[opos] = sequence[spos].to_ascii_lowercase();
                                     gpos += 1;
                                     spos += 1;
+                                    mm += 1;
                                 }
                                 CigarxOp::Insertion => {
                                     rguide[opos] = b'-';
                                     rseq[opos] = sequence[spos].to_ascii();
                                     spos += 1;
+                                    bdna += 1;
                                 }
                                 CigarxOp::Deletion => {
                                     rguide[opos] = guide[gpos].to_ascii();
                                     rseq[opos] = b'-';
                                     gpos += 1;
+                                    brna += 1;
                                 }
                             }
                             opos += 1;
                         }
+
+                        *mm_out = mm;
+                        *bdna_out = bdna;
+                        *brna_out = brna;
 
                         // Null-terminate both resolved arrays
                         rguide[opos] = 0;

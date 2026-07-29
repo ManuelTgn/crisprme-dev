@@ -13,6 +13,7 @@ use crate::model::alignment::AlignmentFrame;
 pub struct PyAlignmentBatch {
     seq_id: PyBuffer,
     offset: PyBuffer,
+    pam_id: PyBuffer,
     rguide: PyBuffer,
     rseq: PyBuffer,
 
@@ -27,6 +28,9 @@ impl PyAlignmentBatch {
     }
     fn offset(&self) -> PyResult<PyBuffer> {
         Ok(self.offset)
+    }
+    fn pam_id(&self) -> PyResult<PyBuffer> {
+        Ok(self.pam_id)
     }
     fn rguide(&self) -> PyResult<PyBuffer> {
         Ok(self.rguide)
@@ -72,6 +76,7 @@ impl Stage for PyTransform {
                 cols.rseq.row_bytes(),
                 cols.features.row_bytes(),
                 cols.offset.row_bytes(),
+                cols.pam_id.row_bytes(),
                 cols.scores.row_bytes(),
             ]);
 
@@ -87,6 +92,7 @@ impl Stage for PyTransform {
 
                 let slice_seq_id = cols.seq_row_idx.slice(row, len);
                 let slice_offset = cols.offset.slice(row, len);
+                let slice_pam_id = cols.pam_id.slice(row, len);
                 let slice_rguide = cols.rguide.slice(row, len);
                 let slice_rseq = cols.rseq.slice(row, len);
 
@@ -101,6 +107,7 @@ impl Stage for PyTransform {
 
                 let seq_id = unsafe { PyBuffer::from_slice(slice_seq_id) };
                 let offset = unsafe { PyBuffer::from_slice(slice_offset) };
+                let pam_id = unsafe { PyBuffer::from_slice(slice_pam_id) };
                 let rguide = unsafe { PyBuffer::from_array(slice_rguide) };
                 let rseq = unsafe { PyBuffer::from_array(slice_rseq) };
 
@@ -114,6 +121,7 @@ impl Stage for PyTransform {
                     let input = PyAlignmentBatch {
                         seq_id,
                         offset,
+                        pam_id,
                         rguide,
                         rseq,
                         features,
