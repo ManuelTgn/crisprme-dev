@@ -185,7 +185,7 @@ impl ContigLabels {
     /// # Errors
     /// * [`ContigLabelsError::Empty`] — no names supplied.
     /// * [`ContigLabelsError::InvalidName`] — a name is empty, or contains
-    ///   `,` `"` `\n` `\r`, which would break the CSV row.
+    ///   `\t` `"` `\n` `\r`, which would break the TSV row.
     pub fn from_names(names: Vec<String>) -> Result<Self, ContigLabelsError> {
         if names.is_empty() {
             let err = ContigLabelsError::Empty;
@@ -197,8 +197,7 @@ impl ContigLabels {
             let bad = if name.is_empty() {
                 Some(0u8)
             } else {
-                name.bytes()
-                    .find(|b| matches!(b, b',' | b'"' | b'\n' | b'\r'))
+                name.bytes().find(|b| matches!(b, b'\t' | b'\n' | b'\r'))
             };
             if let Some(byte) = bad {
                 let err = ContigLabelsError::InvalidName {
@@ -232,12 +231,18 @@ impl ContigLabels {
     }
 }
 
-/// Lock-free multi-threaded CSV writer.
+/// The report header. Column order here is the contract the row loop in
+/// `consume` must follow — keep the two in lockstep.
+const REPORT_HEADER: &str = "chromosome\tstart\tstrand\tsgRNA_aligned\ttarget_aligned\t\
+mismatches\tdna_bulges\trna_bulges\tbulge_type\tedit_distance\t\
+CFD_score\tCRISTA_score\tElevation_score\taggregate_score\n";
+
+/// Lock-free multi-threaded TSV writer.
 ///
-/// Each `CsvWriterSink` formats a batch into its own `buffer` (no contention),
+/// Each `TsvWriterSink` formats a batch into its own `buffer` (no contention),
 /// then atomically claims a byte-range in the file with `fetch_add` and writes
 /// it at that offset via `pwrite`.
-pub struct CsvWriter {
+pub struct TsvWriter {
     offset: AtomicUsize,
     file: File,
     /// Shared, immutable: cloned into each sink at construction.
@@ -245,7 +250,7 @@ pub struct CsvWriter {
     contigs: ContigLabels,
 }
 
-impl CsvWriter {
+impl TsvWriter {
     /// Open the report file, truncating any previous run.
     ///
     /// Returns `io::Error` instead of panicking so the PyO3 layer can surface a
@@ -262,9 +267,15 @@ impl CsvWriter {
             .write(true)
             .open(path)?;
 
-        tracing::info!("CSV report -> {}", path.display());
+        // Reserve [0, len) for the header and write it now, before any sink
+        // exists. Sinks then fetch_add offsets *after* the header, so no worker
+        // can claim byte 0 and clobber it. write_all_at comes from FileExt,
+        // already in scope
+        file.write_all_at(REPORT_HEADER.as_bytes(), 0)?;
+
+        tracing::info!("TSV report -> {}", path.display());
         Ok(Arc::new(Self {
-            offset: AtomicUsize::new(0),
+            offset: AtomicUsize::new(REPORT_HEADER.len()),
             file,
             pam,
             contigs,
@@ -278,8 +289,8 @@ impl CsvWriter {
     }
 }
 
-pub struct CsvWriterSink {
-    inner: Arc<CsvWriter>,
+pub struct TsvWriterSink {
+    inner: Arc<TsvWriter>,
     /// Sink-local copy — keeps the row loop off the shared `Arc` cache line.
     pam: PamContext,
     contigs: ContigLabels,
@@ -289,8 +300,8 @@ pub struct CsvWriterSink {
     buffer: String,
 }
 
-impl CsvWriterSink {
-    pub fn new(writer: &Arc<CsvWriter>) -> Self {
+impl TsvWriterSink {
+    pub fn new(writer: &Arc<TsvWriter>) -> Self {
         Self {
             inner: writer.clone(),
             pam: writer.pam.clone(),
@@ -301,11 +312,11 @@ impl CsvWriterSink {
     }
 }
 
-impl Sink for CsvWriterSink {
+impl Sink for TsvWriterSink {
     type I = AlignmentFrame;
 
     fn name() -> &'static str {
-        "CsvWriter"
+        "TsvWriter"
     }
 
     fn consume(&mut self, mut item: Self::I) -> Result<(), PipelineError> {
@@ -360,22 +371,22 @@ impl Sink for CsvWriterSink {
                 let position = self.pam.target_start(occ.position(), *offset, strand) + 1;
 
                 // Layout is owned by `Occurence`; never unpack the u64 here.
-                write!(self.buffer, ",{},{}", position, strand)
+                write!(self.buffer, "\t{}\t{}", position, strand)
                     .expect("fmt::Write for String is infallible");
 
                 // Aligned guide (PAM decorated) columns
-                self.buffer.push(',');
+                self.buffer.push('\t');
                 self.pam.render_guide(&mut self.buffer, rguide);
 
                 // Aligned target columns
-                self.buffer.push(',');
+                self.buffer.push('\t');
                 self.pam.render_target(&mut self.buffer, rseq, occ.pam());
 
                 // Edit distnce columns
                 let edit = *mm + *bdna + *brna;
                 write!(
                     self.buffer,
-                    ",{},{},{},{},{}",
+                    "\t{}\t{}\t{}\t{}\t{}",
                     mm,
                     bdna,
                     brna,
@@ -393,9 +404,9 @@ impl Sink for CsvWriterSink {
                 for it in &mut score_iters {
                     let v = *it.next().unwrap();
                     if v.is_nan() {
-                        self.buffer.push_str(",NA");
+                        self.buffer.push_str("\tNA");
                     } else {
-                        write!(self.buffer, ",{:.2}", v).unwrap();
+                        write!(self.buffer, "\t{:.2}", v).unwrap();
                     }
                 }
 
@@ -411,7 +422,7 @@ impl Sink for CsvWriterSink {
             self.inner
                 .file
                 .write_at(self.buffer.as_bytes(), offset as u64)
-                .expect("csv write failed");
+                .expect("Off-targets report write failed");
         }
 
         Ok(())

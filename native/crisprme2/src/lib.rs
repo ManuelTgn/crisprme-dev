@@ -50,7 +50,7 @@ pub mod _crisprme2_native {
         },
         pipeline::{
             sink::{
-                writer::{ContigLabels, CsvWriter, CsvWriterSink, PamContext, PamPlacement},
+                writer::{ContigLabels, PamContext, PamPlacement, TsvWriter, TsvWriterSink},
                 NullSink,
             },
             source::reader::Reader,
@@ -337,13 +337,13 @@ pub mod _crisprme2_native {
 
         // Add sink stage
         //let pipeline = pipeline.sink(2, |_, _| NullSink::<AlignmentFrame>::new());
-        let csv_writer = CsvWriter::open(&outpath, pam_ctx, contigs).map_err(|e| {
-            PyOSError::new_err(format!("cannot open CSV report {}: {e}", outpath.display()))
+        let tsv_writer = TsvWriter::open(&outpath, pam_ctx, contigs).map_err(|e| {
+            PyOSError::new_err(format!("cannot open TSV report {}: {e}", outpath.display()))
         })?;
 
         let pipeline = pipeline.sink(2, {
-            let csv_writer_clone = csv_writer.clone();
-            move |_, _| CsvWriterSink::new(&csv_writer_clone)
+            let tsv_writer_clone = tsv_writer.clone();
+            move |_, _| TsvWriterSink::new(&tsv_writer_clone)
         });
 
         tracing::info!("pipeline ready!");
@@ -355,65 +355,6 @@ pub mod _crisprme2_native {
             pool,
         })
     }
-
-    /// Create a dataset pipeline that reads batches of sequences from disk, applies transforms, and writes results to disk.
-    // #[pyfunction]
-    // fn dataset_pipeline<'py>(
-    //     chunks: usize,
-    //     transforms: Bound<'py, PyList>,
-    //     folder: PathBuf,
-    //     batch_size: usize,
-    //     guide: Guide,
-    //     thresholds: Thresholds,
-    //     sequence_len: usize,
-    // ) -> PyResult<PySourcedPipeline> {
-
-    //     // Create memory pool and pin all chunks for DMA from GPU
-    //     let pool = MemoryPool::new(CHUNK_SIZE * chunks, |ptr, bytes| {
-    //         tracing::trace!("pinning chunk (ptr = {:?}, bytes = {})", ptr, bytes);
-    //         cuda::pin(ptr, bytes);
-    //     });
-
-    //     let seq_path = folder.join("sequences.bin");
-    //     let pos_path = folder.join("positions.bin");
-
-    //     tracing::info!("building pipeline...");
-    //     let pipeline = Pipeline::source(1, move |pool, _| {
-    //             Reader::open(seq_path.clone(), pos_path.clone(), sequence_len, batch_size, guide.clone(), thresholds, pool.clone())
-    //                 .expect("unable to create reader")
-    //     });
-
-    //     let mut pipeline = pipeline
-    //         .stage(1, |pool, _| GpuMiner::new(pool, 100_000, 32, 100_000, 0))
-    //         .stage(2, |pool, _| Resolver::new(pool))
-    //         .stage(2, |pool, _| Broadcast::new(pool));
-
-    //     // Add all transform stages
-    //     tracing::info!("adding transform stages: ");
-    //     for elem in transforms {
-    //         tracing::info!("\t{:?}", elem.get_type().getattr("__name__").unwrap());
-
-    //         let transform = elem.unbind();
-    //         pipeline = pipeline.stage_once(|_| PyTransform::new(transform))
-    //     }
-
-    //     // Add sink stage
-    //     let csv_writer = CsvWriter::open("results.csv".into());
-    //     let pipeline = pipeline.sink(2, {
-    //         let csv_writer_clone = csv_writer.clone();
-    //         move |_, _| {
-    //             CsvWriterSink::new(&csv_writer_clone)
-    //         }
-    //     });
-
-    //     tracing::info!("pipeline ready!");
-    //     let handle = pipeline.execute(&pool, 3);
-    //     Ok(PySourcedPipeline {
-    //         started_at: Instant::now(),
-    //         handle,
-    //         pool,
-    //     })
-    // }
 
     /// Install the Rust -> Python logging bridge.
     ///
