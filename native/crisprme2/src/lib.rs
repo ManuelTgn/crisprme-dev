@@ -41,6 +41,7 @@ pub mod _crisprme2_native {
     };
 
     use crate::{
+        annotation::features::FeatureRegistry,
         bindings::cuda,
         crispr::pam::PAM,
         model::{
@@ -84,6 +85,9 @@ pub mod _crisprme2_native {
 
     #[pymodule_export]
     pub use crate::alignment::thresholds::Thresholds;
+
+    #[pymodule_export]
+    pub use crate::python::pyannotation::PyRegistry;
 
     #[pyfunction]
     pub fn init_tracing() {
@@ -296,6 +300,8 @@ pub mod _crisprme2_native {
         upstream: bool,
         outpath: PathBuf,
         contigs: Vec<String>,
+        annotation_beds: Vec<String>,
+        annotation_names: Vec<String>,
     ) -> PyResult<PyPipeline> {
         // Validate the PAM before allocating a multi-GB pool.
         let parsed_pam = PAM::new(pam)
@@ -311,6 +317,22 @@ pub mod _crisprme2_native {
         );
 
         let contigs = ContigLabels::from_names(contigs)?;
+
+        // Sink-side registries: built independently from the same BED paths the
+        // annotation transform used. Deterministic bit assignment guarantees
+        // decode here matches the transform's encode
+        let annotation_registries: std::sync::Arc<[FeatureRegistry]> = annotation_beds
+            .iter()
+            .map(FeatureRegistry::from_bed)
+            .collect::<Result<Vec<_>, _>>()? // AnnotationError -> PyErr
+            .into();
+        if annotation_beds.len() != annotation_names.len() {
+            return Err(PyValueError::new_err(format!(
+                "Mismatching number of annotation BEDs ({}) and annotation column names ({})",
+                annotation_beds.len(),
+                annotation_names.len()
+            )));
+        }
 
         // Create memory pool and pin all chunks for DMA from GPU
         let pool = MemoryPool::new(CHUNK_SIZE * chunks, |ptr, bytes| {
@@ -337,7 +359,14 @@ pub mod _crisprme2_native {
 
         // Add sink stage
         //let pipeline = pipeline.sink(2, |_, _| NullSink::<AlignmentFrame>::new());
-        let tsv_writer = TsvWriter::open(&outpath, pam_ctx, contigs).map_err(|e| {
+        let tsv_writer = TsvWriter::open(
+            &outpath,
+            pam_ctx,
+            contigs,
+            annotation_registries,
+            &annotation_names,
+        )
+        .map_err(|e| {
             PyOSError::new_err(format!("cannot open TSV report {}: {e}", outpath.display()))
         })?;
 

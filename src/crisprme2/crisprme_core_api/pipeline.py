@@ -203,6 +203,8 @@ class Pipeline:
         upstream: bool,
         outpath: str,
         contig_ids: Dict[str, int],
+        annotations: List[str],
+        annotation_names: List[str],
         loggers: CrisprmeLoggers,
     ) -> "Pipeline":
         """
@@ -254,7 +256,7 @@ class Pipeline:
             f"pam={pam.pam!r}, upstream={upstream}, output={outpath!r}, contigs={len(contigs)}))"
         )
         try:
-            rust_handle = _rust_pipeline_factory(chunks, thresholds.rust_handle, transforms, pam.pam, upstream, outpath, contigs)  # type: ignore
+            rust_handle = _rust_pipeline_factory(chunks, thresholds.rust_handle, transforms, pam.pam, upstream, outpath, contigs, annotations, annotation_names)  # type: ignore
         except Exception as e:
             loggers.errorlog.log_raise_exception(
                 f"Rust pipeline initialization failed: {e}",

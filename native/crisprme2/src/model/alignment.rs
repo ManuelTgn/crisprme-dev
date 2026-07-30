@@ -66,6 +66,13 @@ pub struct Alignment {
     /// Concrete PAM-variant index, `PAM_ID_NONE` when no concrete PAM was recorded
     pub pam_id: u16,
 
+    /// Contig id
+    pub contig_id: u16,
+    /// Forward-strand left position of the occurrence window
+    pub pos: u32,
+    /// Reported strand
+    pub strand: u8,
+
     /// Features
     #[columnar(group)]
     pub features: [u32; 10],

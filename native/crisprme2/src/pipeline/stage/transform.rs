@@ -11,13 +11,22 @@ use crate::model::alignment::AlignmentFrame;
 
 #[pyclass(unsendable)]
 pub struct PyAlignmentBatch {
+    // Alignment sequence data
     seq_id: PyBuffer,
     offset: PyBuffer,
-    pam_id: PyBuffer,
     rguide: PyBuffer,
     rseq: PyBuffer,
+    pam_id: PyBuffer,
 
+    // Alignment coordinates
+    contig_id: PyBuffer,
+    pos: PyBuffer,
+    strand: PyBuffer,
+
+    // Functional annotation alignment features
     features: [PyBuffer; 10],
+
+    // Alignment specificity scores
     scores: [PyBuffer; 4],
 }
 
@@ -29,19 +38,30 @@ impl PyAlignmentBatch {
     fn offset(&self) -> PyResult<PyBuffer> {
         Ok(self.offset)
     }
-    fn pam_id(&self) -> PyResult<PyBuffer> {
-        Ok(self.pam_id)
-    }
     fn rguide(&self) -> PyResult<PyBuffer> {
         Ok(self.rguide)
     }
     fn rseq(&self) -> PyResult<PyBuffer> {
         Ok(self.rseq)
     }
+    fn pam_id(&self) -> PyResult<PyBuffer> {
+        Ok(self.pam_id)
+    }
+
+    fn contig_id(&self) -> PyResult<PyBuffer> {
+        Ok(self.contig_id)
+    }
+    fn pos(&self) -> PyResult<PyBuffer> {
+        Ok(self.pos)
+    }
+    fn strand(&self) -> PyResult<PyBuffer> {
+        Ok(self.strand)
+    }
 
     fn feature(&self, idx: usize) -> PyResult<PyBuffer> {
         Ok(self.features[idx])
     }
+
     fn score(&self, idx: usize) -> PyResult<PyBuffer> {
         Ok(self.scores[idx])
     }
@@ -78,6 +98,9 @@ impl Stage for PyTransform {
                 cols.offset.row_bytes(),
                 cols.pam_id.row_bytes(),
                 cols.scores.row_bytes(),
+                cols.contig_id.row_bytes(),
+                cols.pos.row_bytes(),
+                cols.strand.row_bytes(),
             ]);
 
             let mut features: [_; 10] = cols.features.split();
@@ -96,6 +119,10 @@ impl Stage for PyTransform {
                 let slice_rguide = cols.rguide.slice(row, len);
                 let slice_rseq = cols.rseq.slice(row, len);
 
+                let slice_contig_id = cols.contig_id.slice(row, len);
+                let slice_pos = cols.pos.slice(row, len);
+                let slice_strand = cols.strand.slice(row, len);
+
                 // Get continous regions of memory, mutable
 
                 let mut slice_features: Vec<_> =
@@ -111,6 +138,10 @@ impl Stage for PyTransform {
                 let rguide = unsafe { PyBuffer::from_array(slice_rguide) };
                 let rseq = unsafe { PyBuffer::from_array(slice_rseq) };
 
+                let contig_id = unsafe { PyBuffer::from_slice(slice_contig_id) };
+                let pos = unsafe { PyBuffer::from_slice(slice_pos) };
+                let strand = unsafe { PyBuffer::from_slice(slice_strand) };
+
                 let features =
                     array::from_fn(|i| unsafe { PyBuffer::from_slice_mut(slice_features[i]) });
                 let scores =
@@ -122,6 +153,9 @@ impl Stage for PyTransform {
                         seq_id,
                         offset,
                         pam_id,
+                        contig_id,
+                        pos,
+                        strand,
                         rguide,
                         rseq,
                         features,
