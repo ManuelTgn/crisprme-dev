@@ -31,6 +31,14 @@ impl Strand {
         self as u8
     }
 
+    #[inline(always)]
+    pub const fn as_ascii(self) -> u8 {
+        match self {
+            Self::Forward => b'+',
+            Self::Reverse => b'-',
+        }
+    }
+
     /// Report representation: `"+"` forward, `"-"` reverse (BED / GFF convention).
     #[inline(always)]
     pub const fn as_str(self) -> &'static str {

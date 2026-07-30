@@ -1,14 +1,15 @@
 """ """
 
+from pysam import tabix_index, TabixFile
+from pysam.utils import SamtoolsError
+from typing import Optional, Literal, List, TypeAlias, cast
+
+import os
+
+
 from .crisprme2_error import Crisprme2AnnotationError
 from .logger import CrisprmeLoggers
 from .utils import find_tbi_index, TBI
-
-from typing import Optional, Literal, TypeAlias, cast
-from pysam.utils import SamtoolsError
-from pysam import tabix_index, TabixFile
-
-import os
 
 
 # define tabix preset types
@@ -78,7 +79,7 @@ class AnnotationBed(Annotation):
         if self._is_open:
             self.close()
 
-    def fetch_features(self, contig: str, start: int, stop: int) -> Optional[str]:
+    def fetch_features(self, contig: str, start: int, stop: int) -> List[str]:
         if not self._is_open or self._bed is None:
             self._loggers.errorlog.log_raise_exception(
                 "Annotation BED file must be opened before fetching",
@@ -86,8 +87,8 @@ class AnnotationBed(Annotation):
                 Crisprme2AnnotationError,
             )
         if contig not in self._bed.contigs:
-            return None
-        return ",".join([e.strip() for e in self._bed.fetch(contig, start, stop)])
+            return []
+        return [e.strip().split()[3] for e in self._bed.fetch(contig, start, stop)]
 
 
 class AnnotationGff(Annotation):

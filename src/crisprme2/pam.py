@@ -44,11 +44,12 @@ XCAS9 = 4
 
 class PAM:
 
-    def __init__(self, pamseq: str, right: bool, loggers: CrisprmeLoggers) -> None:
+    def __init__(self, pamseq: str, upstream: bool, loggers: CrisprmeLoggers) -> None:
         self._loggers = loggers  # store loggers
         self._sequence = pamseq.upper()  # store pam sequence
         self._reverse_complement()  # store pam reverse complement
-        self._assess_cas_system(right)  # assess cas system
+        self._assess_cas_system(upstream)  # assess cas system
+        self._upstream = upstream  # pam placement wrt guide
 
     def __len__(self) -> int:
         """Returns the length of the PAM sequence.
@@ -131,6 +132,10 @@ class PAM:
     @property
     def cas_system(self) -> int:
         return self._cas_system
+
+    @property
+    def upstream(self) -> bool:
+        return self._upstream
 
 
 def read_pam(pamseq: str, loggers: CrisprmeLoggers) -> PAM:

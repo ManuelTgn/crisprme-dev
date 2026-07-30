@@ -11,6 +11,7 @@ use std::{
 use columnar::pipeline::{PipelineError, Sink};
 use itertools::izip;
 
+use crate::annotation::features::FeatureRegistry;
 use crate::crispr::pam::PAM;
 use crate::error::crisprme_errors::ContigLabelsError;
 use crate::model::alignment::AlignmentFrame;
@@ -232,7 +233,7 @@ impl ContigLabels {
 }
 
 /// The report header. Column order here is the contract the row loop in
-/// `consume` must follow — keep the two in lockstep.
+/// `consume` must follow — keep the two in lockstep
 const REPORT_HEADER: &str = "chromosome\tstart\tstrand\tsgRNA_aligned\ttarget_aligned\t\
 mismatches\tdna_bulges\trna_bulges\tbulge_type\tedit_distance\t\
 CFD_score\tCRISTA_score\tElevation_score\taggregate_score\n";
@@ -241,25 +242,31 @@ CFD_score\tCRISTA_score\tElevation_score\taggregate_score\n";
 ///
 /// Each `TsvWriterSink` formats a batch into its own `buffer` (no contention),
 /// then atomically claims a byte-range in the file with `fetch_add` and writes
-/// it at that offset via `pwrite`.
+/// it at that offset via `pwrite`
 pub struct TsvWriter {
     offset: AtomicUsize,
     file: File,
-    /// Shared, immutable: cloned into each sink at construction.
+    /// Shared, immutable: cloned into each sink at construction
     pam: PamContext,
     contigs: ContigLabels,
+    /// Annotation registries
+    annotations: Arc<[FeatureRegistry]>,
 }
 
 impl TsvWriter {
     /// Open the report file, truncating any previous run.
     ///
     /// Returns `io::Error` instead of panicking so the PyO3 layer can surface a
-    /// descriptive `OSError` (bad path, no permission, read-only mount).
+    /// descriptive `OSError` (bad path, no permission, read-only mount)
     pub fn open(
         path: impl AsRef<Path>,
         pam: PamContext,
         contigs: ContigLabels,
+        annotations: Arc<[FeatureRegistry]>,
+        annotation_names: &[String],
     ) -> io::Result<Arc<Self>> {
+        debug_assert_eq!(annotations.len(), annotation_names.len());
+
         let path = path.as_ref();
         let file = OpenOptions::new()
             .truncate(true)
@@ -267,18 +274,27 @@ impl TsvWriter {
             .write(true)
             .open(path)?;
 
+        // fixed columns + one appended column per annotation BED (functional)
+        let mut header = String::from(REPORT_HEADER);
+        for name in annotation_names {
+            header.push('\t');
+            header.push_str(name);
+        }
+        header.push('\n');
+
         // Reserve [0, len) for the header and write it now, before any sink
         // exists. Sinks then fetch_add offsets *after* the header, so no worker
         // can claim byte 0 and clobber it. write_all_at comes from FileExt,
         // already in scope
-        file.write_all_at(REPORT_HEADER.as_bytes(), 0)?;
+        file.write_all_at(header.as_bytes(), 0)?;
 
         tracing::info!("TSV report -> {}", path.display());
         Ok(Arc::new(Self {
-            offset: AtomicUsize::new(REPORT_HEADER.len()),
+            offset: AtomicUsize::new(header.len()),
             file,
             pam,
             contigs,
+            annotations,
         }))
     }
 
@@ -294,6 +310,7 @@ pub struct TsvWriterSink {
     /// Sink-local copy — keeps the row loop off the shared `Arc` cache line.
     pam: PamContext,
     contigs: ContigLabels,
+    annotations: Arc<[FeatureRegistry]>,
     /// Fires the unmapped-contig error once per sink, not once per row.
     warned_unmapped: bool,
     /// Per-sink row buffer — formatted here, then pwrite'd atomically.
@@ -306,6 +323,7 @@ impl TsvWriterSink {
             inner: writer.clone(),
             pam: writer.pam.clone(),
             contigs: writer.contigs.clone(),
+            annotations: writer.annotations.clone(),
             warned_unmapped: false,
             buffer: String::new(),
         }
@@ -395,18 +413,33 @@ impl Sink for TsvWriterSink {
                 )
                 .expect("fmt::Write for String is infallible");
 
-                /*
-                for it in &mut feat_iters {
-                    write!(self.buffer, ",{}", it.next().unwrap()).unwrap();
-                }
-                */
-
+                // Off-targets specificity score columns
+                // (CFD = 0, CRISTA = 1, Elevation = 2, PLACE_HOLDER = 3)
                 for it in &mut score_iters {
                     let v = *it.next().unwrap();
                     if v.is_nan() {
                         self.buffer.push_str("\tNA");
                     } else {
                         write!(self.buffer, "\t{:.2}", v).unwrap();
+                    }
+                }
+
+                // annotation columns: decode each BED's u32 slot to a
+                // comma-joined term list. `annotations.len()` == used slots, so
+                // only those feature iterators advance
+                for (registry, it) in self.annotations.iter().zip(feat_iters.iter_mut()) {
+                    let bits = *it.next().unwrap();
+                    self.buffer.push('\t');
+                    let mut wrote = false;
+                    for term in registry.decode(bits) {
+                        if wrote {
+                            self.buffer.push(',');
+                        }
+                        self.buffer.push_str(term);
+                        wrote = true;
+                    }
+                    if !wrote {
+                        self.buffer.push_str("NA"); // no overlap
                     }
                 }
 

@@ -33,6 +33,13 @@ OFFTARGETLEN = 30
 # vcf extensions
 VCFEXTENSIONS = {"vcf", "vcf.gz", "bcf", "bcf.gz"}
 
+# define tool-related variables shared across software modules
+TOOLNAME = "CRISPRme2"  # tool name
+COMMAND = "crisprme2"  # command line call
+
+# crisprhawk commands
+COMMANDS = ["complete-search"]
+
 # ==============================================================================
 #
 # UTILS MODULE FUNCTIONS

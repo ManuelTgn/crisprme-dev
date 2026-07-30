@@ -19,6 +19,8 @@ impl From<AnnotationError> for PyErr {
             AnnotationError::EmptyInput => {
                 PyValueError::new_err("Annotation input cannot be empty")
             }
+
+            AnnotationError::TooManyFeatures { .. } => PyValueError::new_err(err.to_string()),
         }
     }
 }

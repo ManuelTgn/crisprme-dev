@@ -1,17 +1,16 @@
 """ """
 
-from .crisprme2_argparse import Crisprme2SearchInputArgs
-from .crisprme2_error import Crisprme2GuideError
-from .sequence import Sequence, reverse_complement
-from .logger import CrisprmeLoggers
-from .sequence import Sequence
-from .fasta import GuideFasta
-
-from typing import Union, List
 from time import time
+from typing import Union, List
 
-import sys
 import os
+import sys
+
+from .crisprme2_error import Crisprme2GuideError
+from .crisprme2_inputargs import Crisprme2SearchInputArgs
+from .fasta import GuideFasta
+from .logger import CrisprmeLoggers
+from .sequence import Sequence, reverse_complement
 
 
 class Guide(Sequence):

@@ -1,37 +1,4 @@
-"""
-scanner.py
-----------
-Genome scanning pipeline: FASTA -> target extraction -> alignment.
-
-This module is the top-level orchestrator that connects:
-
-1. :func:`extract_targets`   — iterate over FASTA contigs, feed chunks to a
-                               :class:`~crisprme2.crisprme_core_api.TargetBatcher`,
-                               and submit full batches to the alignment
-                               :class:`~crisprme2.crisprme_core_api.Pipeline`.
-2. :func:`scan_fasta_reference_genome` — public entry-point that wires
-                               everything together from the CLI/API layer.
-
-Data flow
-~~~~~~~~~
-::
-
-    FASTA files
-        │
-        ▼
-    read_fasta_files()          one Fasta handle per contig
-        │
-        ▼  (contig loop)
-    fasta.fetch(contig)         raw nucleotide string
-        │
-        ▼  (chunk loop, CHUNKSIZE = 10 Mbp, CHUNKOVERLAP = size-1)
-    TargetBatcher.feed_chunk()  IUPAC encode + PAM scan -> accumulate windows
-        │
-        ├─ flushed? ──► pipeline.submit(batcher)   transfer batch to GPU pipeline
-        │
-        ▼  (after all contigs)
-    TargetBatcher.finalize()    flush tail + clear internal map
-"""
+""" """
 
 from time import time
 from typing import List, Dict, Tuple
@@ -39,15 +6,19 @@ from typing import List, Dict, Tuple
 import os
 
 
-from .crisprme_core_api import TargetBatcher, Pipeline, Thresholds
+from .annotation import FunctionalAnnotator
+from .crisprme_core_api import TargetBatcher, Pipeline, Thresholds, init_native_logging
+from .crisprme2_inputargs import Crisprme2SearchInputArgs
 from .crisprme2_error import Crisprme2SearchError
 from .dna_alphabet import reverse_complement
 from .fasta import Fasta
 from .fasta_utils import read_fasta_files
-from .guide import Guide
+from .guide import Guide, GuidesList, read_guides
 from .logger import CrisprmeLoggers
-from .pam import PAM
+from .pam import PAM, read_pam, SPCAS9, XCAS9
 from .protocol import Transformer
+from .scores import CfdScorer
+from .utils import TOOLNAME
 
 
 # ==============================================================================
@@ -207,6 +178,8 @@ def _scan_reference_genome(
     threads: int,
     thresholds: Thresholds,
     transforms: List[Transformer],
+    annotations: List[str],
+    annotation_names: List[str],
     loggers: CrisprmeLoggers,
 ) -> None:
     """
@@ -282,6 +255,8 @@ def _scan_reference_genome(
         upstream,
         outpath,
         contig_ids,
+        annotations,
+        annotation_names,
         loggers,
     ) as pipeline:
         for contig, fasta in fastas.items():
@@ -331,12 +306,91 @@ def _scan_reference_genome(
     # pipeline.__exit__ signals EOF and joins all worker threads here
 
 
-# ==============================================================================
-# Public API
-# ==============================================================================
+def _build_pam_and_guides(
+    args: Crisprme2SearchInputArgs, loggers: CrisprmeLoggers
+) -> Tuple[GuidesList, PAM]:
+    """
+    Initialise PAM and guide data structures from validated CLI arguments.
+
+    Parameters
+    ----------
+    args : Crisprme2SearchInputArgs
+        Validated argument namespace.
+    loggers : CrisprmeLoggers
+        Shared logger bundle.
+
+    Returns
+    -------
+    tuple[GuidesList, PAM]
+        ``(guides, pam)`` ready for use in the search pipeline.
+    """
+    loggers.basiclog.info("Initialising PAM and guide data structures")
+    pam = read_pam(args.pam, loggers)
+    guides = read_guides(args, loggers)
+    loggers.verboselog.debug(f"PAM: {pam} | guides: {len(guides)}")
+    return guides, pam
 
 
-def search_offtargets_reference_genome(
+def _build_thresholds(
+    args: Crisprme2SearchInputArgs, loggers: CrisprmeLoggers
+) -> Thresholds:
+    """
+    Construct a :class:`~crisprme2.crisprme_core_api.Thresholds` instance
+    from validated CLI arguments.
+
+    Parameters
+    ----------
+    args : Crisprme2SearchInputArgs
+        Validated argument namespace.
+    loggers : CrisprmeLoggers
+        Shared logger bundle.
+
+    Returns
+    -------
+    Thresholds
+        Alignment thresholds for this run.
+    """
+    loggers.verboselog.debug(
+        f"Building Thresholds(max_mm={args.mm}, bdna={args.bdna}, brna={args.brna})"
+    )
+    return Thresholds(
+        max_mm=args.mm, max_bdna=args.bdna, max_brna=args.brna, loggers=loggers
+    )
+
+
+def _build_transforms(
+    pam: PAM,
+    annotations: List[str],
+    contig_ids: Dict[str, int],
+    loggers: CrisprmeLoggers,
+) -> List[Transformer]:
+    transforms: List[Transformer] = []
+    # ---- scoring transform
+    if pam.cas_system in [SPCAS9, XCAS9]:
+        # CFD score + slot 0
+        # CFD pam is the last two bases of the PAM sequence
+        # For NGG the key is "GG"; for NGA it is "GA", etc.
+        transforms.append(CfdScorer(pam=pam.pam, loggers=loggers))
+
+    # ---> add future scorers here <---
+
+    # ---- annotation transform
+    if annotations:
+        transforms.append(
+            FunctionalAnnotator(
+                annotations, len(pam), pam.upstream, contig_ids, loggers
+            )
+        )
+
+    # ---> add gene annotation here <---
+
+    loggers.verboselog.debug(
+        "Transform chain assembled: " f"{[type(t).__name__ for t in transforms]}"
+    )
+    return transforms
+
+
+def _search_offtargets_reference_genome(
     fasta_files: List[str],
     pam: PAM,
     guide: Guide,
@@ -344,7 +398,8 @@ def search_offtargets_reference_genome(
     outdir: str,
     threads: int,
     thresholds: Thresholds,
-    transforms: List[Transformer],
+    annotations: List[str],
+    annotation_names: List[str],
     loggers: CrisprmeLoggers,
 ) -> None:
     """
@@ -370,8 +425,6 @@ def search_offtargets_reference_genome(
         Number of parallel scanner threads.
     thresholds : Thresholds
         Alignment thresholds forwarded to the pipeline.
-    transforms : list[callable]
-        Transform callables forming the pipeline's scoring/annotation chain.
     loggers : CrisprmeLoggers
         Shared logger bundle.
 
@@ -380,13 +433,14 @@ def search_offtargets_reference_genome(
     Crisprme2ScannerError
         On FASTA I/O errors or scanning failures.
     """
-    loggers.verboselog.debug(
-        "Starting reference-genome/assembly off-target extraction pipeline"
-    )
+
     fastas = read_fasta_files(fasta_files, loggers)
     contig_ids = _compute_contig_ids(list(fastas.keys()))
+    # initialize transforms
+    transforms = _build_transforms(pam, annotations, contig_ids, loggers)
     size = len(guide) + len(pam) + max(thresholds.bdna, thresholds.brna)
     loggers.verboselog.debug(
+        "Starting reference-genome/assembly off-target extraction pipeline\n"
         f"Contigs: {list(fastas.keys())}"
         f" | window size: {size}"
         f" | thresholds: {thresholds}"
@@ -403,5 +457,74 @@ def search_offtargets_reference_genome(
         threads,
         thresholds,
         transforms,
+        annotations,
+        annotation_names,
         loggers,
     )
+
+
+# ==============================================================================
+# Public API
+# ==============================================================================
+
+
+def execute_offtargets_search(args: Crisprme2SearchInputArgs) -> None:
+    """
+    Run the full CRISPRme2 complete-search pipeline.
+
+    This is the composition root: it wires CLI arguments to pipeline
+    components and delegates execution to specialised modules.  The call
+    graph is::
+
+        execute_offtargets_search(args)
+            ├── CrisprmeLoggers(args.outdir)
+            ├── _build_pam_and_guides(args)     -> GuidesList, PAM
+            ├── _build_thresholds(args)         -> Thresholds
+            ├── _build_transforms(pam)          -> list[Transformer]
+            └── (per guide)
+                └── search_offtargets_reference_genome(...)
+
+    Parameters
+    ----------
+    args : Crisprme2SearchInputArgs
+        Fully validated CLI argument namespace produced by
+        :func:`~crisprme2.__main__.create_parser_crisprme2`.
+
+    Raises
+    ------
+    Crisprme2SearchError
+        If any component of the search pipeline fails.
+    """
+    loggers = CrisprmeLoggers(args.outdir)  # initialize loggers
+    init_native_logging(loggers)  # initialize rust-level logging
+    loggers.basiclog.info(f"Start {TOOLNAME} search")
+    # initialize pam and guide objects
+    guides, pam = _build_pam_and_guides(args, loggers)
+    # initialize thresholds object
+    thresholds = _build_thresholds(args, loggers)
+    for guide in guides:
+        # retrieve candidate off-targets for current guide
+        loggers.verboselog.debug(
+            f"Starting off-target search for guide {guide.sequence}"
+        )
+        if args.vcfs:
+            # variant and haplotype aware search path (not yet implemented)
+            loggers.verboselog.debug(
+                "VCF files provided - variant-aware search path "
+                "not yet implemented (skipping)"
+            )
+            continue
+        else:
+            # reference-only search path
+            _search_offtargets_reference_genome(
+                args.fastas,
+                pam,
+                guide,
+                args.upstream,
+                args.outdir,
+                args.threads,
+                thresholds,
+                args.annotations,
+                args.annotation_names,
+                loggers,
+            )

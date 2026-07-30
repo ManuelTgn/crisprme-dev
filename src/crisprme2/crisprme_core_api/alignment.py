@@ -98,6 +98,9 @@ except ImportError:
 #: number of score slots on PyAlignmentBatch (Rust: ``scores: [PyBuffer; 4]``)
 N_SCORE_SLOTS: int = 4
 
+#: number of annotation slots on PyAlignmentBatch (Rust: ``scores: [PyBuffer; 10]``)
+N_FEATURE_SLOTS: int = 10
+
 
 # ==============================================================================
 # dtype constants
@@ -157,6 +160,21 @@ def _validate_score_idx(idx: int, loggers: CrisprmeLoggers) -> None:
     if not (0 <= idx < N_SCORE_SLOTS):
         loggers.errorlog.log_raise_exception(
             f"Score index {idx} out of range - valid range is [0, {N_SCORE_SLOTS}).",
+            os.EX_DATAERR,
+            Crisprme2AlignmentBatchError,
+        )
+
+
+def _validate_feature_idx(idx: int, loggers: CrisprmeLoggers) -> None:
+    if isinstance(idx, bool) or not isinstance(idx, int):
+        loggers.errorlog.log_raise_exception(
+            f"Feature index must be an int, got {type(idx).__name__!r}.",
+            os.EX_DATAERR,
+            Crisprme2AlignmentBatchError,
+        )
+    if not (0 <= idx < N_FEATURE_SLOTS):
+        loggers.errorlog.log_raise_exception(
+            f"Feature index {idx} out of range - valid range is [0, {N_FEATURE_SLOTS}).",
             os.EX_DATAERR,
             Crisprme2AlignmentBatchError,
         )
@@ -289,7 +307,7 @@ class AlignmentBatch:
         u64 occurrence record.
         """
         try:
-            return _buf_to_readonly(self._raw.offset(), _DTYPE_U32)
+            return _buf_to_readonly(self._raw.offset(), _DTYPE_U8)
         except Crisprme2AlignmentBatchError:
             raise
         except Exception as e:
@@ -370,6 +388,48 @@ class AlignmentBatch:
                 Crisprme2AlignmentBatchError,
             )
 
+    @property
+    def contig_id(self) -> np.ndarray:
+        """(N,) uint16, read-only. Contig id per row; indexes the contig-name table."""
+        try:
+            return _buf_to_readonly(self._raw.contig_id(), _DTYPE_U16)
+        except Crisprme2AlignmentBatchError:
+            raise
+        except Exception as e:
+            self._loggers.errorlog.log_raise_exception(
+                f"Failed accessing contig_id buffer: {e}",
+                os.EX_IOERR,
+                Crisprme2AlignmentBatchError,
+            )
+
+    @property
+    def pos(self) -> np.ndarray:
+        """(N,) uint32, read-only. Occurrence forward-left genomic position per row."""
+        try:
+            return _buf_to_readonly(self._raw.pos(), _DTYPE_U32)
+        except Crisprme2AlignmentBatchError:
+            raise
+        except Exception as e:
+            self._loggers.errorlog.log_raise_exception(
+                f"Failed accessing pos buffer: {e}",
+                os.EX_IOERR,
+                Crisprme2AlignmentBatchError,
+            )
+
+    @property
+    def strand(self) -> np.ndarray:
+        """(N,) uint8, read-only. Reported strand as ASCII (b'+' / b'-')."""
+        try:
+            return _buf_to_readonly(self._raw.strand(), _DTYPE_U8)
+        except Crisprme2AlignmentBatchError:
+            raise
+        except Exception as e:
+            self._loggers.errorlog.log_raise_exception(
+                f"Failed accessing strand buffer: {e}",
+                os.EX_IOERR,
+                Crisprme2AlignmentBatchError,
+            )
+
     # ==========================================================================
     # writeable fields
     # ==========================================================================
@@ -424,6 +484,21 @@ class AlignmentBatch:
         except Exception as e:
             self._loggers.errorlog.log_raise_exception(
                 f"Failed accessing score[{idx}] buffer: {e}",
+                os.EX_IOERR,
+                Crisprme2AlignmentBatchError,
+            )
+
+    def feature(self, idx: int) -> np.ndarray:
+        """(N,) uint32, writeable. Annotation slot *idx*; assign the accumulated
+        bitmask in place, mirroring how ``score(idx)`` is filled."""
+        _validate_feature_idx(idx, self._loggers)
+        try:
+            return _buf_to_writable(self._raw.feature(idx), _DTYPE_U32)
+        except Crisprme2AlignmentBatchError:
+            raise
+        except Exception as e:
+            self._loggers.errorlog.log_raise_exception(
+                f"Failed accessing feature buffer {idx}: {e}",
                 os.EX_IOERR,
                 Crisprme2AlignmentBatchError,
             )
