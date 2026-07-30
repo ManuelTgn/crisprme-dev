@@ -27,7 +27,7 @@ import os
 
 from .crisprme2_argparse import Crisprme2ArgumentParser
 from .crisprme2_inputargs import Crisprme2SearchInputArgs
-from .complete_search import execute_complete_search
+from .search import execute_offtargets_search
 from .exception_handlers import sigint_handler
 from .utils import COMMANDS, TOOLNAME
 from .version import __version__
@@ -243,7 +243,7 @@ def main():
             parser.error_noargs()
         args = parser.parse_args(sys.argv[1:])  # parse input args
         if args.command == COMMANDS[0]:  # complete-search command
-            execute_complete_search(Crisprme2SearchInputArgs(args, parser))
+            execute_offtargets_search(Crisprme2SearchInputArgs(args, parser))
     except KeyboardInterrupt:
         sigint_handler()  # catch SIGINT and exit gracefully
     sys.stdout.write(f"{TOOLNAME} - Elapsed time {(time() - start):.2f}s\n")

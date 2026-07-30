@@ -160,7 +160,7 @@ class Crisprme2SearchInputArgs(Crisprme2InputArgs):
             )
 
     def _validate_annotation_names(self) -> None:
-        names: List[str] = self._args.annotation_names
+        names: List[str] = self._args.annotation_colnames
         if names is not None and len(names) != len(self._args.annotations):
             self._parser.error(
                 f"Number of --annotation-names ({len(names)}) does not match "
