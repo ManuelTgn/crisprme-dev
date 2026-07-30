@@ -236,7 +236,7 @@ impl ContigLabels {
 /// `consume` must follow — keep the two in lockstep
 const REPORT_HEADER: &str = "chromosome\tstart\tstrand\tsgRNA_aligned\ttarget_aligned\t\
 mismatches\tdna_bulges\trna_bulges\tbulge_type\tedit_distance\t\
-CFD_score\tCRISTA_score\tElevation_score\taggregate_score\n";
+CFD_score\tCRISTA_score\tElevation_score\taggregate_score";
 
 /// Lock-free multi-threaded TSV writer.
 ///

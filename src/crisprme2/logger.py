@@ -67,9 +67,9 @@ class BaseLogger:
                     elif os.path.isdir(fpath):  # what? better remove it anyway
                         shutil.rmtree(fpath)
                 except Exception as e:
-                    warning(f"Failed to delete {fpath}. Reason {e}", 1)
+                    warning(f"Failed to delete {fpath}. Reason {e}")
         except Exception as e:  # throw a warning, but do not halt execution
-            warning(f"Failed to clean logs folder {log_dir}. Reason: {e}", 1)
+            warning(f"Failed to clean logs folder {log_dir}. Reason: {e}")
 
     @classmethod
     def reset_cleanup_flag(cls):

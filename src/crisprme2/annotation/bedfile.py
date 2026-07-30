@@ -7,9 +7,10 @@ from typing import Optional, Literal, List, TypeAlias, cast
 import os
 
 
-from .crisprme2_error import Crisprme2AnnotationError
-from .logger import CrisprmeLoggers
-from .utils import find_tbi_index, TBI
+from ..logger import CrisprmeLoggers
+from ..utils import find_tbi_index, TBI
+
+from .crisprme2_annotation_error import Crisprme2BedFileError, Crisprme2AnnotationError
 
 
 # define tabix preset types
@@ -47,7 +48,7 @@ class AnnotationBed(Annotation):
             self._loggers.errorlog.log_raise_exception(
                 f"Annottaion BED file {self._fname} is already open",
                 os.EX_IOERR,
-                Crisprme2AnnotationError,
+                Crisprme2BedFileError,
             )
         try:  # open bed, assumes that index is already available
             self._bed = TabixFile(self._fname, index=self._bedidx)
@@ -56,7 +57,7 @@ class AnnotationBed(Annotation):
             self._loggers.errorlog.log_raise_exception(
                 f"Failed opening {self._fname}: {e}",
                 os.EX_IOERR,
-                Crisprme2AnnotationError,
+                Crisprme2BedFileError,
             )
         return self
 
@@ -84,7 +85,7 @@ class AnnotationBed(Annotation):
             self._loggers.errorlog.log_raise_exception(
                 "Annotation BED file must be opened before fetching",
                 os.EX_DATAERR,
-                Crisprme2AnnotationError,
+                Crisprme2BedFileError,
             )
         if contig not in self._bed.contigs:
             return []
@@ -103,7 +104,7 @@ class AnnotationGff(Annotation):
             self._loggers.errorlog.log_raise_exception(
                 f"Annotation GFF file {self._fname} is already open",
                 os.EX_IOERR,
-                Crisprme2AnnotationError,
+                Crisprme2BedFileError,
             )
         try:  # open gff, assumes that index is already available
             self._gff = TabixFile(self._fname, index=self._gffidx)
@@ -112,7 +113,7 @@ class AnnotationGff(Annotation):
             self._loggers.errorlog.log_raise_exception(
                 f"Failed opening {self._fname}: {e}",
                 os.EX_IOERR,
-                Crisprme2AnnotationError,
+                Crisprme2BedFileError,
             )
         return self
 
@@ -140,7 +141,7 @@ class AnnotationGff(Annotation):
             self._loggers.errorlog.log_raise_exception(
                 "Annotation GFF file must be opened before fetching",
                 os.EX_DATAERR,
-                Crisprme2AnnotationError,
+                Crisprme2BedFileError,
             )
         if contig not in self._gff.contigs:
             return None
@@ -154,7 +155,7 @@ def _tabix_index(
         loggers.errorlog.log_raise_exception(
             f"Invalid tabix preset: {preset!r}. Must be one of {sorted(_ALLOWED)}",
             os.EX_DATAERR,
-            Crisprme2AnnotationError,
+            Crisprme2BedFileError,
         )
     # compute tabix index if not provided during annotation object initialization
     try:

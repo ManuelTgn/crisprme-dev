@@ -6,6 +6,7 @@ from .logger import CrisprmeLoggers
 
 from typing import List, Dict
 
+import contextlib
 import os
 
 
@@ -15,16 +16,12 @@ def read_fasta_files(
     fastas: Dict[str, Fasta] = {}  # fasta-contig map
     for fasta_file in fasta_files:
         loggers.verboselog.debug(f"Create FASTA object {fasta_file}")
-        try:
-            fasta = Fasta(
-                fasta_file, loggers
-            )  # validates + ensures index + contig/length
+        try:  # validates + ensures index + contig/length
+            fasta = Fasta(fasta_file, loggers)
             contig = fasta.contig
-        except Exception:  # Fasta() might have opened interbally -> close
-            try:
+        except Exception:  # Fasta() might have opened internally -> close
+            with contextlib.suppress(Exception):
                 fasta.close()  # type: ignore[name-defined]
-            except Exception:
-                pass
             loggers.errorlog.log_raise_exception(
                 f"Failed FASTA object creation: {fasta_file}", os.EX_IOERR, IOError
             )
