@@ -15,6 +15,17 @@ pub enum AnnotationError {
 
     #[error("Annotation input is empty")]
     EmptyInput,
+
+    #[error(
+        "annotation BED {path} defines more than {max} distinct terms in \
+         column 4 (hit term #{count}); each term needs one bit of the u32 \
+         annotation slot, so at most {max} are supported per file"
+    )]
+    TooManyFeatures {
+        path: String,
+        count: usize,
+        max: usize,
+    },
 }
 
 /// Errors raised while parsing a PAM string or working with its
