@@ -1,20 +1,18 @@
 """ """
 
-from .crisprme2_error import (
-    Crisprme2FastaError,
-    Crisprme2SequenceError,
-)
-from .warning import warning
-from .utils import FAI, find_fai_index
-from .sequence import ContigSequence
-from .logger import CrisprmeLoggers
-
-from typing import Optional, List
-from pysam.utils import SamtoolsError
-from pysam import FastaFile, faidx
 from pathlib import Path
+from pysam import faidx, FastaFile
+from pysam.utils import SamtoolsError
+from typing import Optional, List, Dict
 
 import os
+
+
+from .crisprme2_error import Crisprme2FastaError, Crisprme2SequenceError
+from .logger import CrisprmeLoggers
+from .sequence import ContigSequence
+from .utils import FAI, find_fai_index
+from .warning import warning
 
 
 # fasta file extensions
@@ -30,7 +28,7 @@ class Fasta:
         self._index = self._search_index()  # fai index
         self._fasta_handle: Optional[FastaFile] = None
         self._is_open = False
-        self._init_contig_length()  # initialize contig name and length
+        self._init_contig_length()  # initialize contig name(s) and length(s)
 
     def _validate_file(self) -> None:
         # check file extension
@@ -72,15 +70,12 @@ class Fasta:
         self.open()  # manually open fasta file
         assert self._fasta_handle  # should be open
         self._ncontigs = len(self._fasta_handle.references)
-        if self._ncontigs != 1:
-            self._loggers.errorlog.log_raise_exception(
-                f"Multiple contigs found in {self._filepath}",
-                os.EX_DATAERR,
-                Crisprme2FastaError,
-            )
-        # we're 100% sure that there is only one contig in this fasta
-        self._contig = self._fasta_handle.references[0]
-        self._length = self._fasta_handle.lengths[0]
+        # store name and length for every contig in the fasta, so both
+        # single- and multi-contig fasta files are supported uniformly
+        self._contigs = list(self._fasta_handle.references)
+        self._lengths: Dict[str, int] = dict(
+            zip(self._fasta_handle.references, self._fasta_handle.lengths)
+        )
         self.close()  # manually close fasta file
 
     def open(self) -> "Fasta":
@@ -111,9 +106,29 @@ class Fasta:
         self.close()
 
     def read(self) -> bytearray:
+        """Return the raw sequence bytes in the fasta file, with every
+        header ('>') line stripped out and all contigs' sequences
+        concatenated together. For per-contig access, use `read_contigs`.
+        """
+        sequence = bytearray()
         with open(self._filepath, mode="rb") as fin:
-            fin.readline()  # consume header buffer
-            return bytearray(fin.read())
+            for line in fin:
+                if line.startswith(b">"):
+                    continue  # skip header line(s)
+                sequence.extend(line.rstrip(b"\r\n"))
+        return sequence
+
+    def read_contigs(self) -> Dict[str, bytearray]:
+        sequences: Dict[str, bytearray] = {}
+        current: Optional[str] = None
+        with open(self._filepath, mode="rb") as fin:
+            for line in fin:
+                if line.startswith(b">"):
+                    current = line[1:].strip().split()[0].decode()
+                    sequences[current] = bytearray()
+                elif current is not None:
+                    sequences[current].extend(line.rstrip(b"\r\n"))
+        return sequences
 
     def fetch(
         self, reference: str, start: Optional[int] = None, end: Optional[int] = None
@@ -129,9 +144,9 @@ class Fasta:
             if start is None and end is None:  # access string by contig name
                 return ContigSequence(
                     self._fasta_handle.fetch(reference),
-                    self._contig,
+                    reference,
                     0,
-                    self._length,
+                    self._lengths[reference],
                     self._loggers,
                 )
             elif start is not None and end is not None:
@@ -143,7 +158,7 @@ class Fasta:
                     )
                 return ContigSequence(
                     self._fasta_handle.fetch(reference, start, end),
-                    self._contig,
+                    reference,
                     start,
                     end,
                     self._loggers,
@@ -174,7 +189,10 @@ class Fasta:
 
     def __repr__(self) -> str:
         status = "open" if self._is_open else "closed"
-        return f"<{self.__class__.__name__} object; sequences={self._contig}, status={status}>"
+        sequences = (
+            self._contigs[0] if self._ncontigs == 1 else f"{self._ncontigs} contigs"
+        )
+        return f"<{self.__class__.__name__} object; sequences={sequences}, status={status}>"
 
     def __del__(self):
         if self._is_open:
@@ -182,11 +200,55 @@ class Fasta:
 
     @property
     def contig(self) -> str:
-        return self._contig if self._contig.startswith("chr") else f"chr{self._contig}"
+        """Name of the contig, 'chr'-prefixed.
+
+        Only valid for single-contig fasta files; use `contigs` for
+        fasta files with multiple contigs.
+        """
+        if self._ncontigs != 1:
+            self._loggers.errorlog.log_raise_exception(
+                f"FASTA file {self._filepath} contains {self._ncontigs} contigs; "
+                "use 'contigs' instead of 'contig'",
+                os.EX_DATAERR,
+                Crisprme2FastaError,
+            )
+        return self._contigs[0]
+
+    @property
+    def contigs(self) -> List[str]:
+        # return every contig name in the fasta file, 'chr'-prefixed
+        return self._contigs
 
     @property
     def length(self) -> int:
-        return self._length  # return contig lengths in fasta
+        """Length of the contig.
+
+        Only valid for single-contig fasta files; use `lengths` or
+        `get_length(reference)` for fasta files with multiple contigs.
+        """
+        if self._ncontigs != 1:
+            self._loggers.errorlog.log_raise_exception(
+                f"FASTA file {self._filepath} contains {self._ncontigs} contigs; "
+                "use 'lengths' or 'get_length(reference)' instead of 'length'",
+                os.EX_DATAERR,
+                Crisprme2FastaError,
+            )
+        return self._lengths[self._contigs[0]]
+
+    @property
+    def lengths(self) -> Dict[str, int]:
+        # return a contig name -> length mapping, for every contig
+        return dict(self._lengths)
+
+    def get_length(self, reference: str) -> int:
+        # return the length of one specific contig/reference
+        if reference not in self._lengths:
+            self._loggers.errorlog.log_raise_exception(
+                f"Reference '{reference}' not found in FASTA file",
+                os.EX_DATAERR,
+                Crisprme2FastaError,
+            )
+        return self._lengths[reference]
 
     @property
     def nreferences(self) -> int:

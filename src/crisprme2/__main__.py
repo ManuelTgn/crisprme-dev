@@ -192,6 +192,19 @@ def create_search_parser(subparser: _SubParsersAction) -> _SubParsersAction:
         help="maximum number of RNA bulges allowed in the search (default: 0)",
     )
     optional_group.add_argument(
+        "--max-edit-distance",
+        type=int,
+        dest="max_edit_dist",
+        metavar="MAX-EDIT-DISTANCE",
+        required=False,
+        default=0,
+        help="maximum allowed edit distance between the guide RNA and aligned "
+        "target. The edit distance is computed as mismatches + RNA bulges + "
+        "DNA bulges. A value of 0 disables this filter and automatically uses "
+        "the maximum search distance defined by the mismatch and bulge "
+        "thresholds (default: mismatches + RNA bulges + DNA bulges)",
+    )
+    optional_group.add_argument(
         "--annotation",
         type=str,
         metavar="ANNOTATION-BED",
@@ -222,6 +235,33 @@ def create_search_parser(subparser: _SubParsersAction) -> _SubParsersAction:
         default=False,
         help="if set, PAM occurs upstream (left side) of the guide "
         "(default: PAM occurs downstream (right side))",
+    )
+    optional_group.add_argument(
+        "--cluster-distance",
+        type=int,
+        dest="cluster_dist",
+        metavar="CLUSTER-DIST",
+        required=False,
+        default=3,
+        help="maximum genomic distance (in bp) between off-target alignments to "
+        "group them into a single editing site. Alignments within this distance "
+        "are reported as alternative alignments of the same site rather than as "
+        "independent off-targets (default: 3)",
+    )
+    optional_group.add_argument(
+        "--prioritization-criteria",
+        type=str,
+        dest="prioritization_criteria",
+        metavar="PRIORITIZATION-CRITERIA",
+        required=False,
+        default="edit-dist,bdna,brna,mm",
+        help="comma-separated list of criteria, in descending priority order, "
+        "used to select the primary alignment when multiple alignments belong "
+        "to the same editing site. Remaining alignments are reported as "
+        "alternative alignments. Available criteria: 'edit-dist' (total edit "
+        "distance), 'bdna' (DNA bulges), 'brna' (RNA bulges), 'mm' (mismatches), "
+        "'cfd' (CFD score), 'crista' (CRISTA score), 'elevation' (Elevation "
+        "score) (default: edit-dist,bdna,brna,mm)",
     )
     optional_group.add_argument(
         "--threads",

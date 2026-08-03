@@ -57,14 +57,14 @@ def _safe_fasta_contig(fasta: Fasta, contig: str, loggers: CrisprmeLoggers) -> s
     and raises before returning if neither name is found.
     """
     c = contig
-    if c not in fasta:
-        contig_alt = fasta.contig  # normalized single-contig name from file
+    if c not in fasta.contigs:
+        contig_alt = f"chr{contig}"  # normalized single-contig name from file
         if contig_alt in fasta:
             c = contig_alt
         else:
             fasta.close()  # ensure file is closed before raising exception
             loggers.errorlog.log_raise_exception(
-                f"Contig {contig} not found in FASTA {fasta._filepath} (available: {fasta.contig})",
+                f"Contig {contig} not found in FASTA {fasta._filepath}",
                 os.EX_DATAERR,
                 Crisprme2SearchError,
             )

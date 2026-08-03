@@ -40,6 +40,9 @@ COMMAND = "crisprme2"  # command line call
 # crisprhawk commands
 COMMANDS = ["complete-search"]
 
+# sites prioritization criteria
+CRITERIA = ["edit-dist", "bdna", "brna", "mm", "cfd", "crista", "elevation"]
+
 # ==============================================================================
 #
 # UTILS MODULE FUNCTIONS

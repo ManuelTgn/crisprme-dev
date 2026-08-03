@@ -63,7 +63,7 @@ import os
 
 def sigint_handler() -> None:
     """Handle a SIGINT signal by printing a notice and exiting gracefully.
-    
+
     Intended to be registered as the ``SIGINT`` signal handler at programme
     startup (e.g. via ``signal.signal(signal.SIGINT, lambda sig, frame:
     sigint_handler())``).  When a keyboard interrupt (``Ctrl+C``) is received,
@@ -116,25 +116,25 @@ def exception_handler(
 
     Parameters
     ----------
-    
+
     exception_type : type
         The exception class to instantiate and raise in debug mode.  Must be
         a subclass of :class:`~crisprme2.crisprme2_error.CrisprmeError`
         (or any :class:`Exception` subclass) and accept a single string
         argument.
-    exception : str 
+    exception : str
         Human-readable description of the error.  In debug mode this string
         is passed to the exception constructor (with a leading ``"\\n\\n"``
         for readability); in normal mode it is written to *stderr*.
-    code : int 
+    code : int
         POSIX exit code used when terminating in normal mode.  Callers
         conventionally use ``os.EX_IOERR`` (74) for file I/O failures and
         ``os.EX_DATAERR`` (65) for data-parsing or data-consistency errors.
         Other ``os.EX_*`` constants may be used as appropriate.
-    debug : bool 
+    debug : bool
         When ``True``, raise *exception_type* with the full traceback intact.
         When ``False``, print a coloured error message and exit with *code*.
-    e : Optional[Exception] 
+    e : Optional[Exception]
         Optional originating exception.  When provided in debug mode, it is
         used as the cause of the raised exception via ``raise ... from e``,
         preserving the full exception chain for diagnosis.  Ignored in normal

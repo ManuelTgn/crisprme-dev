@@ -18,19 +18,20 @@ def read_fasta_files(
         loggers.verboselog.debug(f"Create FASTA object {fasta_file}")
         try:  # validates + ensures index + contig/length
             fasta = Fasta(fasta_file, loggers)
-            contig = fasta.contig
+            contigs = fasta.contigs
         except Exception:  # Fasta() might have opened internally -> close
             with contextlib.suppress(Exception):
                 fasta.close()  # type: ignore[name-defined]
             loggers.errorlog.log_raise_exception(
                 f"Failed FASTA object creation: {fasta_file}", os.EX_IOERR, IOError
             )
-        if contig in fastas:
-            loggers.errorlog.log_raise_exception(
-                f"Multiple FASTA files with contig {contig}",
-                os.EX_DATAERR,
-                Crisprme2FastaError,
-            )
-        fastas[contig] = fasta
+        for contig in contigs:
+            if contig in fastas:
+                loggers.errorlog.log_raise_exception(
+                    f"Multiple FASTA files with contig {contig}",
+                    os.EX_DATAERR,
+                    Crisprme2FastaError,
+                )
+            fastas[contig] = fasta
         loggers.verboselog.debug(f"Successfully FASTA object created: {fasta_file}")
     return fastas
