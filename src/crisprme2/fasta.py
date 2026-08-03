@@ -4,7 +4,7 @@ from .crisprme2_error import (
     Crisprme2FastaError,
     Crisprme2SequenceError,
 )
-from .crisprme2_warning import warning
+from .warning import warning
 from .utils import FAI, find_fai_index
 from .sequence import ContigSequence
 from .logger import CrisprmeLoggers

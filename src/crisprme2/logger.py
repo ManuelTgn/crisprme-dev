@@ -10,7 +10,7 @@ import shutil
 import sys
 
 
-from .crisprme2_warning import warning
+from .warning import warning
 from .utils import TOOLNAME
 
 
