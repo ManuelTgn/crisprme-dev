@@ -16,6 +16,7 @@ Hierarchy
     ├── Crisprme2AnnotationError                - FeatureRegistry / annotation failures
     ├── Crisprme2AlignmentBatchError            - Alignment scoring / validation failures
     ├── Crisprme2LoggingError                   - native logging-bridge failures
+    ├── Crisprme2PartitionError                 - Results partition failures
     └── Crisprme2PipelineError                  - Pipeline construction / runtime failures
             ├── Crisprme2PipelineConfigError    - bad arguments at build time
             ├── Crisprme2PipelineSubmitError    - failure while submitting a batch
@@ -116,6 +117,15 @@ class Crisprme2PipelineSubmitError(Crisprme2PipelineError):
         super().__init__(value)
 
     def __str__(self) -> str:
+        return super().__str__()
+
+
+class Crisprme2PartitionError(Crisprme2Error):
+
+    def __init__(self, value: str) -> None:
+        super().__init__(value)
+
+    def __str__(self):
         return super().__str__()
 
 
