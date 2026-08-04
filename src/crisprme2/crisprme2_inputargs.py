@@ -190,8 +190,10 @@ class Crisprme2SearchInputArgs(Crisprme2InputArgs):
         self._cluster_dist = cluster_dist
 
     def _validate_prioritization_criteria(self) -> None:
-        prioritization_criteria: str = self._args.prioritization_criteria
-        if any(c not in CRITERIA for c in prioritization_criteria.split(",")):
+        prioritization_criteria: List[str] = list(
+            self._args.prioritization_criteria.split(",")
+        )
+        if any(c not in CRITERIA for c in prioritization_criteria):
             forbidden_criteria = ",".join(
                 c for c in prioritization_criteria if c not in CRITERIA
             )
@@ -285,7 +287,7 @@ class Crisprme2SearchInputArgs(Crisprme2InputArgs):
         return self._cluster_dist
 
     @property
-    def prioritization_criteria(self) -> str:
+    def prioritization_criteria(self) -> List[str]:
         return self._prioritization_criteria
 
     @property

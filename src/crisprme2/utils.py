@@ -40,8 +40,12 @@ COMMAND = "crisprme2"  # command line call
 # crisprhawk commands
 COMMANDS = ["complete-search"]
 
-# sites prioritization criteria
+#: Allowed primary-criteria field tokens, in no particular order. The order the
+#: *user* supplies determines ranking priority; direction is inherent per field
+#: on the Rust side (edit-family ascending, scores descending). Mirrors
+#: ``PrimaryField::from_token``.
 CRITERIA = ["edit-dist", "bdna", "brna", "mm", "cfd", "crista", "elevation"]
+
 
 # ==============================================================================
 #
