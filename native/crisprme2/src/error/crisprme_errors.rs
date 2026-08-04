@@ -2,6 +2,11 @@ use thiserror::Error;
 
 use crate::error;
 
+/// Fixed columns in every report line: `chromosome` .. `aggregate_score`.
+pub const FIXED_COLS: usize = 14;
+/// Upper bound on appended annotation columns (one bit each in the `u32` slot).
+pub const MAX_ANNOTATIONS: usize = 10;
+
 #[derive(Debug, Error)]
 pub enum AnnotationError {
     #[error("Failed to read BED file: {0}")]
@@ -73,4 +78,52 @@ pub enum ContigLabelsError {
              (one of ',' '\"' '\\n' '\\r'), which would break the CSV"
     )]
     InvalidName { id: u32, name: String, byte: u8 },
+}
+
+#[derive(Debug, Error)]
+pub enum PartitionError {
+    #[error("{context}: {source}")]
+    Io {
+        context: String,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("intermediate report has no header line")]
+    MissingHeader,
+
+    #[error(
+        "header has {cols} columns; expected {FIXED_COLS}..={} \
+         ({FIXED_COLS} fixed + 0..{MAX_ANNOTATIONS} annotation columns)",
+        FIXED_COLS + MAX_ANNOTATIONS
+    )]
+    BadHeaderShape { cols: usize },
+
+    #[error("line {line} of the intermediate report is not valid UTF-8")]
+    NotUtf8 { line: usize },
+
+    #[error("line {line} has {found} columns; the header declared {expected}")]
+    FieldCount {
+        line: usize,
+        expected: usize,
+        found: usize,
+    },
+
+    #[error("line {line}, column {col}: cannot parse {what} from {value:?}")]
+    BadField {
+        line: usize,
+        col: usize,
+        value: String,
+        what: &'static str,
+    },
+}
+
+impl PartitionError {
+    /// Build an [`PartitionError::Io`] with a human-readable context.
+    pub(crate) fn io(context: impl Into<String>, source: std::io::Error) -> Self {
+        Self::Io {
+            context: context.into(),
+            source,
+        }
+    }
 }

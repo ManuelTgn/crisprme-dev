@@ -1,5 +1,6 @@
 """ """
 
+from pathlib import Path
 from time import time
 from typing import List, Dict, Tuple
 
@@ -7,7 +8,13 @@ import os
 
 
 from .annotation import FunctionalAnnotator
-from .crisprme_core_api import TargetBatcher, Pipeline, Thresholds, init_native_logging
+from .crisprme_core_api import (
+    init_native_logging,
+    partition_offtargets,
+    TargetBatcher,
+    Pipeline,
+    Thresholds,
+)
 from .crisprme2_inputargs import Crisprme2SearchInputArgs
 from .crisprme2_error import Crisprme2SearchError
 from .dna_alphabet import reverse_complement
@@ -57,14 +64,14 @@ def _safe_fasta_contig(fasta: Fasta, contig: str, loggers: CrisprmeLoggers) -> s
     and raises before returning if neither name is found.
     """
     c = contig
-    if c not in fasta:
-        contig_alt = fasta.contig  # normalized single-contig name from file
+    if c not in fasta.contigs:
+        contig_alt = f"chr{contig}"  # normalized single-contig name from file
         if contig_alt in fasta:
             c = contig_alt
         else:
             fasta.close()  # ensure file is closed before raising exception
             loggers.errorlog.log_raise_exception(
-                f"Contig {contig} not found in FASTA {fasta._filepath} (available: {fasta.contig})",
+                f"Contig {contig} not found in FASTA {fasta._filepath}",
                 os.EX_DATAERR,
                 Crisprme2SearchError,
             )
@@ -167,6 +174,15 @@ def _process_contig(
                     )
 
 
+def _partition_report_names(outpath: str) -> Tuple[str, str]:
+    p = Path(outpath)
+    suffix = p.suffix or ".tsv"
+    return (
+        str(p.with_name(f"{p.stem}_primary{suffix}")),
+        str(p.with_name(f"{p.stem}_alternative{suffix}")),
+    )
+
+
 def _scan_reference_genome(
     fastas: Dict[str, Fasta],
     contig_ids: Dict[str, int],
@@ -180,6 +196,8 @@ def _scan_reference_genome(
     transforms: List[Transformer],
     annotations: List[str],
     annotation_names: List[str],
+    cluster_dist: int,
+    criteria: List[str],
     loggers: CrisprmeLoggers,
 ) -> None:
     """
@@ -304,6 +322,17 @@ def _scan_reference_genome(
             f"unique windows={tail_stats.unique_windows}"
         )
     # pipeline.__exit__ signals EOF and joins all worker threads here
+    # Pipeline closed -> the intermediate report is fully flushed
+    # Split it into primary and alternative reports.
+    primary_path, alternative_path = _partition_report_names(outpath)
+    partition_offtargets(
+        outpath,
+        primary_path,
+        alternative_path,
+        criteria,
+        cluster_dist,
+        loggers,
+    )
 
 
 def _build_pam_and_guides(
@@ -400,6 +429,8 @@ def _search_offtargets_reference_genome(
     thresholds: Thresholds,
     annotations: List[str],
     annotation_names: List[str],
+    cluster_dist: int,
+    criteria: List[str],
     loggers: CrisprmeLoggers,
 ) -> None:
     """
@@ -459,6 +490,8 @@ def _search_offtargets_reference_genome(
         transforms,
         annotations,
         annotation_names,
+        cluster_dist,
+        criteria,
         loggers,
     )
 
@@ -526,5 +559,7 @@ def execute_offtargets_search(args: Crisprme2SearchInputArgs) -> None:
                 thresholds,
                 args.annotations,
                 args.annotation_names,
+                args.cluster_dist,
+                args.prioritization_criteria,
                 loggers,
             )

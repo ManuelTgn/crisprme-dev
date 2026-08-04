@@ -1,4 +1,4 @@
-use crate::error::crisprme_errors::{AnnotationError, ContigLabelsError, PamError};
+use crate::error::crisprme_errors::{AnnotationError, ContigLabelsError, PamError, PartitionError};
 
 use pyo3::exceptions::{PyIOError, PyIndexError, PyValueError};
 use pyo3::PyErr;
@@ -42,5 +42,20 @@ impl From<ContigLabelsError> for PyErr {
     fn from(err: ContigLabelsError) -> PyErr {
         // Both variants are bad configuration -> ValueError.
         PyValueError::new_err(err.to_string())
+    }
+}
+
+impl From<PartitionError> for PyErr {
+    fn from(err: PartitionError) -> PyErr {
+        match err {
+            // I/O failure -> IOError, consistent with AnnotationError::IoError
+            PartitionError::Io { .. } => PyIOError::new_err(err.to_string()),
+            // malformed report / bad config -> ValueError
+            PartitionError::MissingHeader
+            | PartitionError::BadHeaderShape { .. }
+            | PartitionError::NotUtf8 { .. }
+            | PartitionError::FieldCount { .. }
+            | PartitionError::BadField { .. } => PyValueError::new_err(err.to_string()),
+        }
     }
 }

@@ -8,6 +8,7 @@ mod engine;
 mod error;
 mod memory;
 mod model;
+mod partition;
 mod pipeline;
 pub mod python;
 mod sequence;
@@ -49,6 +50,7 @@ pub mod _crisprme2_native {
             input::{SeqBatch, SeqFrame, SeqOccFrame, SEQ_MAX_LEN},
             occurence::Occurence,
         },
+        partition::PrimaryCriteria,
         pipeline::{
             sink::{
                 writer::{ContigLabels, PamContext, PamPlacement, TsvWriter, TsvWriterSink},
@@ -383,6 +385,36 @@ pub mod _crisprme2_native {
             input,
             pool,
         })
+    }
+
+    /// Split the intermediate report into primary + alternative reports.
+    ///
+    /// Clusters hits within `n` bases (strand-aware, keyed on contig/strand/start)
+    /// and selects one primary per cluster under `criteria` — an ordered list of
+    /// `(field, direction)` pairs, or `None` for the default (edit distance, then
+    /// dna/rna bulges, then mismatches; all ascending). Returns
+    /// `(clusters, primary, alternative)` counts.
+    #[pyfunction]
+    #[pyo3(signature = (intermediate, primary_out, alternative_out, n, criteria=None))]
+    fn partition_report(
+        intermediate: PathBuf,
+        primary_out: PathBuf,
+        alternative_out: PathBuf,
+        n: u32,
+        criteria: Option<Vec<String>>,
+    ) -> PyResult<(usize, usize, usize)> {
+        let criteria = match criteria {
+            Some(spec) => PrimaryCriteria::from_spec(&spec).map_err(PyValueError::new_err)?,
+            None => PrimaryCriteria::default(),
+        };
+        let stats = crate::partition::partition_report(
+            &intermediate,
+            &primary_out,
+            &alternative_out,
+            n,
+            &criteria,
+        )?;
+        Ok((stats.clusters, stats.primary, stats.alternative))
     }
 
     /// Install the Rust -> Python logging bridge.

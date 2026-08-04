@@ -13,6 +13,7 @@ Hierarchy
 
     Crisprme2Error
     └── Crisprme2AnnotationError                    - Generic annotation error
+        ├── Crisprme2BedFileError                   - BED file error
         └── Crisprme2FunctionalAnnotationError      - Functional annotation
 """
 
@@ -20,7 +21,16 @@ from ..crisprme2_error import Crisprme2Error
 
 
 class Crisprme2AnnotationError(Crisprme2Error):
-    """Raised when the scoring calculation encounters an unrecoverable error"""
+
+    def __init__(self, value: str):
+        # initialize exception object when raised
+        super().__init__(value)  # error message or error related info
+
+    def __str__(self):
+        return super().__str__()  # string representation for the exception
+
+
+class Crisprme2BedFileError(Crisprme2AnnotationError):
 
     def __init__(self, value: str):
         # initialize exception object when raised
@@ -31,7 +41,6 @@ class Crisprme2AnnotationError(Crisprme2Error):
 
 
 class Crisprme2FunctionalAnnotationError(Crisprme2AnnotationError):
-    """Raised when the CFD scoring calculation encounters an unrecoverable error"""
 
     def __init__(self, value: str):
         # initialize exception object when raised

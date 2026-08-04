@@ -10,6 +10,7 @@ import os
 
 from .crisprme2_argparse import Crisprme2ArgumentParser
 from .dna_alphabet import DNA, IUPAC
+from .utils import CRITERIA
 
 
 class Crisprme2InputArgs:
@@ -144,6 +145,14 @@ class Crisprme2SearchInputArgs(Crisprme2InputArgs):
                 f"Invalid number of RNA bulges selected ({self._args.brna})"
             )
 
+    def _validate_max_edit_dist(self) -> None:
+        max_edit_dist: int = self._args.max_edit_dist
+        if max_edit_dist < 0:
+            self._parser.error(
+                f"Negative maximum edit distance value selected: {max_edit_dist}"
+            )
+        self._max_edit_dist = max_edit_dist
+
     def _validate_annotation(self) -> None:
         for bed in self._args.annotations:
             _check_file(bed, self._parser, f"Cannot find annotation file {bed}")
@@ -172,6 +181,27 @@ class Crisprme2SearchInputArgs(Crisprme2InputArgs):
             else [f"annotation_{i}" for i, _ in enumerate(names, start=1)]
         )
 
+    def _validate_cluster_dist(self) -> None:
+        cluster_dist: int = self._args.cluster_dist
+        if cluster_dist <= 0:
+            self._parser.error(
+                f"Cluster distance cannot be 0 or negative: {cluster_dist}"
+            )
+        self._cluster_dist = cluster_dist
+
+    def _validate_prioritization_criteria(self) -> None:
+        prioritization_criteria: List[str] = list(
+            self._args.prioritization_criteria.split(",")
+        )
+        if any(c not in CRITERIA for c in prioritization_criteria):
+            forbidden_criteria = ",".join(
+                c for c in prioritization_criteria if c not in CRITERIA
+            )
+            self._parser.error(
+                f"Forbidden prioritization criteria among input: {forbidden_criteria}"
+            )
+        self._prioritization_criteria = prioritization_criteria
+
     def _check_consistency(self) -> None:
         """Check the consistency and validity of parsed input arguments.
 
@@ -189,9 +219,12 @@ class Crisprme2SearchInputArgs(Crisprme2InputArgs):
         self._validate_mm()
         self._validate_bdna()
         self._validate_brna()
+        self._validate_max_edit_dist()
         if self._args.annotations:
             self._validate_annotation()
             self._validate_annotation_names()
+        self._validate_cluster_dist()
+        self._validate_prioritization_criteria()
         self._validate_output_folder()
         self._validate_threads()
 
@@ -232,6 +265,12 @@ class Crisprme2SearchInputArgs(Crisprme2InputArgs):
         return self._args.brna
 
     @property
+    def max_edit_dist(self) -> int:
+        if self._max_edit_dist == 0:
+            return self.mm + self.bdna + self.brna
+        return self._max_edit_dist
+
+    @property
     def annotations(self) -> List[str]:
         return self._annotations if hasattr(self, "_annotations") else []
 
@@ -242,6 +281,14 @@ class Crisprme2SearchInputArgs(Crisprme2InputArgs):
     @property
     def upstream(self) -> bool:
         return self._args.upstream
+
+    @property
+    def cluster_dist(self) -> int:
+        return self._cluster_dist
+
+    @property
+    def prioritization_criteria(self) -> List[str]:
+        return self._prioritization_criteria
 
     @property
     def outdir(self) -> str:

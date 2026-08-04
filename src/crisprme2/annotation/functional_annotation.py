@@ -56,11 +56,11 @@ import numpy as np
 import os
 
 
-from ..bedfile import AnnotationBed
 from ..crisprme_core_api import AlignmentBatch, FeatureRegistry
 from ..logger import CrisprmeLoggers
 from ..protocol import Transformer
 
+from .bedfile import AnnotationBed
 from .crisprme2_annotation_error import Crisprme2FunctionalAnnotationError
 
 
