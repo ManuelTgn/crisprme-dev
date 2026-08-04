@@ -110,20 +110,38 @@ class Thresholds:
         t = Thresholds(max_mm=4, max_bdna=1, max_brna=1, loggers=loggers)
     """
 
-    __slots__ = ("_max_mm", "_max_bdna", "_max_brna", "_loggers", "_rust_handle")
+    __slots__ = (
+        "_max_mm",
+        "_max_bdna",
+        "_max_brna",
+        "_max_edit_dist",
+        "_loggers",
+        "_rust_handle",
+    )
 
     def __init__(
-        self, max_mm: int, max_bdna: int, max_brna: int, loggers: CrisprmeLoggers
+        self,
+        max_mm: int,
+        max_bdna: int,
+        max_brna: int,
+        max_edit_dist: int,
+        loggers: CrisprmeLoggers,
     ) -> None:
         _require_native(loggers)  # check that rust extension is available
+        assert RustThresholds is not None
         self._loggers = loggers  # set loggers
         # set Thresholds class attributes
         self._max_mm = max_mm
         self._max_bdna = max_bdna
         self._max_brna = max_brna
+        self._max_edit_dist = max_edit_dist
         loggers.verboselog.debug(f"Constructing object {repr(self)}")
         try:  # initialize rust Thresholds object
-            self._rust_handle: Any = RustThresholds(max_brna, max_bdna, max_mm)  # type: ignore[assignment]
+            self._rust_handle: Any = RustThresholds(
+                max_brna, max_bdna, max_mm, max_edit_dist
+            )
+            # store the effective, normalized cap (0 -> sum, clamped) from Rust
+            self._max_edit_dist: int = self._rust_handle.max_ed
         except Exception as e:
             loggers.errorlog.log_raise_exception(
                 f"Rust Thresholds construction failed: {e}",
@@ -150,6 +168,11 @@ class Thresholds:
     def brna(self) -> int:
         """Maximum RNA bulges allowed (``>= 0``)"""
         return self._max_brna
+
+    @property
+    def max_edit_dist(self) -> int:
+        """Effective edit-distance cap (0 in ==> sum of thresholds; clamped to that sum)"""
+        return self._max_edit_dist
 
     @property
     def is_exact_match(self) -> bool:
@@ -183,16 +206,21 @@ class Thresholds:
             self._max_mm == other._max_mm
             and self._max_bdna == other._max_bdna
             and self._max_brna == other._max_brna
+            and self._max_edit_dist == other._max_edit_dist
         )
 
     def __hash__(self) -> int:
-        return hash((self._max_mm, self._max_bdna, self._max_brna))
+        return hash((self._max_mm, self._max_bdna, self._max_brna, self._max_edit_dist))
 
     def __repr__(self) -> str:
         return (
             f"{self.__class__.__name__}(max_mm={self._max_mm}, "
-            f"max_bdna={self._max_bdna}, max_brna={self._max_brna})"
+            f"max_bdna={self._max_bdna}, max_brna={self._max_brna}, "
+            f"max_edit_dist={self._max_edit_dist})"
         )
 
     def __str__(self) -> str:
-        return f"MM={self._max_mm}, BDNA={self._max_bdna}, BRNA={self._max_brna}"
+        return (
+            f"MM={self._max_mm}, BDNA={self._max_bdna}, "
+            f"BRNA={self._max_brna}, MAX_EDIT={self._max_edit_dist}"
+        )

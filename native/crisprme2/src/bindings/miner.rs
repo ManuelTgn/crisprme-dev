@@ -49,6 +49,7 @@ mod ffi {
         pub ggap: u32,
         pub sgap: u32,
         pub mism: u32,
+        pub max_ed: u32,
     }
 
     /// Input for the miner
@@ -102,9 +103,10 @@ pub fn prepare(guide: &Guide, seq_len: usize, pam_len: usize, thresholds: &Thres
         glen: guide.len() as u32,
         slen: seq_len as u32,
         plen: pam_len as u32,
-        ggap: thresholds.tgap, // was: thresholds.qgap  <-- SWAPPED
-        sgap: thresholds.qgap, // was: thresholds.tgap  <-- SWAPPED
+        ggap: thresholds.tgap,
+        sgap: thresholds.qgap,
         mism: thresholds.mism,
+        max_ed: thresholds.max_ed,
     });
 }
 

@@ -2,9 +2,11 @@
 
 from pathlib import Path
 from time import time
-from typing import List, Dict, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import os
+import shutil
+import tempfile
 
 
 from .annotation import FunctionalAnnotator
@@ -44,6 +46,9 @@ CHUNKOVERLAP: int = 29  # updated at runtime to max(size - 1, 29)
 #: Default pipeline memory-pool chunk count.
 _PIPELINE_CHUNKS: int = 10_000
 
+#: Prefix for the hidden, per-run scratch directory created inside outdir to
+#: hold the transient intermediate report. Leading dot keeps it out of the way.
+_TMP_DIR_PREFIX: str = ".crisprme2_tmp_"
 
 # ==============================================================================
 # Internal search helpers
@@ -174,7 +179,12 @@ def _process_contig(
                     )
 
 
-def _partition_report_names(outpath: str) -> Tuple[str, str]:
+def _partition_report_names(
+    outpath: str, output_prefix: Optional[str], outdir: str
+) -> Tuple[str, str]:
+    if output_prefix:
+        base = os.path.join(outdir, output_prefix)
+        return (f"{base}_primary.tsv", f"{base}_alternative.tsv")
     p = Path(outpath)
     suffix = p.suffix or ".tsv"
     return (
@@ -198,6 +208,7 @@ def _scan_reference_genome(
     annotation_names: List[str],
     cluster_dist: int,
     criteria: List[str],
+    output_prefix: Optional[str],
     loggers: CrisprmeLoggers,
 ) -> None:
     """
@@ -262,77 +273,83 @@ def _scan_reference_genome(
     loggers.verboselog.debug(
         f"TargetBatcher ready (id={batcher.id}, size={size}, overlap={overlap})"
     )
-    # compute report's output name
-    outpath = _compute_report_name(guide, pam, outdir)
-    # pipeline: one context for the entire genome run
-    with Pipeline.create(
-        _PIPELINE_CHUNKS,
-        thresholds,
-        transforms,
-        pam,
-        upstream,
-        outpath,
-        contig_ids,
-        annotations,
-        annotation_names,
-        loggers,
-    ) as pipeline:
-        for contig, fasta in fastas.items():
-            contig_id = contig_ids[contig]
-            loggers.verboselog.debug(
-                f"Processing contig {contig!r} "
-                f"(id={contig_id}, threads={threads}, upstream={upstream}, size={size})"
-            )
-            contig_start = time()  # trace contig processing running time
-            try:
-                _process_contig(
-                    fasta,
-                    batcher,
-                    pipeline,
-                    contig,
-                    contig_id,
-                    overlap,
-                    size,
-                    upstream,
-                    loggers,
-                )
-            except Crisprme2SearchError:
-                raise  # already formatted; propagate as-is
-            except Exception as e:
-                loggers.errorlog.log_raise_exception(
-                    f"Processing contig {contig!r} failed: {e}",
-                    os.EX_DATAERR,
-                    Crisprme2SearchError,
-                )
-            finally:
+    # hidden, unique scratch dir inside outdir holds the transient intermediate.
+    # The finally guarantees the dir and its contents are removed on success or
+    # on any failure during pipeline setup, mining, or partitioning
+    tmpdir = tempfile.mkdtemp(prefix=_TMP_DIR_PREFIX, dir=outdir)
+    loggers.verboselog.debug(f"staging intermediate report in {tmpdir}")
+    try:
+        outpath = _compute_report_name(guide, pam, tmpdir)  # intermediate -> hidden dir
+        # pipeline: one context for the entire genome run
+        with Pipeline.create(
+            _PIPELINE_CHUNKS,
+            thresholds,
+            transforms,
+            pam,
+            upstream,
+            outpath,
+            contig_ids,
+            annotations,
+            annotation_names,
+            loggers,
+        ) as pipeline:
+            for contig, fasta in fastas.items():
+                contig_id = contig_ids[contig]
                 loggers.verboselog.debug(
-                    f"Contig {contig!r} processed in {time() - contig_start:.2f}s"
+                    f"Processing contig {contig!r} "
+                    f"(id={contig_id}, threads={threads}, upstream={upstream}, size={size})"
                 )
-        # tail flush: submit whatever remains after the last auto-flush
-        tail_stats = batcher.stats()
-        if tail_stats.hits_in_batch > 0 or tail_stats.unique_windows > 0:
-            _submit_and_log(pipeline, batcher, "tail flush", loggers)
-        # finalize clears internal rust states; log what was flushed in the tail
-        final_stats = batcher.finalize()
-        loggers.basiclog.info(
-            f"Processing complete - batcher id = {batcher.id}, "
-            f"total chunks={batcher.total_chunks_fed}, "
-            f"total flushes={batcher.total_flushes}, "
-            f"tail residual: hits={final_stats.hits_in_batch}, "
-            f"unique windows={tail_stats.unique_windows}"
+                contig_start = time()  # trace contig processing running time
+                try:
+                    _process_contig(
+                        fasta,
+                        batcher,
+                        pipeline,
+                        contig,
+                        contig_id,
+                        overlap,
+                        size,
+                        upstream,
+                        loggers,
+                    )
+                except Crisprme2SearchError:
+                    raise  # already formatted; propagate as-is
+                except Exception as e:
+                    loggers.errorlog.log_raise_exception(
+                        f"Processing contig {contig!r} failed: {e}",
+                        os.EX_DATAERR,
+                        Crisprme2SearchError,
+                    )
+                finally:
+                    loggers.verboselog.debug(
+                        f"Contig {contig!r} processed in {time() - contig_start:.2f}s"
+                    )
+            # tail flush: submit whatever remains after the last auto-flush
+            tail_stats = batcher.stats()
+            if tail_stats.hits_in_batch > 0 or tail_stats.unique_windows > 0:
+                _submit_and_log(pipeline, batcher, "tail flush", loggers)
+            # finalize clears internal rust states; log what was flushed in the tail
+            final_stats = batcher.finalize()
+            loggers.basiclog.info(
+                f"Processing complete - batcher id = {batcher.id}, "
+                f"total chunks={batcher.total_chunks_fed}, "
+                f"total flushes={batcher.total_flushes}, "
+                f"tail residual: hits={final_stats.hits_in_batch}, "
+                f"unique windows={tail_stats.unique_windows}"
+            )
+            # pipeline.__exit__ signals EOF and joins all worker threads here
+        # Pipeline closed -> the intermediate report is fully flushed,
+        # split it into primary and alternative reports
+        prefix = output_prefix or f"{guide.sequence}_{pam.pam}"
+        primary_path, alternative_path = _partition_report_names(
+            prefix, output_prefix, outdir
         )
-    # pipeline.__exit__ signals EOF and joins all worker threads here
-    # Pipeline closed -> the intermediate report is fully flushed
-    # Split it into primary and alternative reports.
-    primary_path, alternative_path = _partition_report_names(outpath)
-    partition_offtargets(
-        outpath,
-        primary_path,
-        alternative_path,
-        criteria,
-        cluster_dist,
-        loggers,
-    )
+        partition_offtargets(
+            outpath, primary_path, alternative_path, criteria, cluster_dist, loggers
+        )
+    finally:
+        # remove the hidden dir and everything in it, whatever happened
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 def _build_pam_and_guides(
@@ -380,10 +397,15 @@ def _build_thresholds(
         Alignment thresholds for this run.
     """
     loggers.verboselog.debug(
-        f"Building Thresholds(max_mm={args.mm}, bdna={args.bdna}, brna={args.brna})"
+        f"Building Thresholds(max_mm={args.mm}, bdna={args.bdna}, "
+        f"brna={args.brna}, max_edit_dist={args.max_edit_dist})"
     )
     return Thresholds(
-        max_mm=args.mm, max_bdna=args.bdna, max_brna=args.brna, loggers=loggers
+        max_mm=args.mm,
+        max_bdna=args.bdna,
+        max_brna=args.brna,
+        max_edit_dist=args.max_edit_dist,
+        loggers=loggers,
     )
 
 
@@ -431,6 +453,7 @@ def _search_offtargets_reference_genome(
     annotation_names: List[str],
     cluster_dist: int,
     criteria: List[str],
+    output_prefix: Optional[str],
     loggers: CrisprmeLoggers,
 ) -> None:
     """
@@ -492,6 +515,7 @@ def _search_offtargets_reference_genome(
         annotation_names,
         cluster_dist,
         criteria,
+        output_prefix,
         loggers,
     )
 
@@ -561,5 +585,6 @@ def execute_offtargets_search(args: Crisprme2SearchInputArgs) -> None:
                 args.annotation_names,
                 args.cluster_dist,
                 args.prioritization_criteria,
+                args.output_prefix,
                 loggers,
             )

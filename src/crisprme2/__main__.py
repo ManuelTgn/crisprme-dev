@@ -264,6 +264,17 @@ def create_search_parser(subparser: _SubParsersAction) -> _SubParsersAction:
         "score) (default: edit-dist,bdna,brna,mm)",
     )
     optional_group.add_argument(
+        "--output-prefix",
+        type=str,
+        dest="output_prefix",
+        metavar="OUTPUT-PREFIX",
+        required=False,
+        default=None,
+        help="filename prefix for the final reports. When given, reports are "
+        "named '<prefix>_primary.tsv' and '<prefix>_alternative.tsv' inside the "
+        "output directory (default: <guide>_<pam>)",
+    )
+    optional_group.add_argument(
         "--threads",
         type=int,
         metavar="THREADS",
