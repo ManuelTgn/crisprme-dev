@@ -20,8 +20,7 @@ from .crisprme_core_api import (
 from .crisprme2_inputargs import Crisprme2SearchInputArgs
 from .crisprme2_error import Crisprme2SearchError
 from .dna_alphabet import reverse_complement
-from .fasta import Fasta
-from .fasta_utils import read_fasta_files
+from .fasta import Fasta, read_fasta_files
 from .guide import Guide, GuidesList, read_guides
 from .logger import CrisprmeLoggers
 from .pam import PAM, read_pam, SPCAS9, XCAS9
