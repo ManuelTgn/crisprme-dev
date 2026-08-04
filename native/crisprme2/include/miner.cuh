@@ -359,6 +359,14 @@ struct ThreadMiner
             mem.state.sgap <= max_sgap);
     }
 
+    // Combined edit-distance budget. Monotonic in the search, so it is a valid
+    /// branch-and-bound cut: `<=` keeps states at exactly the cap alive (they can
+    /// still finish via match-only steps).
+    __device__ __forceinline__ bool within_edit_budget(u32 max_ed)
+    {
+        return (mem.state.mism + mem.state.ggap + mem.state.sgap) <= max_ed;
+    }
+
     /// Can this state still reach a complete alignment?
     ///
     /// Remaining work is `glen - gidx` guide bases and `pstop - sidx - offset`

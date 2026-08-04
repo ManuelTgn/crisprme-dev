@@ -33,6 +33,7 @@ __constant__ u32 PSTOP;   // == SLEN - PLEN: PAM start / protospacer end (exclus
 __constant__ u32 GGAP;
 __constant__ u32 SGAP;
 __constant__ u32 MISM;
+__constant__ u32 MAX_ED;
 
 /// ====================================================================
 /// Checkpoint
@@ -167,7 +168,8 @@ __global__ void kmine(
                 }
 
                 // Controllers, these depends on input data
-                bool inside_thresholds = miner.inside_thresholds(MISM, GGAP, SGAP);
+                bool inside_thresholds = miner.inside_thresholds(MISM, GGAP, SGAP)
+                                      && miner.within_edit_budget(MAX_ED);
                 bool can_continue = miner.can_continue(GLEN, PSTOP, offset);
                 bool is_complete  = miner.is_complete(GLEN, PSTOP, offset);
 
@@ -185,7 +187,8 @@ __global__ void kmine(
                         assert(miner.mem.state.ggap <= GGAP);
                         assert(miner.mem.state.sgap <= SGAP);
                         assert(miner.mem.state.mism <= MISM);
-                        assert(miner.mem.state.sidx + offset == PSTOP);   // <-- NEW
+                        assert(miner.mem.state.sidx + offset == PSTOP);
+                        assert(miner.mem.state.mism + miner.mem.state.ggap + miner.mem.state.sgap <= MAX_ED);
 
                         // Write all output columns
                         u32 write_idx = atomicAdd(&write_cursor, 1);
@@ -282,10 +285,12 @@ namespace cuda::miner
         u32 pstop = config.slen - config.plen;
         CUDA_CHECK(cudaMemcpyToSymbol(PSTOP, &pstop, sizeof(u32), 0, cudaMemcpyHostToDevice));
 
+        // Copy thresholds and lengths to constant memory
         CUDA_CHECK(cudaMemcpyToSymbol(GLEN, &config.glen, sizeof(u32), 0, cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemcpyToSymbol(SGAP, &config.sgap, sizeof(u32), 0, cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemcpyToSymbol(GGAP, &config.ggap, sizeof(u32), 0, cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemcpyToSymbol(MISM, &config.mism, sizeof(u32), 0, cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpyToSymbol(MAX_ED, &config.max_ed, sizeof(u32), 0, cudaMemcpyHostToDevice));
     }
 
     // Launch columnar miner kernel
