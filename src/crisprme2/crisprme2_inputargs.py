@@ -151,6 +151,9 @@ class Crisprme2SearchInputArgs(Crisprme2InputArgs):
             self._parser.error(
                 f"Negative maximum edit distance value selected: {max_edit_dist}"
             )
+        max_edit_dist_fx = self.mm + self.bdna + self.brna
+        if max_edit_dist > max_edit_dist_fx:
+            self._parser.error(f"Maximum edit distance value ({max_edit_dist}) above maximum threshold ({max_edit_dist_fx})")
         self._max_edit_dist = max_edit_dist
 
     def _validate_annotation(self) -> None:

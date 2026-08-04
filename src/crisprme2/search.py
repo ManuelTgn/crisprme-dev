@@ -380,11 +380,10 @@ def _build_thresholds(
         Alignment thresholds for this run.
     """
     loggers.verboselog.debug(
-        f"Building Thresholds(max_mm={args.mm}, bdna={args.bdna}, brna={args.brna})"
+        f"Building Thresholds(max_mm={args.mm}, bdna={args.bdna}, "
+        f"brna={args.brna}, max_edit_dist={args.max_edit_dist})"
     )
-    return Thresholds(
-        max_mm=args.mm, max_bdna=args.bdna, max_brna=args.brna, loggers=loggers
-    )
+    return Thresholds(max_mm=args.mm, max_bdna=args.bdna, max_brna=args.brna, max_edit_dist=args.max_edit_dist, loggers=loggers)
 
 
 def _build_transforms(
