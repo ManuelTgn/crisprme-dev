@@ -110,9 +110,23 @@ class Thresholds:
         t = Thresholds(max_mm=4, max_bdna=1, max_brna=1, loggers=loggers)
     """
 
-    __slots__ = ("_max_mm", "_max_bdna", "_max_brna", "_max_edit_dist", "_loggers", "_rust_handle")
+    __slots__ = (
+        "_max_mm",
+        "_max_bdna",
+        "_max_brna",
+        "_max_edit_dist",
+        "_loggers",
+        "_rust_handle",
+    )
 
-    def __init__(self, max_mm: int, max_bdna: int, max_brna: int, max_edit_dist: int, loggers: CrisprmeLoggers) -> None:
+    def __init__(
+        self,
+        max_mm: int,
+        max_bdna: int,
+        max_brna: int,
+        max_edit_dist: int,
+        loggers: CrisprmeLoggers,
+    ) -> None:
         _require_native(loggers)  # check that rust extension is available
         assert RustThresholds is not None
         self._loggers = loggers  # set loggers
@@ -123,7 +137,9 @@ class Thresholds:
         self._max_edit_dist = max_edit_dist
         loggers.verboselog.debug(f"Constructing object {repr(self)}")
         try:  # initialize rust Thresholds object
-            self._rust_handle: Any = RustThresholds(max_brna, max_bdna, max_mm, max_edit_dist)
+            self._rust_handle: Any = RustThresholds(
+                max_brna, max_bdna, max_mm, max_edit_dist
+            )
             # store the effective, normalized cap (0 -> sum, clamped) from Rust
             self._max_edit_dist: int = self._rust_handle.max_ed
         except Exception as e:

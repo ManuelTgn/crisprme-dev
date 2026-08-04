@@ -103,7 +103,7 @@ pub fn prepare(guide: &Guide, seq_len: usize, pam_len: usize, thresholds: &Thres
         glen: guide.len() as u32,
         slen: seq_len as u32,
         plen: pam_len as u32,
-        ggap: thresholds.tgap, 
+        ggap: thresholds.tgap,
         sgap: thresholds.qgap,
         mism: thresholds.mism,
         max_ed: thresholds.max_ed,

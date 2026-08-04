@@ -34,6 +34,11 @@ impl Thresholds {
         // 0 == "disabled" -> use the sum; otherwise a value above the sum can
         // never bind, so clamp it
         let max_ed = if max_ed == 0 { sum } else { max_ed.min(sum) };
-        Self { qgap, tgap, mism, max_ed }
+        Self {
+            qgap,
+            tgap,
+            mism,
+            max_ed,
+        }
     }
 }
