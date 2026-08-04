@@ -153,7 +153,9 @@ class Crisprme2SearchInputArgs(Crisprme2InputArgs):
             )
         max_edit_dist_fx = self.mm + self.bdna + self.brna
         if max_edit_dist > max_edit_dist_fx:
-            self._parser.error(f"Maximum edit distance value ({max_edit_dist}) above maximum threshold ({max_edit_dist_fx})")
+            self._parser.error(
+                f"Maximum edit distance value ({max_edit_dist}) above maximum threshold ({max_edit_dist_fx})"
+            )
         self._max_edit_dist = max_edit_dist
 
     def _validate_annotation(self) -> None:
@@ -205,6 +207,20 @@ class Crisprme2SearchInputArgs(Crisprme2InputArgs):
             )
         self._prioritization_criteria = prioritization_criteria
 
+    def _validate_output_prefix(self) -> None:
+        prefix = self._args.output_prefix
+        if prefix is None:
+            self._output_prefix = None
+            return
+        prefix = prefix.strip()
+        if not prefix:
+            self._parser.error("Empty --output-prefix provided")
+        if os.sep in prefix or (os.altsep and os.altsep in prefix):
+            self._parser.error(
+                f"--output-prefix must be a filename prefix, not a path: {prefix!r}"
+            )
+        self._output_prefix = prefix
+
     def _check_consistency(self) -> None:
         """Check the consistency and validity of parsed input arguments.
 
@@ -229,6 +245,7 @@ class Crisprme2SearchInputArgs(Crisprme2InputArgs):
         self._validate_cluster_dist()
         self._validate_prioritization_criteria()
         self._validate_output_folder()
+        self._validate_output_prefix()
         self._validate_threads()
 
     @property
@@ -296,6 +313,10 @@ class Crisprme2SearchInputArgs(Crisprme2InputArgs):
     @property
     def outdir(self) -> str:
         return self._outdir
+
+    @property
+    def output_prefix(self) -> Optional[str]:
+        return self._output_prefix
 
     @property
     def threads(self) -> int:
