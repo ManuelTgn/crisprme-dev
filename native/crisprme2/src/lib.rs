@@ -143,7 +143,7 @@ pub mod _crisprme2_native {
             py.detach(|| {
                 self.input
                     .send(SeqBatch {
-                        thresholds: Thresholds::new(1, 1, 2),
+                        thresholds: Thresholds::new(1, 1, 2, 0),
                         seq_len: sequence.len(),
                         pam_len: 0, // debug batches carry no PAM
                         guide: Guide::new("GATTACA"),
@@ -190,7 +190,7 @@ pub mod _crisprme2_native {
             py.detach(|| {
                 self.input
                     .send(SeqBatch {
-                        thresholds: Thresholds::new(1, 1, 2),
+                        thresholds: Thresholds::new(1, 1, 2, 0),
                         seq_len,
                         pam_len: 0, // debug batches carry no PAM
                         guide: Guide::new("GATTACAGATTACA"),
