@@ -7,7 +7,7 @@ import os
 import sys
 
 from .crisprme2_error import Crisprme2GuideError
-from .crisprme2_inputargs import Crisprme2SearchInputArgs
+from .crisprme2_inputargs import Crisprme2SearchInputArgsBase
 from .fasta import GuideFasta
 from .logger import CrisprmeLoggers
 from .sequence import Sequence, reverse_complement
@@ -159,7 +159,9 @@ def _read_guides_fasta(fasta_guides: str, loggers: CrisprmeLoggers) -> GuidesLis
     return GuidesList(guides, loggers)
 
 
-def read_guides(args: Crisprme2SearchInputArgs, loggers: CrisprmeLoggers) -> GuidesList:
+def read_guides(
+    args: Crisprme2SearchInputArgsBase, loggers: CrisprmeLoggers
+) -> GuidesList:
     # only one option is allowed
     assert sum(bool(e) for e in [args.guide, args.fasta_guide]) == 1
     if args.guide:  # --guide option (single guide)

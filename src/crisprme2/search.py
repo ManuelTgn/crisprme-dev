@@ -24,7 +24,11 @@ from .crisprme_core_api import (
     Pipeline,
     Thresholds,
 )
-from .crisprme2_inputargs import Crisprme2SearchInputArgs
+from .crisprme2_inputargs import (
+    Crisprme2AssemblySearchInputArgs,
+    Crisprme2SearchInputArgs,
+    Crisprme2SearchInputArgsBase,
+)
 from .crisprme2_error import Crisprme2SearchError
 from .dna_alphabet import reverse_complement
 from .fasta import Fasta, read_fasta_files
@@ -387,7 +391,7 @@ def _scan_assemblies(
 
 
 def _build_pam_and_guides(
-    args: Crisprme2SearchInputArgs, loggers: CrisprmeLoggers
+    args: Crisprme2SearchInputArgsBase, loggers: CrisprmeLoggers
 ) -> Tuple[GuidesList, PAM]:
     """
     Initialise PAM and guide data structures from validated CLI arguments.
@@ -412,7 +416,7 @@ def _build_pam_and_guides(
 
 
 def _build_thresholds(
-    args: Crisprme2SearchInputArgs, loggers: CrisprmeLoggers
+    args: Crisprme2SearchInputArgsBase, loggers: CrisprmeLoggers
 ) -> Thresholds:
     """
     Construct a :class:`~crisprme2.crisprme_core_api.Thresholds` instance
@@ -622,3 +626,56 @@ def execute_offtargets_search(args: Crisprme2SearchInputArgs) -> None:
                 args.output_prefix,
                 loggers,
             )
+
+
+def execute_offtargets_search_assemblies(
+    args: Crisprme2AssemblySearchInputArgs,
+) -> None:
+    loggers = CrisprmeLoggers(args.outdir)  # initialize loggers
+    init_native_logging(loggers)  # initialize rust-level logging
+    loggers.basiclog.info(f"Start {TOOLNAME} assembly search")
+    # initialize pam and guide objects
+    guides, pam = _build_pam_and_guides(args, loggers)
+    # initialize thresholds object
+    thresholds = _build_thresholds(args, loggers)
+    loggers.basiclog.info(
+        f"Assembly search: {len(args.assemblies.sample_ids)} sample(s), "
+        f"ploidy {args.assemblies.ploidy}, {len(guides)} guide(s)"
+    )
+    for guide in guides:
+        loggers.verboselog.debug(
+            f"Starting assembly off-target search for guide {guide.sequence}"
+        )
+        # scan every haplotype -> hidden per-haplotype intermediates + manifest
+        manifest = _scan_assemblies(
+            args.assemblies,
+            pam,
+            guide,
+            args.upstream,
+            args.outdir,
+            args.threads,
+            thresholds,
+            args.output_prefix,
+            loggers,
+        )
+        # liftover -> merge -> hg38 annotation -> partition (Phase C/D)
+        _finalize_assembly_search(manifest, args, loggers)
+
+
+def _finalize_assembly_search(
+    manifest: ScanManifest,
+    args: Crisprme2AssemblySearchInputArgs,
+    loggers: CrisprmeLoggers,
+) -> None:
+    loggers.basiclog.info(
+        f"Assembly finalization for guide {manifest.guide}: "
+        f"{len(manifest.records)} haplotype report(s) staged under "
+        f"{os.path.join(args.outdir, _ASSEMBLIES_DIR)}; liftover/merge/"
+        "annotation/partition not yet implemented (Phase C/D)"
+    )
+    # TODO: per record -> liftover(record.report, record.chain) -> hg38;
+    #   merge within sample (haplotype membership) then across samples
+    #   (union sample_set_id via SampleSetRegistry, decode via manifest.sample_table);
+    #   annotate in hg38; partition to
+    #   _partition_report_names(manifest.report_prefix, manifest.output_prefix, args.outdir);
+    #   finally shutil.rmtree(os.path.join(args.outdir, _ASSEMBLIES_DIR), ignore_errors=True).

@@ -26,8 +26,11 @@ import os
 
 
 from .crisprme2_argparse import Crisprme2ArgumentParser
-from .crisprme2_inputargs import Crisprme2SearchInputArgs
-from .search import execute_offtargets_search
+from .crisprme2_inputargs import (
+    Crisprme2AssemblySearchInputArgs,
+    Crisprme2SearchInputArgs,
+)
+from .search import execute_offtargets_search, execute_offtargets_search_assemblies
 from .exception_handlers import sigint_handler
 from .utils import COMMANDS, TOOLNAME
 from .version import __version__
@@ -355,8 +358,12 @@ def main():
         if not sys.argv[1:]:  # no input args -> print help and exit
             parser.error_noargs()
         args = parser.parse_args(sys.argv[1:])  # parse input args
-        if args.command == COMMANDS[0]:  # complete-search command
+        if args.command == COMMANDS[0]:  # search command
             execute_offtargets_search(Crisprme2SearchInputArgs(args, parser))
+        elif args.command == COMMANDS[1]:  # search-assemblies command
+            execute_offtargets_search_assemblies(
+                Crisprme2AssemblySearchInputArgs(args, parser)
+            )
     except KeyboardInterrupt:
         sigint_handler()  # catch SIGINT and exit gracefully
     sys.stdout.write(f"{TOOLNAME} - Elapsed time {(time() - start):.2f}s\n")
