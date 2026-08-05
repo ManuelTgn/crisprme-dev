@@ -178,18 +178,9 @@ def _process_contig(
                     )
 
 
-def _partition_report_names(
-    outpath: str, output_prefix: Optional[str], outdir: str
-) -> Tuple[str, str]:
-    if output_prefix:
-        base = os.path.join(outdir, output_prefix)
-        return (f"{base}_primary.tsv", f"{base}_alternative.tsv")
-    p = Path(outpath)
-    suffix = p.suffix or ".tsv"
-    return (
-        str(p.with_name(f"{p.stem}_primary{suffix}")),
-        str(p.with_name(f"{p.stem}_alternative{suffix}")),
-    )
+def _partition_report_names(prefix: str, outdir: str) -> Tuple[str, str]:
+    base = os.path.join(outdir, prefix)
+    return (f"{base}_primary.tsv", f"{base}_alternative.tsv")
 
 
 def _scan_reference_genome(
@@ -340,9 +331,7 @@ def _scan_reference_genome(
         # Pipeline closed -> the intermediate report is fully flushed,
         # split it into primary and alternative reports
         prefix = output_prefix or f"{guide.sequence}_{pam.pam}"
-        primary_path, alternative_path = _partition_report_names(
-            prefix, output_prefix, outdir
-        )
+        primary_path, alternative_path = _partition_report_names(prefix, outdir)
         partition_offtargets(
             outpath, primary_path, alternative_path, criteria, cluster_dist, loggers
         )
