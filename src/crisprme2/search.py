@@ -10,6 +10,13 @@ import tempfile
 
 
 from .annotation import FunctionalAnnotator
+from .assembly import (
+    AssemblyInputs,
+    Haplotype,
+    ScanManifest,
+    ScanRecord,
+    validate_haplotype_contigs,
+)
 from .crisprme_core_api import (
     init_native_logging,
     partition_offtargets,
@@ -29,10 +36,6 @@ from .scores import CfdScorer
 from .utils import TOOLNAME
 
 
-# ==============================================================================
-# Chunk geometry constants
-# ==============================================================================
-
 #: Number of base-pairs in each FASTA sub-chunk fed to the batcher.
 CHUNKSIZE: int = 100_000
 
@@ -49,9 +52,9 @@ _PIPELINE_CHUNKS: int = 10_000
 #: hold the transient intermediate report. Leading dot keeps it out of the way.
 _TMP_DIR_PREFIX: str = ".crisprme2_tmp_"
 
-# ==============================================================================
-# Internal search helpers
-# ==============================================================================
+# stable hidden dir under outdir holding per-haplotype intermediate reports;
+# consumed by liftover/merge, removed at the end of the assembly run (not here)
+_ASSEMBLIES_DIR = ".assemblies"
 
 
 def _compute_report_name(guide: Guide, pam: PAM, outdir: str) -> str:
@@ -317,6 +320,70 @@ def _scan_reference_genome(
     finally:
         # remove the hidden dir and everything in it, whatever happened
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def _assembly_report_path(outdir: str, hap: Haplotype, guide: Guide, pam: PAM) -> str:
+    hapdir = os.path.join(outdir, _ASSEMBLIES_DIR, hap.sample_id, f"hap{hap.hap_id}")
+    os.makedirs(hapdir, exist_ok=True)
+    return _compute_report_name(guide, pam, hapdir)
+
+
+def _scan_assemblies(
+    assemblies: AssemblyInputs,
+    pam: PAM,
+    guide: Guide,
+    upstream: bool,
+    outdir: str,
+    threads: int,
+    thresholds: Thresholds,
+    output_prefix: Optional[str],
+    loggers: CrisprmeLoggers,
+) -> ScanManifest:
+    sample_table = assemblies.sample_table
+    size = len(guide) + len(pam) + max(thresholds.bdna, thresholds.brna)
+    loggers.basiclog.info(
+        f"Assembly scan: guide={guide.sequence}, pam={pam.pam}, "
+        f"samples={len(assemblies.sample_ids)}, ploidy={assemblies.ploidy}"
+    )
+    records: List[ScanRecord] = []
+    for hap in assemblies.haplotypes():
+        sample_index = sample_table.index(hap.sample_id)
+        # single-haplotype FASTA set: its own contig namespace and contig ids
+        fastas = read_fasta_files([hap.fasta], loggers)
+        # every contig must carry this haplotype's (sample, hap) identity
+        validate_haplotype_contigs(hap, list(fastas.keys()))
+        contig_ids = _compute_contig_ids(list(fastas.keys()))
+        # scorers only; annotation runs in hg38 space during finalization
+        # Rebuilt per haplotype so each pipeline owns its own transform chain
+        transforms = _build_transforms(pam, [], contig_ids, loggers)
+        report_path = _assembly_report_path(outdir, hap, guide, pam)
+        loggers.verboselog.debug(
+            f"Scanning {hap.sample_id}#hap{hap.hap_id} "
+            f"(idx={sample_index}) -> {report_path}"
+        )
+        _scan_fasta_set(
+            fastas,
+            contig_ids,
+            guide,
+            pam,
+            size,
+            upstream,
+            report_path,
+            threads,
+            thresholds,
+            transforms,
+            [],  # annotations: none in native space
+            [],  # annotation_names: none
+            loggers,
+        )
+        records.append(
+            ScanRecord(hap.sample_id, sample_index, hap.hap_id, report_path, hap.chain)
+        )
+    loggers.basiclog.info(
+        f"Assembly scan complete: {len(records)} haplotype report(s) under "
+        f"{os.path.join(outdir, _ASSEMBLIES_DIR)}"
+    )
+    return ScanManifest(guide.sequence, pam.pam, records, sample_table, output_prefix)
 
 
 def _build_pam_and_guides(

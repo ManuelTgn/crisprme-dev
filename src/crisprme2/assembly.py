@@ -3,7 +3,7 @@
 from functools import cached_property
 from dataclasses import dataclass
 from glob import glob
-from typing import Dict, Iterable, Iterator, List, Tuple
+from typing import Dict, Iterable, Iterator, List, Optional, Tuple
 
 import gzip
 import os
@@ -110,6 +110,33 @@ class SampleTable:
 
     def __iter__(self) -> Iterator[str]:
         return iter(self._names)
+
+
+@dataclass(frozen=True)
+class ScanRecord:
+
+    sample_id: str
+    sample_index: int
+    hap_id: int
+    report: str
+    chain: str
+
+
+@dataclass
+class ScanManifest:
+
+    guide: str
+    pam: str
+    records: List[ScanRecord]
+    sample_table: SampleTable
+    output_prefix: Optional[str] = None
+
+    def reports(self) -> List[str]:
+        return [r.report for r in self.records]
+
+    @property
+    def report_prefix(self) -> str:
+        return self.output_prefix or f"{self.guide}_{self.pam}"
 
 
 def _glob_fastas(folder: str) -> List[str]:
