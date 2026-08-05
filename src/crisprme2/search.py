@@ -183,6 +183,90 @@ def _partition_report_names(prefix: str, outdir: str) -> Tuple[str, str]:
     return (f"{base}_primary.tsv", f"{base}_alternative.tsv")
 
 
+def _scan_fasta_set(
+    fastas: Dict[str, Fasta],
+    contig_ids: Dict[str, int],
+    guide: Guide,
+    pam: PAM,
+    size: int,
+    upstream: bool,
+    outpath: str,
+    threads: int,
+    thresholds: Thresholds,
+    transforms: List[Transformer],
+    annotations: List[str],
+    annotation_names: List[str],
+    loggers: CrisprmeLoggers,
+) -> str:
+    overlap = _compute_overlap(size)
+    # build batcher - one per run; reset between flushes by Rust
+    batcher = TargetBatcher.create(
+        pam, guide, size, upstream, overlap, threads, loggers
+    )
+    loggers.verboselog.debug(
+        f"TargetBatcher ready (id={batcher.id}, size={size}, overlap={overlap})"
+    )
+    # pipeline: one context for the entire assembly run
+    with Pipeline.create(
+        _PIPELINE_CHUNKS,
+        thresholds,
+        transforms,
+        pam,
+        upstream,
+        outpath,
+        contig_ids,
+        annotations,
+        annotation_names,
+        loggers,
+    ) as pipeline:
+        for contig, fasta in fastas.items():
+            contig_id = contig_ids[contig]
+            loggers.verboselog.debug(
+                f"Processing contig {contig!r} "
+                f"(id={contig_id}, threads={threads}, upstream={upstream}, size={size})"
+            )
+            contig_start = time()  # trace contig processing running time
+            try:
+                _process_contig(
+                    fasta,
+                    batcher,
+                    pipeline,
+                    contig,
+                    contig_id,
+                    overlap,
+                    size,
+                    upstream,
+                    loggers,
+                )
+            except Crisprme2SearchError:
+                raise  # already formatted; propagate as-is
+            except Exception as e:
+                loggers.errorlog.log_raise_exception(
+                    f"Processing contig {contig!r} failed: {e}",
+                    os.EX_DATAERR,
+                    Crisprme2SearchError,
+                )
+            finally:
+                loggers.verboselog.debug(
+                    f"Contig {contig!r} processed in {time() - contig_start:.2f}s"
+                )
+        # tail flush: submit whatever remains after the last auto-flush
+        tail_stats = batcher.stats()
+        if tail_stats.hits_in_batch > 0 or tail_stats.unique_windows > 0:
+            _submit_and_log(pipeline, batcher, "tail flush", loggers)
+        # finalize clears internal rust states; log what was flushed in the tail
+        final_stats = batcher.finalize()
+        loggers.basiclog.info(
+            f"Processing complete - batcher id = {batcher.id}, "
+            f"total chunks={batcher.total_chunks_fed}, "
+            f"total flushes={batcher.total_flushes}, "
+            f"tail residual: hits={final_stats.hits_in_batch}, "
+            f"unique windows={tail_stats.unique_windows}"
+        )
+        # pipeline.__exit__ signals EOF and joins all worker threads here
+    return outpath
+
+
 def _scan_reference_genome(
     fastas: Dict[str, Fasta],
     contig_ids: Dict[str, int],
@@ -201,68 +285,6 @@ def _scan_reference_genome(
     output_prefix: Optional[str],
     loggers: CrisprmeLoggers,
 ) -> None:
-    """
-    Scan every contig in *fastas* for off-target candidates and route
-    full batches through the alignment pipeline.
-
-    Manages three nested levels of state:
-
-    - **Pipeline context** — one :class:`Pipeline` for the entire genome
-      run, opened once and closed (workers joined) after all contigs.
-    - **Contig loop** — each contig is opened, chunked, and fully
-      processed before the next contig begins.
-    - **Chunk loop** — :data:`CHUNKSIZE`-bp sub-sequences (with overlap)
-      are fed to :class:`TargetBatcher` one at a time.  When
-      ``feed_chunk`` returns ``flushed=True``, the batch is submitted to
-      the pipeline before the next chunk is processed.
-
-    After all contigs are exhausted, a final tail flush submits any
-    windows that did not trigger an automatic flush, and
-    :meth:`~crisprme2.crisprme_core_api.TargetBatcher.finalize` clears
-    the internal Rust map.
-
-    Parameters
-    ----------
-    fastas : dict[str, Fasta]
-        Mapping from normalised contig name to an unopened
-        :class:`~crisprme2.fasta.Fasta` handle.
-    contig_ids : dict[str, int]
-        Mapping from contig name to its integer index.
-    guide : Guide
-        Guide RNA object; ``.sequence`` forwarded to the batcher.
-    pam : PAM
-        PAM object; ``.pam`` forwarded to the batcher.
-    size : int
-        Window extraction width (guide + PAM + bulge offset).
-    upstream : bool
-        ``True`` if the PAM is 3' of the protospacer (e.g. SpCas9 NGG).
-    outdir : str
-        Path of the CSV report. Truncated on open.
-    threads : int
-        Number of parallel scanner threads inside the batcher.
-    thresholds : Thresholds
-        Alignment thresholds (max mismatches, DNA bulges, RNA bulges)
-        forwarded to the pipeline and used at flush time.
-    transforms : list[callable]
-        Ordered transform callables forming the pipeline's scoring and
-        annotation stage chain.
-    loggers : CrisprmeLoggers
-        Shared logger bundle.
-
-    Raises
-    ------
-    Crisprme2SearchError
-        If any contig scan fails (FASTA I/O, position overflow, etc.).
-        The error message includes the contig name and the underlying cause.
-    """
-    overlap = _compute_overlap(size)
-    # build batcher - one per genome run; reset between flushes by Rust
-    batcher = TargetBatcher.create(
-        pam, guide, size, upstream, overlap, threads, loggers
-    )
-    loggers.verboselog.debug(
-        f"TargetBatcher ready (id={batcher.id}, size={size}, overlap={overlap})"
-    )
     # hidden, unique scratch dir inside outdir holds the transient intermediate.
     # The finally guarantees the dir and its contents are removed on success or
     # on any failure during pipeline setup, mining, or partitioning
@@ -270,64 +292,21 @@ def _scan_reference_genome(
     loggers.verboselog.debug(f"staging intermediate report in {tmpdir}")
     try:
         outpath = _compute_report_name(guide, pam, tmpdir)  # intermediate -> hidden dir
-        # pipeline: one context for the entire genome run
-        with Pipeline.create(
-            _PIPELINE_CHUNKS,
-            thresholds,
-            transforms,
+        _scan_fasta_set(
+            fastas,
+            contig_ids,
+            guide,
             pam,
+            size,
             upstream,
             outpath,
-            contig_ids,
+            threads,
+            thresholds,
+            transforms,
             annotations,
             annotation_names,
             loggers,
-        ) as pipeline:
-            for contig, fasta in fastas.items():
-                contig_id = contig_ids[contig]
-                loggers.verboselog.debug(
-                    f"Processing contig {contig!r} "
-                    f"(id={contig_id}, threads={threads}, upstream={upstream}, size={size})"
-                )
-                contig_start = time()  # trace contig processing running time
-                try:
-                    _process_contig(
-                        fasta,
-                        batcher,
-                        pipeline,
-                        contig,
-                        contig_id,
-                        overlap,
-                        size,
-                        upstream,
-                        loggers,
-                    )
-                except Crisprme2SearchError:
-                    raise  # already formatted; propagate as-is
-                except Exception as e:
-                    loggers.errorlog.log_raise_exception(
-                        f"Processing contig {contig!r} failed: {e}",
-                        os.EX_DATAERR,
-                        Crisprme2SearchError,
-                    )
-                finally:
-                    loggers.verboselog.debug(
-                        f"Contig {contig!r} processed in {time() - contig_start:.2f}s"
-                    )
-            # tail flush: submit whatever remains after the last auto-flush
-            tail_stats = batcher.stats()
-            if tail_stats.hits_in_batch > 0 or tail_stats.unique_windows > 0:
-                _submit_and_log(pipeline, batcher, "tail flush", loggers)
-            # finalize clears internal rust states; log what was flushed in the tail
-            final_stats = batcher.finalize()
-            loggers.basiclog.info(
-                f"Processing complete - batcher id = {batcher.id}, "
-                f"total chunks={batcher.total_chunks_fed}, "
-                f"total flushes={batcher.total_flushes}, "
-                f"tail residual: hits={final_stats.hits_in_batch}, "
-                f"unique windows={tail_stats.unique_windows}"
-            )
-            # pipeline.__exit__ signals EOF and joins all worker threads here
+        )
         # Pipeline closed -> the intermediate report is fully flushed,
         # split it into primary and alternative reports
         prefix = output_prefix or f"{guide.sequence}_{pam.pam}"
