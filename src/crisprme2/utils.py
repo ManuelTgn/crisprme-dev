@@ -35,7 +35,7 @@ TOOLNAME = "CRISPRme2"  # tool name
 COMMAND = "crisprme2"  # command line call
 
 # crisprhawk commands
-COMMANDS = ["complete-search"]
+COMMANDS = ["search", "search-assembly"]
 
 #: Allowed primary-criteria field tokens, in no particular order. The order the
 #: *user* supplies determines ranking priority; direction is inherent per field

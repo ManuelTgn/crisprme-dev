@@ -246,16 +246,16 @@ def create_search_parser(subparser: _SubParsersAction) -> Crisprme2ArgumentParse
     optional_group: _ArgumentGroup = parser_search.add_argument_group(
         "Optional arguments"
     )
-    # optional_group.add_argument(
-    #     "--vcf",
-    #     type=str,
-    #     metavar="VCF-DIR",
-    #     dest="vcf",
-    #     nargs="?",
-    #     default="",
-    #     help="optional folder storing VCF files to consider in the off-targets search. "
-    #     "(default: no variant-aware analysis)",
-    # )
+    optional_group.add_argument(
+        "--vcf",
+        type=str,
+        metavar="VCF-DIR",
+        dest="vcf",
+        nargs="?",
+        default="",
+        help="optional folder storing VCF files to consider in the off-targets search. "
+        "(default: no variant-aware analysis)",
+    )
     _add_common_search_arguments(required_group, optional_group)
     return parser_search
 
