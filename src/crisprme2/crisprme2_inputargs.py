@@ -9,7 +9,9 @@ import multiprocessing
 import os
 
 
+from .assembly import AssemblyInputs
 from .crisprme2_argparse import Crisprme2ArgumentParser
+from .crisprme2_error import Crisprme2AssemblyError
 from .dna_alphabet import DNA, IUPAC
 from .utils import CRITERIA
 
@@ -282,6 +284,31 @@ class Crisprme2SearchInputArgs(Crisprme2SearchInputArgsBase):
     @property
     def vcfs(self) -> List[str]:
         return self._vcfs if hasattr(self, "_vcfs") else []
+
+
+class Crisprme2AssemblySearchInputArgs(Crisprme2SearchInputArgsBase):
+
+    def _validate_inputs(self) -> None:
+        _check_folder(
+            self._args.assemblies,
+            self._parser,
+            f"Cannot find assemblies folder {self._args.assemblies}",
+        )
+        _check_folder(
+            self._args.chains,
+            self._parser,
+            f"Cannot find chains folder {self._args.chains}",
+        )
+        try:
+            self._assemblies = AssemblyInputs.discover(
+                self._args.assemblies, self._args.chains
+            )
+        except Crisprme2AssemblyError as e:
+            self._parser.error(str(e))
+
+    @property
+    def assemblies(self) -> AssemblyInputs:
+        return self._assemblies
 
 
 # ==============================================================================
