@@ -1,8 +1,9 @@
 """ """
 
+from functools import cached_property
 from dataclasses import dataclass
 from glob import glob
-from typing import Dict, Iterator, List, Tuple
+from typing import Dict, Iterable, Iterator, List, Tuple
 
 import gzip
 import os
@@ -40,6 +41,10 @@ class AssemblySample:
 class AssemblyInputs:
     samples: List[AssemblySample]
 
+    @cached_property
+    def sample_table(self) -> "SampleTable":
+        return SampleTable.from_assemblies(self)
+
     @property
     def ploidy(self) -> int:
         return self.samples[0].ploidy if self.samples else 0
@@ -71,6 +76,40 @@ class AssemblyInputs:
                 "a run must have the same number of haplotypes"
             )
         return cls(samples)
+
+
+class SampleTable:
+
+    def __init__(self, names: Iterable[str]) -> None:
+        self._names: Tuple[str, ...] = tuple(sorted(dict.fromkeys(names)))
+        self._index: Dict[str, int] = {n: i for i, n in enumerate(self._names)}
+
+    @classmethod
+    def from_assemblies(cls, assemblies: "AssemblyInputs") -> "SampleTable":
+        return cls(assemblies.sample_ids)
+
+    def index(self, sample_id: str) -> int:
+        try:
+            return self._index[sample_id]
+        except KeyError:
+            raise Crisprme2AssemblyError(f"Unknown sample id {sample_id!r}")
+
+    def name(self, index: int) -> str:
+        try:
+            return self._names[index]
+        except IndexError:
+            raise Crisprme2AssemblyError(f"Sample index {index} out of range")
+
+    @property
+    def names(self) -> Tuple[str, ...]:
+        """Index → name, in u32-index order (what the native table consumes)."""
+        return self._names
+
+    def __len__(self) -> int:
+        return len(self._names)
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._names)
 
 
 def _glob_fastas(folder: str) -> List[str]:
@@ -184,3 +223,25 @@ def _split_by_sample(
             Haplotype(sample_id, hap_id, fa, chain_by_key[(sample_id, hap_id)])
         )
     return by_sample
+
+
+def _haplotype_key_of_contigs(contigs: List[str], fasta: str) -> Tuple[str, int]:
+    if not contigs:
+        raise Crisprme2AssemblyError(f"FASTA {fasta} has no contigs")
+    keys = {_parse_pansn_header(c) for c in contigs}
+    if len(keys) != 1:
+        offenders = ", ".join(sorted(f"{s}#hap{h}" for s, h in keys))
+        raise Crisprme2AssemblyError(
+            f"FASTA {fasta} mixes multiple haplotypes ({offenders}); one "
+            "haplotype (sample#hap) per file is required"
+        )
+    return next(iter(keys))
+
+
+def validate_haplotype_contigs(haplotype: Haplotype, contigs: List[str]) -> None:
+    key = _haplotype_key_of_contigs(contigs, haplotype.fasta)
+    if key != (haplotype.sample_id, haplotype.hap_id):
+        raise Crisprme2AssemblyError(
+            f"FASTA {haplotype.fasta} headers report {key[0]}#hap{key[1]} but "
+            f"was registered as {haplotype.sample_id}#hap{haplotype.hap_id}"
+        )
