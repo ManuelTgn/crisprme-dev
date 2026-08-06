@@ -1,5 +1,6 @@
 """ """
 
+from abc import ABC, abstractmethod
 from argparse import Namespace
 from glob import glob
 from typing import List, Optional
@@ -8,7 +9,9 @@ import multiprocessing
 import os
 
 
+from .assembly import AssemblyInputs
 from .crisprme2_argparse import Crisprme2ArgumentParser
+from .crisprme2_error import Crisprme2AssemblyError
 from .dna_alphabet import DNA, IUPAC
 from .utils import CRITERIA
 
@@ -29,78 +32,50 @@ class Crisprme2InputArgs:
         self._outdir = outdir
 
     def _validate_threads(self) -> None:
-        """Validate and store the requested thread count.
-
-        Returns
-        -------
-        None
-        """
-        self._threads = _validate_threads_num(self._args.threads, self._parser)
+        threads: int = self._args.threads
+        max_threads = multiprocessing.cpu_count()
+        if threads < 0 or threads > max_threads:
+            self._parser.error(
+                f"Forbidden number of threads provided ({threads}). "
+                f"Max number of available cores: {max_threads}"
+            )
+        self._threads = max_threads if threads == 0 else threads
 
     @property
     def outdir(self) -> str:
-        """str: Absolute path of the validated output folder."""
         return self._outdir
 
     @property
     def threads(self) -> int:
-        """int: Requested number of threads."""
-        return self._args.threads
+        return self._threads
 
 
-class Crisprme2SearchInputArgs(Crisprme2InputArgs):
+class Crisprme2SearchInputArgsBase(Crisprme2InputArgs, ABC):
 
     def __init__(self, args: Namespace, parser: Crisprme2ArgumentParser) -> None:
-        """Initialize Crisprme2SearchInputArgs with parsed arguments and parser.
-
-        Stores the parsed arguments and parser, then checks argument consistency.
-
-        Args:
-            args (Namespace): The parsed arguments namespace.
-            parser (Crisprme2ArgumentParser): The argument parser instance.
-        """
         super().__init__(args, parser)
         self._check_consistency()
 
-    def _validate_genome_folder(self) -> None:
-        """Validate the genome folder and collect its FASTA files.
+    @abstractmethod
+    def _validate_inputs(self) -> None:
+        raise NotImplementedError
 
-        Returns
-        -------
-        None
-        """
-        _check_folder(
-            self._args.genome,
-            self._parser,
-            f"Cannot find input genome folder {self._args.genome}",
-        )
-        self._fastas = glob(os.path.join(self._args.genome, "*.fa")) + glob(
-            os.path.join(self._args.genome, "*.fasta")
-        )
-        _check_retrieved_files(
-            self._fastas, self._parser, f"No FASTA file found in {self._args.genome}"
-        )
-
-    def _validate_vcf_folder(self) -> None:
-        """Validate the VCF folder and collect its ``*.vcf.gz`` files.
-
-        Returns
-        -------
-        None
-
-        Raises
-        ------
-        SystemExit
-            Via the parser's ``error`` method if the folder is missing or
-            contains no VCF files.
-        """
-        _check_folder(
-            self._args.vcf, self._parser, f"Cannot find VCF folder {self._args.vcf}"
-        )
-        self._vcfs = glob(os.path.join(self._args.vcf, "*.vcf.gz"))
-        _check_retrieved_files(
-            self._vcfs, self._parser, f"No VCF file found in {self._args.vcf}"
-        )
+    def _check_consistency(self) -> None:
+        self._validate_inputs()  # genome/vcf OR assemblies/chains
+        self._validate_guides()
+        self._validate_pam()
+        self._validate_mm()
+        self._validate_bdna()
+        self._validate_brna()
+        self._validate_max_edit_dist()
+        if self._args.annotations:
+            self._validate_annotation()
+            self._validate_annotation_names()
+        self._validate_cluster_dist()
+        self._validate_prioritization_criteria()
+        self._validate_output_folder()
+        self._validate_output_prefix()
+        self._validate_threads()
 
     def _validate_guides(self) -> None:
         self._guide, self._guidefasta, self._guidebed = None, None, None
@@ -115,13 +90,6 @@ class Crisprme2SearchInputArgs(Crisprme2InputArgs):
                 f"Cannot find input guide FASTA {self._args.fasta_guide}",
             )
             self._guidefasta = self._args.fasta_guide
-        if self._args.bed_guide:
-            _check_file(
-                self._args.bed_guide,
-                self._parser,
-                f"Cannot find input guide BED {self._args.bed_guide}",
-            )
-            self._guidebed = self._args.bed_guide
 
     def _validate_pam(self) -> None:
         if any(nt.upper() not in IUPAC for nt in self._args.pam):
@@ -221,41 +189,6 @@ class Crisprme2SearchInputArgs(Crisprme2InputArgs):
             )
         self._output_prefix = prefix
 
-    def _check_consistency(self) -> None:
-        """Check the consistency and validity of parsed input arguments.
-
-        Validates the existence, type, and content of input files and directories,
-        and sets the list of VCF files found in the specified directory.
-
-        Returns:
-            None
-        """
-        self._validate_genome_folder()
-        if self._args.vcf:
-            self._validate_vcf_folder()
-        self._validate_guides()
-        self._validate_pam()
-        self._validate_mm()
-        self._validate_bdna()
-        self._validate_brna()
-        self._validate_max_edit_dist()
-        if self._args.annotations:
-            self._validate_annotation()
-            self._validate_annotation_names()
-        self._validate_cluster_dist()
-        self._validate_prioritization_criteria()
-        self._validate_output_folder()
-        self._validate_output_prefix()
-        self._validate_threads()
-
-    @property
-    def fastas(self) -> List[str]:
-        return self._fastas
-
-    @property
-    def vcfs(self) -> List[str]:
-        return self._vcfs if hasattr(self, "_vcfs") else []
-
     @property
     def guide(self) -> Optional[str]:
         return self._guide
@@ -263,10 +196,6 @@ class Crisprme2SearchInputArgs(Crisprme2InputArgs):
     @property
     def fasta_guide(self) -> Optional[str]:
         return self._guidefasta
-
-    @property
-    def bed_guide(self) -> Optional[str]:
-        return self._guidebed
 
     @property
     def pam(self) -> str:
@@ -311,16 +240,86 @@ class Crisprme2SearchInputArgs(Crisprme2InputArgs):
         return self._prioritization_criteria
 
     @property
-    def outdir(self) -> str:
-        return self._outdir
-
-    @property
     def output_prefix(self) -> Optional[str]:
         return self._output_prefix
 
+
+class Crisprme2SearchInputArgs(Crisprme2SearchInputArgsBase):
+
+    def __init__(self, args: Namespace, parser: Crisprme2ArgumentParser) -> None:
+        super().__init__(args, parser)
+        self._check_consistency()
+
+    def _validate_inputs(self) -> None:
+        self._validate_genome_folder()
+        if self._args.vcf:
+            self._validate_vcf_folder()
+
+    def _validate_genome_folder(self) -> None:
+        _check_folder(
+            self._args.genome,
+            self._parser,
+            f"Cannot find input genome folder {self._args.genome}",
+        )
+        self._fastas = glob(os.path.join(self._args.genome, "*.fa")) + glob(
+            os.path.join(self._args.genome, "*.fasta")
+        )
+        _check_retrieved_files(
+            self._fastas, self._parser, f"No FASTA file found in {self._args.genome}"
+        )
+
+    def _validate_vcf_folder(self) -> None:
+        _check_folder(
+            self._args.vcf, self._parser, f"Cannot find VCF folder {self._args.vcf}"
+        )
+        self._vcfs = glob(os.path.join(self._args.vcf, "*.vcf.gz"))
+        _check_retrieved_files(
+            self._vcfs, self._parser, f"No VCF file found in {self._args.vcf}"
+        )
+
     @property
-    def threads(self) -> int:
-        return self._threads
+    def fastas(self) -> List[str]:
+        return self._fastas
+
+    @property
+    def vcfs(self) -> List[str]:
+        return self._vcfs if hasattr(self, "_vcfs") else []
+
+
+class Crisprme2AssemblySearchInputArgs(Crisprme2SearchInputArgsBase):
+
+    def _validate_inputs(self) -> None:
+        _check_folder(
+            self._args.assemblies,
+            self._parser,
+            f"Cannot find assemblies folder {self._args.assemblies}",
+        )
+        _check_folder(
+            self._args.chains,
+            self._parser,
+            f"Cannot find chains folder {self._args.chains}",
+        )
+        try:
+            self._assemblies = AssemblyInputs.discover(
+                self._args.assemblies, self._args.chains
+            )
+        except Crisprme2AssemblyError as e:
+            self._parser.error(str(e))
+        self._validate_ambiguity_tolerance()
+
+    def _validate_ambiguity_tolerance(self) -> None:
+        tol = self._args.ambiguity_tolerance
+        if tol < 0:
+            self._parser.error(f"--ambiguity-tolerance must be >= 0, got {tol}")
+        self._ambiguity_tolerance = tol
+
+    @property
+    def assemblies(self) -> AssemblyInputs:
+        return self._assemblies
+
+    @property
+    def ambiguity_tolerance(self) -> int:
+        return self._ambiguity_tolerance
 
 
 # ==============================================================================
@@ -366,38 +365,6 @@ def _check_file(fname: str, parser: Crisprme2ArgumentParser, msg: str) -> None:
     """
     if not os.path.exists(fname) or not os.path.isfile(fname):
         parser.error(msg)
-
-
-def _validate_threads_num(threads: int, parser: Crisprme2ArgumentParser) -> int:
-    """Validate a thread count against the available CPU cores.
-
-    A value of ``0`` is interpreted as "use all cores".
-
-    Parameters
-    ----------
-    threads : int
-        Requested number of threads.
-    parser : Crisprme2ArgumentParser
-        Parser used to report the error.
-
-    Returns
-    -------
-    int
-        The validated thread count (all cores when *threads* is ``0``).
-
-    Raises
-    ------
-    SystemExit
-        Via the parser's ``error`` method if *threads* is negative or exceeds
-        the available cores.
-    """
-    max_threads = multiprocessing.cpu_count()
-    if threads < 0 or threads > max_threads:
-        parser.error(
-            f"Forbidden number of threads provided ({threads}). "
-            f"Max number of available cores: {max_threads}"
-        )
-    return max_threads if threads == 0 else threads
 
 
 def _check_retrieved_files(

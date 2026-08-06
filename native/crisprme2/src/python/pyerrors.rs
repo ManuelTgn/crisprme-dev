@@ -1,7 +1,9 @@
-use crate::error::crisprme_errors::{AnnotationError, ContigLabelsError, PamError, PartitionError};
-
 use pyo3::exceptions::{PyIOError, PyIndexError, PyValueError};
 use pyo3::PyErr;
+
+use crate::error::crisprme_errors::{
+    AnnotationError, ContigLabelsError, LiftoverError, PamError, PartitionError, ReportError,
+};
 
 impl From<AnnotationError> for PyErr {
     fn from(err: AnnotationError) -> PyErr {
@@ -48,7 +50,7 @@ impl From<ContigLabelsError> for PyErr {
 impl From<PartitionError> for PyErr {
     fn from(err: PartitionError) -> PyErr {
         match err {
-            // I/O failure -> IOError, consistent with AnnotationError::IoError
+            // I/O failure -> IOError
             PartitionError::Io { .. } => PyIOError::new_err(err.to_string()),
             // malformed report / bad config -> ValueError
             PartitionError::MissingHeader
@@ -56,6 +58,29 @@ impl From<PartitionError> for PyErr {
             | PartitionError::NotUtf8 { .. }
             | PartitionError::FieldCount { .. }
             | PartitionError::BadField { .. } => PyValueError::new_err(err.to_string()),
+        }
+    }
+}
+
+impl From<LiftoverError> for PyErr {
+    fn from(err: LiftoverError) -> PyErr {
+        match err {
+            LiftoverError::Io { .. } => PyIOError::new_err(err.to_string()),
+            LiftoverError::MalformedChain { .. }
+            | LiftoverError::MissingHeader
+            | LiftoverError::MissingColumn(_)
+            | LiftoverError::BadRow { .. } => PyValueError::new_err(err.to_string()),
+        }
+    }
+}
+
+impl From<ReportError> for PyErr {
+    fn from(err: ReportError) -> PyErr {
+        match err {
+            ReportError::Io { .. } => PyIOError::new_err(err.to_string()),
+            ReportError::MissingHeader
+            | ReportError::MissingColumn(_)
+            | ReportError::BadRow { .. } => PyValueError::new_err(err.to_string()),
         }
     }
 }

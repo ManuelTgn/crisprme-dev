@@ -3,20 +3,23 @@
 from pathlib import Path
 from pysam import faidx, FastaFile
 from pysam.utils import SamtoolsError
-from typing import Optional, List, Dict
+from typing import Dict, List, Optional
 
+import contextlib
 import os
 
 
 from .crisprme2_error import Crisprme2FastaError, Crisprme2SequenceError
+from .fasta_utils import (
+    fasta_extension,
+    find_fai_index,
+    find_gzi_index,
+    FAI,
+    FASTAEXTENSIONS,
+)
 from .logger import CrisprmeLoggers
 from .sequence import ContigSequence
-from .utils import FAI, find_fai_index
 from .warning import warning
-
-
-# fasta file extensions
-FASTAEXTENSIONS = valid_extensions = {"fasta", "fa", "fna", "ffn", "faa", "frn", "fas"}
 
 
 class Fasta:
@@ -31,11 +34,10 @@ class Fasta:
         self._init_contig_length()  # initialize contig name(s) and length(s)
 
     def _validate_file(self) -> None:
-        # check file extension
-        if (
-            os.path.splitext(os.path.basename(self._filepath))[1].replace(".", "")
-            not in FASTAEXTENSIONS
-        ):
+        # check file extension; bgzipped FASTA (.fa.gz) is accepted. The
+        # compression flag is stored for .gzi handling in _search_index
+        ext, self._compressed = fasta_extension(self._filepath)
+        if ext not in FASTAEXTENSIONS:
             self._loggers.errorlog.log_raise_exception(
                 f"File {self._filepath} does not have a standard FASTA extension",
                 os.EX_DATAERR,
@@ -49,17 +51,24 @@ class Fasta:
             self._loggers.verboselog.debug(
                 f"Creating index for FASTA: {self._filepath}"
             )
-            faidx(str(self._filepath))
-        except (OSError, Exception):
+            faidx(str(self._filepath))  # bgzipped input also yields a .gzi
+        except (OSError, Exception) as e:
             self._loggers.errorlog.log_exception(
-                f"Failed indexing for FASTA: {self._filepath}", os.EX_DATAERR
+                f"Failed indexing FASTA {self._filepath}: {e} "
+                "(compressed FASTA must be bgzip-compressed, not plain gzip)",
+                os.EX_DATAERR,
             )
         assert find_fai_index(str(self._filepath))  # now should be available
+        if self._compressed:  # bgzipped -> .gzi must sit alongside the .fai
+            assert find_gzi_index(str(self._filepath))
         return f"{self._filepath}.{FAI}"
 
     def _search_index(self) -> Path:
-        # look for index for the current fasta, if not found compute it
-        if find_fai_index(str(self._filepath)):  # index found, store it
+        # a plain FASTA needs only a .fai; a bgzipped FASTA needs a .gzi too.
+        # (Re)compute the index when either companion is missing
+        fai_present = find_fai_index(str(self._filepath))
+        gzi_present = (not self._compressed) or find_gzi_index(str(self._filepath))
+        if fai_present and gzi_present:  # indexes present, store the .fai path
             return Path(f"{self._filepath}.{FAI}")
         # index not found -> compute it de novo and store it in the same folder
         # as the input fasta
@@ -273,3 +282,30 @@ class GuideFasta(Fasta):
     @property
     def guides(self) -> List[str]:
         return self._guides
+
+
+def read_fasta_files(
+    fasta_files: List[str], loggers: CrisprmeLoggers
+) -> Dict[str, Fasta]:
+    fastas: Dict[str, Fasta] = {}  # fasta-contig map
+    for fasta_file in fasta_files:
+        loggers.verboselog.debug(f"Create FASTA object {fasta_file}")
+        try:  # validates + ensures index + contig/length
+            fasta = Fasta(fasta_file, loggers)
+            contigs = fasta.contigs
+        except Exception:  # Fasta() might have opened internally -> close
+            with contextlib.suppress(Exception):
+                fasta.close()  # type: ignore[name-defined]
+            loggers.errorlog.log_raise_exception(
+                f"Failed FASTA object creation: {fasta_file}", os.EX_IOERR, IOError
+            )
+        for contig in contigs:
+            if contig in fastas:
+                loggers.errorlog.log_raise_exception(
+                    f"Multiple FASTA files with contig {contig}",
+                    os.EX_DATAERR,
+                    Crisprme2FastaError,
+                )
+            fastas[contig] = fasta
+        loggers.verboselog.debug(f"Successfully FASTA object created: {fasta_file}")
+    return fastas

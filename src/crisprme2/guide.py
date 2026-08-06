@@ -7,7 +7,7 @@ import os
 import sys
 
 from .crisprme2_error import Crisprme2GuideError
-from .crisprme2_inputargs import Crisprme2SearchInputArgs
+from .crisprme2_inputargs import Crisprme2SearchInputArgsBase
 from .fasta import GuideFasta
 from .logger import CrisprmeLoggers
 from .sequence import Sequence, reverse_complement
@@ -159,15 +159,15 @@ def _read_guides_fasta(fasta_guides: str, loggers: CrisprmeLoggers) -> GuidesLis
     return GuidesList(guides, loggers)
 
 
-def read_guides(args: Crisprme2SearchInputArgs, loggers: CrisprmeLoggers) -> GuidesList:
+def read_guides(
+    args: Crisprme2SearchInputArgsBase, loggers: CrisprmeLoggers
+) -> GuidesList:
     # only one option is allowed
-    assert sum(bool(e) for e in [args.guide, args.fasta_guide, args.bed_guide]) == 1
+    assert sum(bool(e) for e in [args.guide, args.fasta_guide]) == 1
     if args.guide:  # --guide option (single guide)
         return _read_guide(args.guide, loggers)
     if args.fasta_guide:  # extract guide sequence
         return _read_guides_fasta(args.fasta_guide, loggers)
-    if args.bed_guide:  # --coordinates option (guides extracted via bed)
-        pass
     loggers.errorlog.log_raise_exception(
         "Invalid input: no guide input option selected. None of the following "
         "selected: --guide, --sequence, or --coordinates",

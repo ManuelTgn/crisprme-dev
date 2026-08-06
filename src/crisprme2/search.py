@@ -10,18 +10,30 @@ import tempfile
 
 
 from .annotation import FunctionalAnnotator
+from .assembly import (
+    AssemblyInputs,
+    Haplotype,
+    ScanManifest,
+    ScanRecord,
+    validate_haplotype_contigs,
+)
 from .crisprme_core_api import (
     init_native_logging,
     partition_offtargets,
+    lift_offtargets,
+    merge_assemblies,
     TargetBatcher,
     Pipeline,
     Thresholds,
 )
-from .crisprme2_inputargs import Crisprme2SearchInputArgs
+from .crisprme2_inputargs import (
+    Crisprme2AssemblySearchInputArgs,
+    Crisprme2SearchInputArgs,
+    Crisprme2SearchInputArgsBase,
+)
 from .crisprme2_error import Crisprme2SearchError
 from .dna_alphabet import reverse_complement
-from .fasta import Fasta
-from .fasta_utils import read_fasta_files
+from .fasta import Fasta, read_fasta_files
 from .guide import Guide, GuidesList, read_guides
 from .logger import CrisprmeLoggers
 from .pam import PAM, read_pam, SPCAS9, XCAS9
@@ -29,10 +41,6 @@ from .protocol import Transformer
 from .scores import CfdScorer
 from .utils import TOOLNAME
 
-
-# ==============================================================================
-# Chunk geometry constants
-# ==============================================================================
 
 #: Number of base-pairs in each FASTA sub-chunk fed to the batcher.
 CHUNKSIZE: int = 100_000
@@ -50,9 +58,17 @@ _PIPELINE_CHUNKS: int = 10_000
 #: hold the transient intermediate report. Leading dot keeps it out of the way.
 _TMP_DIR_PREFIX: str = ".crisprme2_tmp_"
 
-# ==============================================================================
-# Internal search helpers
-# ==============================================================================
+# stable hidden dir under outdir holding per-haplotype intermediate reports;
+# consumed by liftover/merge, removed at the end of the assembly run (not here)
+_ASSEMBLIES_DIR = ".assemblies"
+
+_ASSEMBLIES_REF_LIFT = ".reference_lifted.tsv"
+
+_ASSEMBLIES_MERGED = "merged.tsv"
+
+REPORT_HEADER: str =("chromosome\tstart\tstrand\tsgRNA_aligned\ttarget_aligned\t"
+"mismatches\tdna_bulges\trna_bulges\tbulge_type\tedit_distance\t"
+"CFD_score\tCRISTA_score\tElevation_score\taggregate_score")
 
 
 def _compute_report_name(guide: Guide, pam: PAM, outdir: str) -> str:
@@ -179,18 +195,93 @@ def _process_contig(
                     )
 
 
-def _partition_report_names(
-    outpath: str, output_prefix: Optional[str], outdir: str
-) -> Tuple[str, str]:
-    if output_prefix:
-        base = os.path.join(outdir, output_prefix)
-        return (f"{base}_primary.tsv", f"{base}_alternative.tsv")
-    p = Path(outpath)
-    suffix = p.suffix or ".tsv"
-    return (
-        str(p.with_name(f"{p.stem}_primary{suffix}")),
-        str(p.with_name(f"{p.stem}_alternative{suffix}")),
+def _partition_report_names(prefix: str, outdir: str) -> Tuple[str, str]:
+    base = os.path.join(outdir, prefix)
+    return (f"{base}_primary.tsv", f"{base}_alternative.tsv")
+
+
+def _scan_fasta_set(
+    fastas: Dict[str, Fasta],
+    contig_ids: Dict[str, int],
+    guide: Guide,
+    pam: PAM,
+    size: int,
+    upstream: bool,
+    outpath: str,
+    threads: int,
+    thresholds: Thresholds,
+    transforms: List[Transformer],
+    annotations: List[str],
+    annotation_names: List[str],
+    loggers: CrisprmeLoggers,
+) -> str:
+    overlap = _compute_overlap(size)
+    # build batcher - one per run; reset between flushes by Rust
+    batcher = TargetBatcher.create(
+        pam, guide, size, upstream, overlap, threads, loggers
     )
+    loggers.verboselog.debug(
+        f"TargetBatcher ready (id={batcher.id}, size={size}, overlap={overlap})"
+    )
+    # pipeline: one context for the entire assembly run
+    with Pipeline.create(
+        _PIPELINE_CHUNKS,
+        thresholds,
+        transforms,
+        pam,
+        upstream,
+        outpath,
+        contig_ids,
+        annotations,
+        annotation_names,
+        loggers,
+    ) as pipeline:
+        for contig, fasta in fastas.items():
+            contig_id = contig_ids[contig]
+            loggers.verboselog.debug(
+                f"Processing contig {contig!r} "
+                f"(id={contig_id}, threads={threads}, upstream={upstream}, size={size})"
+            )
+            contig_start = time()  # trace contig processing running time
+            try:
+                _process_contig(
+                    fasta,
+                    batcher,
+                    pipeline,
+                    contig,
+                    contig_id,
+                    overlap,
+                    size,
+                    upstream,
+                    loggers,
+                )
+            except Crisprme2SearchError:
+                raise  # already formatted; propagate as-is
+            except Exception as e:
+                loggers.errorlog.log_raise_exception(
+                    f"Processing contig {contig!r} failed: {e}",
+                    os.EX_DATAERR,
+                    Crisprme2SearchError,
+                )
+            finally:
+                loggers.verboselog.debug(
+                    f"Contig {contig!r} processed in {time() - contig_start:.2f}s"
+                )
+        # tail flush: submit whatever remains after the last auto-flush
+        tail_stats = batcher.stats()
+        if tail_stats.hits_in_batch > 0 or tail_stats.unique_windows > 0:
+            _submit_and_log(pipeline, batcher, "tail flush", loggers)
+        # finalize clears internal rust states; log what was flushed in the tail
+        final_stats = batcher.finalize()
+        loggers.basiclog.info(
+            f"Processing complete - batcher id = {batcher.id}, "
+            f"total chunks={batcher.total_chunks_fed}, "
+            f"total flushes={batcher.total_flushes}, "
+            f"tail residual: hits={final_stats.hits_in_batch}, "
+            f"unique windows={tail_stats.unique_windows}"
+        )
+        # pipeline.__exit__ signals EOF and joins all worker threads here
+    return outpath
 
 
 def _scan_reference_genome(
@@ -211,68 +302,6 @@ def _scan_reference_genome(
     output_prefix: Optional[str],
     loggers: CrisprmeLoggers,
 ) -> None:
-    """
-    Scan every contig in *fastas* for off-target candidates and route
-    full batches through the alignment pipeline.
-
-    Manages three nested levels of state:
-
-    - **Pipeline context** — one :class:`Pipeline` for the entire genome
-      run, opened once and closed (workers joined) after all contigs.
-    - **Contig loop** — each contig is opened, chunked, and fully
-      processed before the next contig begins.
-    - **Chunk loop** — :data:`CHUNKSIZE`-bp sub-sequences (with overlap)
-      are fed to :class:`TargetBatcher` one at a time.  When
-      ``feed_chunk`` returns ``flushed=True``, the batch is submitted to
-      the pipeline before the next chunk is processed.
-
-    After all contigs are exhausted, a final tail flush submits any
-    windows that did not trigger an automatic flush, and
-    :meth:`~crisprme2.crisprme_core_api.TargetBatcher.finalize` clears
-    the internal Rust map.
-
-    Parameters
-    ----------
-    fastas : dict[str, Fasta]
-        Mapping from normalised contig name to an unopened
-        :class:`~crisprme2.fasta.Fasta` handle.
-    contig_ids : dict[str, int]
-        Mapping from contig name to its integer index.
-    guide : Guide
-        Guide RNA object; ``.sequence`` forwarded to the batcher.
-    pam : PAM
-        PAM object; ``.pam`` forwarded to the batcher.
-    size : int
-        Window extraction width (guide + PAM + bulge offset).
-    upstream : bool
-        ``True`` if the PAM is 3' of the protospacer (e.g. SpCas9 NGG).
-    outdir : str
-        Path of the CSV report. Truncated on open.
-    threads : int
-        Number of parallel scanner threads inside the batcher.
-    thresholds : Thresholds
-        Alignment thresholds (max mismatches, DNA bulges, RNA bulges)
-        forwarded to the pipeline and used at flush time.
-    transforms : list[callable]
-        Ordered transform callables forming the pipeline's scoring and
-        annotation stage chain.
-    loggers : CrisprmeLoggers
-        Shared logger bundle.
-
-    Raises
-    ------
-    Crisprme2SearchError
-        If any contig scan fails (FASTA I/O, position overflow, etc.).
-        The error message includes the contig name and the underlying cause.
-    """
-    overlap = _compute_overlap(size)
-    # build batcher - one per genome run; reset between flushes by Rust
-    batcher = TargetBatcher.create(
-        pam, guide, size, upstream, overlap, threads, loggers
-    )
-    loggers.verboselog.debug(
-        f"TargetBatcher ready (id={batcher.id}, size={size}, overlap={overlap})"
-    )
     # hidden, unique scratch dir inside outdir holds the transient intermediate.
     # The finally guarantees the dir and its contents are removed on success or
     # on any failure during pipeline setup, mining, or partitioning
@@ -280,70 +309,25 @@ def _scan_reference_genome(
     loggers.verboselog.debug(f"staging intermediate report in {tmpdir}")
     try:
         outpath = _compute_report_name(guide, pam, tmpdir)  # intermediate -> hidden dir
-        # pipeline: one context for the entire genome run
-        with Pipeline.create(
-            _PIPELINE_CHUNKS,
-            thresholds,
-            transforms,
+        _scan_fasta_set(
+            fastas,
+            contig_ids,
+            guide,
             pam,
+            size,
             upstream,
             outpath,
-            contig_ids,
+            threads,
+            thresholds,
+            transforms,
             annotations,
             annotation_names,
             loggers,
-        ) as pipeline:
-            for contig, fasta in fastas.items():
-                contig_id = contig_ids[contig]
-                loggers.verboselog.debug(
-                    f"Processing contig {contig!r} "
-                    f"(id={contig_id}, threads={threads}, upstream={upstream}, size={size})"
-                )
-                contig_start = time()  # trace contig processing running time
-                try:
-                    _process_contig(
-                        fasta,
-                        batcher,
-                        pipeline,
-                        contig,
-                        contig_id,
-                        overlap,
-                        size,
-                        upstream,
-                        loggers,
-                    )
-                except Crisprme2SearchError:
-                    raise  # already formatted; propagate as-is
-                except Exception as e:
-                    loggers.errorlog.log_raise_exception(
-                        f"Processing contig {contig!r} failed: {e}",
-                        os.EX_DATAERR,
-                        Crisprme2SearchError,
-                    )
-                finally:
-                    loggers.verboselog.debug(
-                        f"Contig {contig!r} processed in {time() - contig_start:.2f}s"
-                    )
-            # tail flush: submit whatever remains after the last auto-flush
-            tail_stats = batcher.stats()
-            if tail_stats.hits_in_batch > 0 or tail_stats.unique_windows > 0:
-                _submit_and_log(pipeline, batcher, "tail flush", loggers)
-            # finalize clears internal rust states; log what was flushed in the tail
-            final_stats = batcher.finalize()
-            loggers.basiclog.info(
-                f"Processing complete - batcher id = {batcher.id}, "
-                f"total chunks={batcher.total_chunks_fed}, "
-                f"total flushes={batcher.total_flushes}, "
-                f"tail residual: hits={final_stats.hits_in_batch}, "
-                f"unique windows={tail_stats.unique_windows}"
-            )
-            # pipeline.__exit__ signals EOF and joins all worker threads here
+        )
         # Pipeline closed -> the intermediate report is fully flushed,
         # split it into primary and alternative reports
         prefix = output_prefix or f"{guide.sequence}_{pam.pam}"
-        primary_path, alternative_path = _partition_report_names(
-            prefix, output_prefix, outdir
-        )
+        primary_path, alternative_path = _partition_report_names(prefix, outdir)
         partition_offtargets(
             outpath, primary_path, alternative_path, criteria, cluster_dist, loggers
         )
@@ -352,8 +336,72 @@ def _scan_reference_genome(
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+def _assembly_report_path(outdir: str, hap: Haplotype, guide: Guide, pam: PAM) -> str:
+    hapdir = os.path.join(outdir, _ASSEMBLIES_DIR, hap.sample_id, f"hap{hap.hap_id}")
+    os.makedirs(hapdir, exist_ok=True)
+    return _compute_report_name(guide, pam, hapdir)
+
+
+def _scan_assemblies(
+    assemblies: AssemblyInputs,
+    pam: PAM,
+    guide: Guide,
+    upstream: bool,
+    outdir: str,
+    threads: int,
+    thresholds: Thresholds,
+    output_prefix: Optional[str],
+    loggers: CrisprmeLoggers,
+) -> ScanManifest:
+    sample_table = assemblies.sample_table
+    size = len(guide) + len(pam) + max(thresholds.bdna, thresholds.brna)
+    loggers.basiclog.info(
+        f"Assembly scan: guide={guide.sequence}, pam={pam.pam}, "
+        f"samples={len(assemblies.sample_ids)}, ploidy={assemblies.ploidy}"
+    )
+    records: List[ScanRecord] = []
+    for hap in assemblies.haplotypes():
+        sample_index = sample_table.index(hap.sample_id)
+        # single-haplotype FASTA set: its own contig namespace and contig ids
+        fastas = read_fasta_files([hap.fasta], loggers)
+        # every contig must carry this haplotype's (sample, hap) identity
+        validate_haplotype_contigs(hap, list(fastas.keys()))
+        contig_ids = _compute_contig_ids(list(fastas.keys()))
+        # scorers only; annotation runs in hg38 space during finalization
+        # Rebuilt per haplotype so each pipeline owns its own transform chain
+        transforms = _build_transforms(pam, [], contig_ids, loggers)
+        report_path = _assembly_report_path(outdir, hap, guide, pam)
+        loggers.verboselog.debug(
+            f"Scanning {hap.sample_id}#hap{hap.hap_id} "
+            f"(idx={sample_index}) -> {report_path}"
+        )
+        _scan_fasta_set(
+            fastas,
+            contig_ids,
+            guide,
+            pam,
+            size,
+            upstream,
+            report_path,
+            threads,
+            thresholds,
+            transforms,
+            [],  # annotations: none in native space
+            [],  # annotation_names: none
+            loggers,
+        )
+        records.append(
+            ScanRecord(hap.sample_id, sample_index, hap.hap_id, report_path, hap.chain)
+        )
+    loggers.basiclog.info(
+        f"Assembly scan complete: {len(records)} haplotype report(s) under "
+        f"{os.path.join(outdir, _ASSEMBLIES_DIR)}"
+    )
+    return ScanManifest(guide.sequence, pam.pam, records, sample_table, output_prefix)
+
+
 def _build_pam_and_guides(
-    args: Crisprme2SearchInputArgs, loggers: CrisprmeLoggers
+    args: Crisprme2SearchInputArgsBase, loggers: CrisprmeLoggers
 ) -> Tuple[GuidesList, PAM]:
     """
     Initialise PAM and guide data structures from validated CLI arguments.
@@ -378,7 +426,7 @@ def _build_pam_and_guides(
 
 
 def _build_thresholds(
-    args: Crisprme2SearchInputArgs, loggers: CrisprmeLoggers
+    args: Crisprme2SearchInputArgsBase, loggers: CrisprmeLoggers
 ) -> Thresholds:
     """
     Construct a :class:`~crisprme2.crisprme_core_api.Thresholds` instance
@@ -588,3 +636,104 @@ def execute_offtargets_search(args: Crisprme2SearchInputArgs) -> None:
                 args.output_prefix,
                 loggers,
             )
+
+
+def _finalize_assembly_search(
+    manifest: ScanManifest,
+    args: Crisprme2AssemblySearchInputArgs,
+    loggers: CrisprmeLoggers,
+) -> None:
+    """
+    Turn one guide's per-haplotype intermediates into the final report.
+
+    Phase C/D pipeline: lift each haplotype report to reference coordinates,
+    merge across haplotypes (within sample: copy-wise OR -> homozygous) and
+    across samples (union carriers) into one combined report, partition that in
+    reference space into ``<prefix>_{primary,alternative}.tsv``, then remove the
+    hidden ``.assemblies`` staging dir. Annotation is not yet applied.
+    """
+    assemblies_dir = os.path.join(args.outdir, _ASSEMBLIES_DIR)
+
+    # # ---- Phase C: lift each haplotype report to reference coordinates ----
+    # lift_reports: List[Tuple[str, int, int]] = []  # (lifted_path, sample_index, hap_id)
+    # for rec in manifest.records:
+    #     lifted_path = rec.report[: -len(".tsv")] + _ASSEMBLIES_REF_LIFT \
+    #         if rec.report.endswith(".tsv") else rec.report + _ASSEMBLIES_REF_LIFT
+    #     mapped, ambiguous, unmapped = lift_offtargets(
+    #         rec.report, rec.chain, lifted_path, args.ambiguity_tolerance, loggers
+    #     )
+    #     loggers.basiclog.info(
+    #         f"Liftover {rec.sample_id}#hap{rec.hap_id}: mapped={mapped}, "
+    #         f"ambiguous={ambiguous}, unmapped(assembly-specific)={unmapped}"
+    #     )
+    #     lift_reports.append((lifted_path, rec.sample_index, rec.hap_id))
+
+    # # ---- Phase D: merge every sample's lifted haplotypes into one report ----
+    # merged_path = os.path.join(assemblies_dir, f"{manifest.report_prefix}_{_ASSEMBLIES_MERGED}")
+    # n_rows = merge_assemblies(
+    #     sample_names=manifest.sample_table.names,
+    #     hap_layout=args.assemblies.hap_layout,
+    #     reports=lift_reports,
+    #     header=REPORT_HEADER,
+    #     out_path=merged_path,
+    #     merge_bp=args.cluster_dist,
+    #     criteria=args.prioritization_criteria,
+    #     loggers=loggers,
+    # )
+    # loggers.basiclog.info(
+    #     f"Merged {len(lift_reports)} haplotype report(s) -> {n_rows} rows in "
+    #     f"reference coordinates"
+    # )
+
+    # # ---- partition the merged report in reference space (same as ref path) ----
+    # primary_path, alternative_path = _partition_report_names(
+    #     manifest.report_prefix, args.outdir
+    # )
+    # partition_offtargets(
+    #     merged_path,
+    #     primary_path,
+    #     alternative_path,
+    #     args.prioritization_criteria,
+    #     args.cluster_dist,
+    #     loggers,
+    # )
+
+    # ---- teardown: the final report exists, drop the staging dir ----
+    # shutil.rmtree(assemblies_dir, ignore_errors=True)
+    # loggers.basiclog.info(
+    #     f"Assembly report for guide {manifest.guide} written: "
+    #     f"{primary_path} / {alternative_path}"
+    # )
+
+def execute_offtargets_search_assemblies(
+    args: Crisprme2AssemblySearchInputArgs,
+) -> None:
+    loggers = CrisprmeLoggers(args.outdir)  # initialize loggers
+    init_native_logging(loggers)  # initialize rust-level logging
+    loggers.basiclog.info(f"Start {TOOLNAME} assembly search")
+    # initialize pam and guide objects
+    guides, pam = _build_pam_and_guides(args, loggers)
+    # initialize thresholds object
+    thresholds = _build_thresholds(args, loggers)
+    loggers.basiclog.info(
+        f"Assembly search: {len(args.assemblies.sample_ids)} sample(s), "
+        f"ploidy {args.assemblies.ploidy}, {len(guides)} guide(s)"
+    )
+    for guide in guides:
+        loggers.verboselog.debug(
+            f"Starting assembly off-target search for guide {guide.sequence}"
+        )
+        # scan every haplotype -> hidden per-haplotype intermediates + manifest
+        manifest = _scan_assemblies(
+            args.assemblies,
+            pam,
+            guide,
+            args.upstream,
+            args.outdir,
+            args.threads,
+            thresholds,
+            args.output_prefix,
+            loggers,
+        )
+        # liftover -> merge -> hg38 annotation -> partition (Phase C/D)
+        _finalize_assembly_search(manifest, args, loggers)

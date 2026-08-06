@@ -23,9 +23,6 @@ STRAND = [0, 1]
 # tbi index file extension
 TBI = "tbi"
 
-# fai index file extension
-FAI = "fai"
-
 # off-targets length
 OFFTARGETLEN = 30
 
@@ -38,7 +35,7 @@ TOOLNAME = "CRISPRme2"  # tool name
 COMMAND = "crisprme2"  # command line call
 
 # crisprhawk commands
-COMMANDS = ["complete-search"]
+COMMANDS = ["search", "search-assembly"]
 
 #: Allowed primary-criteria field tokens, in no particular order. The order the
 #: *user* supplies determines ranking priority; direction is inherent per field
@@ -84,12 +81,4 @@ def find_tbi_index(fname: str) -> bool:
     tbi_index = f"{os.path.abspath(fname)}.{TBI}"
     if os.path.exists(tbi_index):  # index must be a non empty file
         return os.path.isfile(tbi_index) and os.stat(tbi_index).st_size > 0
-    return False
-
-
-def find_fai_index(fname: str) -> bool:
-    # avoid unexpected crashes due to file location
-    fai_index = f"{os.path.abspath(fname)}.{FAI}"
-    if os.path.exists(fai_index):  # index must be a non empty file
-        return os.path.isfile(fai_index) and os.stat(fai_index).st_size > 0
     return False

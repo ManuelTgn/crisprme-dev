@@ -6,11 +6,13 @@ mod bindings;
 mod crispr;
 mod engine;
 mod error;
+mod liftover;
 mod memory;
 mod model;
 mod partition;
 mod pipeline;
 pub mod python;
+mod report;
 mod sequence;
 mod storage;
 mod utils;
@@ -45,6 +47,8 @@ pub mod _crisprme2_native {
         annotation::features::FeatureRegistry,
         bindings::cuda,
         crispr::pam::PAM,
+        error::crisprme_errors::LiftoverError,
+        liftover::{apply::lift_report_core, chain::ChainFile, mapper::LiftOver},
         model::{
             alignment::AlignmentFrame,
             input::{SeqBatch, SeqFrame, SeqOccFrame, SEQ_MAX_LEN},
@@ -63,6 +67,12 @@ pub mod _crisprme2_native {
                 resolve::Resolver,
                 transform::PyTransform,
             },
+        },
+        report::{
+            global::{merge_global, SampleReports},
+            merge::HaplotypeReport,
+            samples::{SampleSetRegistry, SampleTable},
+            writer::write_report,
         },
         sequence::{iupac::Iupac, sequence::Sequence},
     };
@@ -415,6 +425,88 @@ pub mod _crisprme2_native {
             &criteria,
         )?;
         Ok((stats.clusters, stats.primary, stats.alternative))
+    }
+
+    /// Lift a per-haplotype intermediate report to hg38, writing an augmented copy.
+    /// Returns (mapped, ambiguous, unmapped) row counts.
+    #[pyfunction]
+    pub fn lift_report(
+        report_path: &str,
+        chain_path: &str,
+        out_path: &str,
+        tolerance: u64,
+        contig_col: &str,
+        start_col: &str,
+    ) -> PyResult<(u64, u64, u64)> {
+        let cf = ChainFile::from_path(chain_path)?;
+        let lifter = LiftOver::new(&cf, tolerance);
+        let reader = std::io::BufReader::new(
+            std::fs::File::open(report_path)
+                .map_err(|e| LiftoverError::io(format!("opening report {report_path}"), e))?,
+        );
+        let writer = std::io::BufWriter::new(
+            std::fs::File::create(out_path)
+                .map_err(|e| LiftoverError::io(format!("creating {out_path}"), e))?,
+        );
+        let s = lift_report_core(reader, writer, &lifter, contig_col, start_col)?;
+        Ok((s.mapped, s.ambiguous, s.unmapped))
+    }
+
+    /// Merge every sample's lifted haplotype reports into one final assembly
+    /// report in reference coordinates.
+    ///
+    /// `sample_names[i]` is the name of sample id `i`; `hap_layout[i]` is that
+    /// sample's sorted PanSN hap_ids (length == its ploidy). `reports` is a list
+    /// of `(lifted_report_path, sample_id, hap_id)`. `header` is the reference
+    /// REPORT_HEADER, reused verbatim; two columns (`samples`, `map_status`) are
+    /// appended. `merge_bp` is the single-linkage window; `criteria` selects the
+    /// per-cluster representative (`None` = default order). Returns rows written.
+    #[pyfunction]
+    #[pyo3(signature = (sample_names, hap_layout, reports, header, out_path, merge_bp, criteria=None))]
+    fn merge_assemblies(
+        sample_names: Vec<String>,
+        hap_layout: Vec<Vec<u32>>,
+        reports: Vec<(String, u32, u32)>,
+        header: &str,
+        out_path: PathBuf,
+        merge_bp: u32,
+        criteria: Option<Vec<String>>,
+    ) -> PyResult<usize> {
+        let criteria = match criteria {
+            Some(spec) => PrimaryCriteria::from_spec(&spec).map_err(PyValueError::new_err)?,
+            None => PrimaryCriteria::default(),
+        };
+        let table = SampleTable::new(sample_names, hap_layout);
+
+        // group (path, sample, hap_id) by sample id, preserving u32 order
+        let mut by_sample: std::collections::BTreeMap<u32, Vec<HaplotypeReport>> =
+            std::collections::BTreeMap::new();
+        for (path, sample, hap_id) in &reports {
+            by_sample.entry(*sample).or_default().push(HaplotypeReport {
+                path,
+                sample: *sample,
+                expected_hap: *hap_id,
+            });
+        }
+        let samples: Vec<SampleReports> = by_sample
+            .into_iter()
+            .map(|(sample, haplotypes)| SampleReports { sample, haplotypes })
+            .collect();
+
+        let mut registry = SampleSetRegistry::new();
+        let open = |p: &str| -> std::io::Result<Box<dyn std::io::BufRead>> {
+            Ok(Box::new(std::io::BufReader::new(std::fs::File::open(p)?)))
+        };
+        let rows = merge_global(&samples, &table, &mut registry, merge_bp, &criteria, &open)?;
+
+        let writer = std::io::BufWriter::new(std::fs::File::create(&out_path).map_err(|e| {
+            crate::error::crisprme_errors::ReportError::io(
+                format!("creating {}", out_path.display()),
+                e,
+            )
+        })?);
+        write_report(writer, header, &rows, &registry, &table)?;
+        Ok(rows.len())
     }
 
     /// Install the Rust -> Python logging bridge.
