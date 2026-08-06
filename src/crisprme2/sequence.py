@@ -31,7 +31,7 @@ class Sequence:
 
     def __init__(self, sequence: str, loggers: CrisprmeLoggers):
         self._loggers = loggers  # store loggers
-        self._sequence = list(sequence)  # store sequence as list of str
+        self._sequence = sequence  # store sequence as list of str
         self._length = len(self._sequence)
         self._stats: Optional[SequenceStats] = None  # basic sequence stats
 
@@ -39,7 +39,7 @@ class Sequence:
         return self._length
 
     def __str__(self) -> str:
-        return "".join(self._sequence)
+        return self._sequence
 
     def subsequence(self, start: int, end: int) -> str:
         if start < 0 or end > len(self) or start >= end:
@@ -48,7 +48,7 @@ class Sequence:
                 os.EX_DATAERR,
                 Crisprme2SequenceError,
             )
-        return "".join(self._sequence[start:end])
+        return self._sequence[start:end]
 
     def reverse_complement(self) -> List[str]:
         try:
@@ -63,13 +63,13 @@ class Sequence:
     def calculate_statistics(self) -> SequenceStats:
         if self._stats is not None:
             return self._stats
-        n_count = sum(1 for nt in self._sequence if nt.upper() == "N")
+        n_count = self._sequence.count("N") + self._sequence.count("n")
         self._stats = SequenceStats(length=len(self), n_count=n_count)
         return self._stats
 
     @property
     def sequence(self) -> str:
-        return "".join(self._sequence)
+        return self._sequence
 
 
 class ContigSequence(Sequence):
