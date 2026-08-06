@@ -17,8 +17,9 @@
 //! query `q_end - 1`), which the C2 mapper uses to place an individual base.
 
 use std::collections::HashMap;
-use std::fmt;
 use std::io::BufRead;
+
+use crate::error::crisprme_errors::LiftoverError;
 
 /// Query (reference) strand of a chain. The target (haplotype) side is always
 /// forward in UCSC chain format
@@ -29,11 +30,11 @@ pub enum Strand {
 }
 
 impl Strand {
-    fn parse(tok: &str, line: usize) -> Result<Self, ChainError> {
+    fn parse(tok: &str, line: usize) -> Result<Self, LiftoverError> {
         match tok {
             "+" => Ok(Strand::Forward),
             "-" => Ok(Strand::Reverse),
-            other => Err(ChainError::malformed(line, format!("invalid strand {other:?}"))),
+            other => Err(LiftoverError::malformed_chain(line, format!("invalid strand {other:?}"))),
         }
     }
 }
@@ -88,14 +89,14 @@ pub struct ChainFile {
 
 impl ChainFile {
     /// Parse a chain file from any buffered reader.
-    pub fn parse<R: BufRead>(reader: R) -> Result<Self, ChainError> {
+    pub fn parse<R: BufRead>(reader: R) -> Result<Self, LiftoverError> {
         let mut chains: Vec<Chain> = Vec::new();
         // (header, data lines as (size, Option<(dt, dq)>), header line number)
         let mut pending: Option<(Header, Vec<(u64, Option<(u64, u64)>)>, usize)> = None;
 
         for (idx, line_res) in reader.lines().enumerate() {
             let line_no = idx + 1;
-            let raw = line_res?;
+            let raw = line_res.map_err(|e| LiftoverError::io("reading chain file", e))?;
             let line = raw.trim();
 
             if line.is_empty() {
@@ -117,9 +118,9 @@ impl ChainFile {
                 match pending.as_mut() {
                     Some((_, data, _)) => data.push(parse_data_line(line, line_no)?),
                     None => {
-                        return Err(ChainError::malformed(
+                        return Err(LiftoverError::malformed_chain(
                             line_no,
-                            "alignment data line outside of any chain".into(),
+                            "alignment data line outside of any chain",
                         ))
                     }
                 }
@@ -141,8 +142,9 @@ impl ChainFile {
     }
 
     /// Open and parse a chain file from a path (plain text).
-    pub fn from_path(path: impl AsRef<std::path::Path>) -> Result<Self, ChainError> {
-        let file = std::fs::File::open(path)?;
+    pub fn from_path(path: impl AsRef<std::path::Path>) -> Result<Self, LiftoverError> {
+        let file = std::fs::File::open(&path)
+            .map_err(|e| LiftoverError::io(format!("opening chain file {}", path.as_ref().display()), e))?;
         Self::parse(std::io::BufReader::new(file))
     }
 
@@ -171,37 +173,6 @@ impl ChainFile {
     }
 }
 
-/// Error type for chain parsing. C2 maps this to a typed Python exception.
-#[derive(Debug)]
-pub enum ChainError {
-    Io(std::io::Error),
-    Malformed { line: usize, msg: String },
-}
-
-impl ChainError {
-    fn malformed(line: usize, msg: String) -> Self {
-        ChainError::Malformed { line, msg }
-    }
-}
-
-impl fmt::Display for ChainError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ChainError::Io(e) => write!(f, "I/O error reading chain file: {e}"),
-            ChainError::Malformed { line, msg } => {
-                write!(f, "malformed chain file at line {line}: {msg}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for ChainError {}
-
-impl From<std::io::Error> for ChainError {
-    fn from(e: std::io::Error) -> Self {
-        ChainError::Io(e)
-    }
-}
 
 struct Header {
     id: u64,
@@ -217,10 +188,10 @@ struct Header {
     q_end_file: u64,
 }
 
-fn parse_header(line: &str, ln: usize) -> Result<Header, ChainError> {
+fn parse_header(line: &str, ln: usize) -> Result<Header, LiftoverError> {
     let f: Vec<&str> = line.split_whitespace().collect();
     if f.len() != 12 && f.len() != 13 {
-        return Err(ChainError::malformed(
+        return Err(LiftoverError::malformed_chain(
             ln,
             format!("chain header expects 12 or 13 fields, got {}", f.len()),
         ));
@@ -229,7 +200,7 @@ fn parse_header(line: &str, ln: usize) -> Result<Header, ChainError> {
     let t_name = f[2].to_string();
     let t_size = parse_u64(f[3], ln, "tSize")?;
     if f[4] != "+" {
-        return Err(ChainError::malformed(
+        return Err(LiftoverError::malformed_chain(
             ln,
             format!("target strand must be '+', got {:?}", f[4]),
         ));
@@ -244,10 +215,10 @@ fn parse_header(line: &str, ln: usize) -> Result<Header, ChainError> {
     let id = if f.len() == 13 { parse_u64(f[12], ln, "id")? } else { 0 };
 
     if t_end < t_start || q_end_file < q_start_file {
-        return Err(ChainError::malformed(ln, "end < start in header".into()));
+        return Err(LiftoverError::malformed_chain(ln, "end < start in header"));
     }
     if t_end > t_size || q_end_file > q_size {
-        return Err(ChainError::malformed(ln, "end > size in header".into()));
+        return Err(LiftoverError::malformed_chain(ln, "end > size in header"));
     }
     Ok(Header {
         id, score, t_name, t_size, t_start, t_end, q_name, q_size, q_strand,
@@ -255,7 +226,7 @@ fn parse_header(line: &str, ln: usize) -> Result<Header, ChainError> {
     })
 }
 
-fn parse_data_line(line: &str, ln: usize) -> Result<(u64, Option<(u64, u64)>), ChainError> {
+fn parse_data_line(line: &str, ln: usize) -> Result<(u64, Option<(u64, u64)>), LiftoverError> {
     let f: Vec<&str> = line.split_whitespace().collect();
     match f.len() {
         1 => Ok((parse_u64(f[0], ln, "size")?, None)),
@@ -263,7 +234,7 @@ fn parse_data_line(line: &str, ln: usize) -> Result<(u64, Option<(u64, u64)>), C
             parse_u64(f[0], ln, "size")?,
             Some((parse_u64(f[1], ln, "dt")?, parse_u64(f[2], ln, "dq")?)),
         )),
-        n => Err(ChainError::malformed(
+        n => Err(LiftoverError::malformed_chain(
             ln,
             format!("alignment data line expects 1 or 3 fields, got {n}"),
         )),
@@ -274,9 +245,9 @@ fn finalize(
     h: Header,
     data: &[(u64, Option<(u64, u64)>)],
     ln: usize,
-) -> Result<Chain, ChainError> {
+) -> Result<Chain, LiftoverError> {
     if data.is_empty() {
-        return Err(ChainError::malformed(ln, "chain has no aligned blocks".into()));
+        return Err(LiftoverError::malformed_chain(ln, "chain has no aligned blocks"));
     }
     let last = data.len() - 1;
     let mut blocks = Vec::with_capacity(data.len());
@@ -285,12 +256,12 @@ fn finalize(
 
     for (i, &(size, gap)) in data.iter().enumerate() {
         if size == 0 {
-            return Err(ChainError::malformed(ln, "block size must be > 0".into()));
+            return Err(LiftoverError::malformed_chain(ln, "block size must be > 0"));
         }
         if gap.is_none() && i != last {
-            return Err(ChainError::malformed(
+            return Err(LiftoverError::malformed_chain(
                 ln,
-                "single-field block appears before end of chain".into(),
+                "single-field block appears before end of chain",
             ));
         }
         let (q_start, q_end) = match h.q_strand {
@@ -307,13 +278,13 @@ fn finalize(
 
     // block advances must reproduce the header spans exactly (file frame)
     if t != h.t_end {
-        return Err(ChainError::malformed(
+        return Err(LiftoverError::malformed_chain(
             ln,
             format!("target blocks span to {t} but header tEnd={}", h.t_end),
         ));
     }
     if q != h.q_end_file {
-        return Err(ChainError::malformed(
+        return Err(LiftoverError::malformed_chain(
             ln,
             format!("query blocks span to {q} but header qEnd={}", h.q_end_file),
         ));
@@ -332,14 +303,14 @@ fn finalize(
     })
 }
 
-fn parse_u64(tok: &str, ln: usize, field: &str) -> Result<u64, ChainError> {
+fn parse_u64(tok: &str, ln: usize, field: &str) -> Result<u64, LiftoverError> {
     tok.parse::<u64>()
-        .map_err(|_| ChainError::malformed(ln, format!("invalid {field} value {tok:?}")))
+        .map_err(|_| LiftoverError::malformed_chain(ln, format!("invalid {field} value {tok:?}")))
 }
 
-fn parse_i64(tok: &str, ln: usize, field: &str) -> Result<i64, ChainError> {
+fn parse_i64(tok: &str, ln: usize, field: &str) -> Result<i64, LiftoverError> {
     tok.parse::<i64>()
-        .map_err(|_| ChainError::malformed(ln, format!("invalid {field} value {tok:?}")))
+        .map_err(|_| LiftoverError::malformed_chain(ln, format!("invalid {field} value {tok:?}")))
 }
 
 
@@ -348,7 +319,7 @@ mod tests {
     use super::*;
     use std::io::Cursor;
 
-    fn parse_str(s: &str) -> Result<ChainFile, ChainError> {
+    fn parse_str(s: &str) -> Result<ChainFile, LiftoverError> {
         ChainFile::parse(Cursor::new(s))
     }
 
@@ -404,18 +375,18 @@ chain 22419049526 CM101396.1 244346724 + 0 5 chr2 242193529 + 0 5 1
     #[test]
     fn cumulative_mismatch_is_error() {
         let e = parse_str("chain 1 T 20 + 0 99 Q 20 + 0 5 1\n5\n").unwrap_err();
-        assert!(matches!(e, ChainError::Malformed { .. }));
+        assert!(matches!(e, LiftoverError::Malformed { .. }));
     }
 
     #[test]
     fn data_outside_chain_is_error() {
-        assert!(matches!(parse_str("5 2 3\n").unwrap_err(), ChainError::Malformed { .. }));
+        assert!(matches!(parse_str("5 2 3\n").unwrap_err(), LiftoverError::Malformed { .. }));
     }
 
     #[test]
     fn single_field_before_end_is_error() {
         let e = parse_str("chain 1 T 20 + 0 11 Q 20 + 0 11 1\n5\n4 0 0\n").unwrap_err();
-        assert!(matches!(e, ChainError::Malformed { .. }));
+        assert!(matches!(e, LiftoverError::Malformed { .. }));
     }
 
     #[test]
