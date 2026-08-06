@@ -19,6 +19,7 @@ from .assembly import (
 )
 from .crisprme_core_api import (
     init_native_logging,
+    lift_offtargets,
     partition_offtargets,
     TargetBatcher,
     Pipeline,
@@ -628,6 +629,35 @@ def execute_offtargets_search(args: Crisprme2SearchInputArgs) -> None:
             )
 
 
+def _finalize_assembly_search(
+    manifest: ScanManifest,
+    args: Crisprme2AssemblySearchInputArgs,
+    loggers: CrisprmeLoggers,
+) -> None:
+    # ---- Phase C: lift each haplotype report to hg38 (additive) ----
+    lifted: List[Tuple[ScanRecord, str]] = []
+    for rec in manifest.records:
+        out_path = rec.report[:-4] + ".hg38.tsv" if rec.report.endswith(".tsv") \
+            else rec.report + ".hg38.tsv"
+        mapped, ambiguous, unmapped = lift_offtargets(
+            rec.report, rec.chain, out_path, args.ambiguity_tolerance, loggers
+        )
+        loggers.basiclog.info(
+            f"Liftover {rec.sample_id}#hap{rec.hap_id}: mapped={mapped}, "
+            f"ambiguous={ambiguous}, unmapped(assembly-specific)={unmapped}"
+        )
+        lifted.append((rec, out_path))
+
+    # ---- Phase D (TODO): merge within/across samples on the hg38 clustered,
+    #   sequence-aware key; union sample sets; annotate in hg38; partition to
+    #   _partition_report_names(manifest.report_prefix, args.outdir); then
+    #   shutil.rmtree(os.path.join(args.outdir, _ASSEMBLIES_DIR), ignore_errors=True).
+    loggers.basiclog.info(
+        f"Assembly finalization for guide {manifest.guide}: {len(lifted)} report(s) "
+        "lifted to hg38; merge/annotation/partition not yet implemented (Phase D)"
+    )
+
+
 def execute_offtargets_search_assemblies(
     args: Crisprme2AssemblySearchInputArgs,
 ) -> None:
@@ -660,22 +690,3 @@ def execute_offtargets_search_assemblies(
         )
         # liftover -> merge -> hg38 annotation -> partition (Phase C/D)
         _finalize_assembly_search(manifest, args, loggers)
-
-
-def _finalize_assembly_search(
-    manifest: ScanManifest,
-    args: Crisprme2AssemblySearchInputArgs,
-    loggers: CrisprmeLoggers,
-) -> None:
-    loggers.basiclog.info(
-        f"Assembly finalization for guide {manifest.guide}: "
-        f"{len(manifest.records)} haplotype report(s) staged under "
-        f"{os.path.join(args.outdir, _ASSEMBLIES_DIR)}; liftover/merge/"
-        "annotation/partition not yet implemented (Phase C/D)"
-    )
-    # TODO: per record -> liftover(record.report, record.chain) -> hg38;
-    #   merge within sample (haplotype membership) then across samples
-    #   (union sample_set_id via SampleSetRegistry, decode via manifest.sample_table);
-    #   annotate in hg38; partition to
-    #   _partition_report_names(manifest.report_prefix, manifest.output_prefix, args.outdir);
-    #   finally shutil.rmtree(os.path.join(args.outdir, _ASSEMBLIES_DIR), ignore_errors=True).

@@ -305,10 +305,21 @@ class Crisprme2AssemblySearchInputArgs(Crisprme2SearchInputArgsBase):
             )
         except Crisprme2AssemblyError as e:
             self._parser.error(str(e))
+        self._validate_ambiguity_tolerance()
+
+    def _validate_ambiguity_tolerance(self) -> None:
+        tol = self._args.ambiguity_tolerance
+        if tol < 0:
+            self._parser.error(f"--ambiguity-tolerance must be >= 0, got {tol}")
+        self._ambiguity_tolerance = tol
 
     @property
     def assemblies(self) -> AssemblyInputs:
         return self._assemblies
+
+    @property
+    def ambiguity_tolerance(self) -> int:
+        return self._ambiguity_tolerance
 
 
 # ==============================================================================
@@ -354,38 +365,6 @@ def _check_file(fname: str, parser: Crisprme2ArgumentParser, msg: str) -> None:
     """
     if not os.path.exists(fname) or not os.path.isfile(fname):
         parser.error(msg)
-
-
-def _validate_threads_num(threads: int, parser: Crisprme2ArgumentParser) -> int:
-    """Validate a thread count against the available CPU cores.
-
-    A value of ``0`` is interpreted as "use all cores".
-
-    Parameters
-    ----------
-    threads : int
-        Requested number of threads.
-    parser : Crisprme2ArgumentParser
-        Parser used to report the error.
-
-    Returns
-    -------
-    int
-        The validated thread count (all cores when *threads* is ``0``).
-
-    Raises
-    ------
-    SystemExit
-        Via the parser's ``error`` method if *threads* is negative or exceeds
-        the available cores.
-    """
-    max_threads = multiprocessing.cpu_count()
-    if threads < 0 or threads > max_threads:
-        parser.error(
-            f"Forbidden number of threads provided ({threads}). "
-            f"Max number of available cores: {max_threads}"
-        )
-    return max_threads if threads == 0 else threads
 
 
 def _check_retrieved_files(

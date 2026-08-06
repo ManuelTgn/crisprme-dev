@@ -312,6 +312,17 @@ def create_assembly_search_parser(
     )
     optional_group: _ArgumentGroup = parser_asm.add_argument_group("Optional arguments")
     _add_common_search_arguments(required_group, optional_group)
+    optional_group.add_argument(
+        "--ambiguity-tolerance",
+        type=int,
+        metavar="BP",
+        dest="ambiguity_tolerance",
+        default=10,
+        help="max bp a secondary chain's mapping may differ from the primary "
+        "before a lifted off-target is flagged ambiguous. Sits just above the "
+        "clustering merge distance so same-site secondaries don't trip it "
+        "(default: 10)",
+    )
     return parser_asm
 
 
