@@ -6,6 +6,7 @@ mod bindings;
 mod crispr;
 mod engine;
 mod error;
+mod liftover;
 mod memory;
 mod model;
 mod partition;
@@ -45,6 +46,8 @@ pub mod _crisprme2_native {
         annotation::features::FeatureRegistry,
         bindings::cuda,
         crispr::pam::PAM,
+        error::crisprme_errors::LiftoverError,
+        liftover::{apply::lift_report_core, chain::ChainFile, mapper::LiftOver},
         model::{
             alignment::AlignmentFrame,
             input::{SeqBatch, SeqFrame, SeqOccFrame, SEQ_MAX_LEN},
@@ -415,6 +418,31 @@ pub mod _crisprme2_native {
             &criteria,
         )?;
         Ok((stats.clusters, stats.primary, stats.alternative))
+    }
+
+    /// Lift a per-haplotype intermediate report to hg38, writing an augmented copy.
+    /// Returns (mapped, ambiguous, unmapped) row counts.
+    #[pyfunction]
+    pub fn lift_report(
+        report_path: &str,
+        chain_path: &str,
+        out_path: &str,
+        tolerance: u64,
+        contig_col: &str,
+        start_col: &str,
+    ) -> PyResult<(u64, u64, u64)> {
+        let cf = ChainFile::from_path(chain_path)?;
+        let lifter = LiftOver::new(&cf, tolerance);
+        let reader = std::io::BufReader::new(
+            std::fs::File::open(report_path)
+                .map_err(|e| LiftoverError::io(format!("opening report {report_path}"), e))?,
+        );
+        let writer = std::io::BufWriter::new(
+            std::fs::File::create(out_path)
+                .map_err(|e| LiftoverError::io(format!("creating {out_path}"), e))?,
+        );
+        let s = lift_report_core(reader, writer, &lifter, contig_col, start_col)?;
+        Ok((s.mapped, s.ambiguous, s.unmapped))
     }
 
     /// Install the Rust -> Python logging bridge.

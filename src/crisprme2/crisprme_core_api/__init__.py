@@ -1,5 +1,6 @@
 from .alignment import AlignmentBatch
 from .feature_registry import FeatureRegistry
+from .liftover import lift_offtargets
 from .native_logging import init_native_logging
 from .partition import partition_offtargets
 from .pipeline import Pipeline

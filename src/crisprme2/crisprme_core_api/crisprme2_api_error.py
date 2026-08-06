@@ -130,17 +130,18 @@ class Crisprme2PartitionError(Crisprme2Error):
 
 
 class Crisprme2PipelineLifecycleError(Crisprme2PipelineError):
-    """
-    Raised when the pipeline is used outside its valid lifecycle window.
-
-    Typical causes:
-    - Calling :meth:`~Pipeline.submit` after the context manager has exited.
-    - Re-entering a pipeline context manager that has already been closed.
-    - The Rust ``close()`` call raises during ``__exit__``.
-    """
 
     def __init__(self, value: str) -> None:
         super().__init__(value)
 
     def __str__(self) -> str:
+        return super().__str__()
+
+
+class Crisprme2LiftoverError(Crisprme2Error):
+
+    def __init__(self, value: str) -> None:
+        super().__init__(value)
+
+    def __str__(self):
         return super().__str__()
