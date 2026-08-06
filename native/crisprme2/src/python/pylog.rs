@@ -27,8 +27,10 @@ use std::fmt::{Debug, Write as _};
 use pyo3::prelude::*;
 use pyo3::types::PyAnyMethods;
 use tracing::field::{Field, Visit};
-use tracing::{Event, Level, Subscriber};
+use tracing::subscriber::Interest;
+use tracing::{Event, Level, Metadata, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
+use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::registry::LookupSpan;
 
 /// Owned handles to the three underlying `logging.Logger` objects.
@@ -44,6 +46,10 @@ struct PyLoggers {
 /// A `tracing` [`Layer`] that forwards events to the Python loggers.
 pub struct PyLoggerLayer {
     loggers: PyLoggers,
+    /// Most verbose level this layer forwards. Events below it are dropped
+    /// before the message is formatted and before the GIL is acquired.
+    /// Fixed at install time; never mutated
+    max_level: Level,
 }
 
 impl PyLoggerLayer {
@@ -70,12 +76,15 @@ impl PyLoggerLayer {
             .call_method0("get_logger")?
             .unbind();
         Ok(Self {
-            loggers: PyLoggers {
-                basic,
-                verbose,
-                error,
-            },
+            loggers: PyLoggers {basic, verbose, error},
+            max_level: Level::DEBUG,
         })
+    }
+
+    /// Override the forwarding level. Call immediately after `from_bundle`
+    pub fn with_max_level(mut self, level: Level) -> Self {
+        self.max_level = level;
+        self
     }
 }
 
@@ -98,6 +107,24 @@ impl<S> Layer<S> for PyLoggerLayer
 where
     S: Subscriber + for<'a> LookupSpan<'a>,
 {
+    /// Cached once per callsite by `tracing`. `max_level` is immutable after
+    /// install, so `Interest::never()` can never go stale.
+    fn register_callsite(&self, meta: &Metadata<'_>) -> Interest {
+        if *meta.level() <= self.max_level {
+            Interest::always()
+        } else {
+            Interest::never()
+        }
+    }
+
+    fn max_level_hint(&self) -> Option<LevelFilter> {
+        Some(LevelFilter::from_level(self.max_level))
+    }
+
+    fn enabled(&self, meta: &Metadata<'_>, _ctx: Context<'_, S>) -> bool {
+        *meta.level() <= self.max_level
+    }
+
     fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
         let mut visitor = MessageVisitor::default();
         event.record(&mut visitor);

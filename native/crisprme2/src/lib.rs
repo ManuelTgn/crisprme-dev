@@ -518,14 +518,27 @@ pub mod _crisprme2_native {
     ///
     /// `TRACE` is filtered out to keep hot-path `trace!` events off the GIL.
     #[pyfunction]
-    fn init_logging(loggers: &Bound<'_, PyAny>) -> PyResult<bool> {
+    #[pyo3(signature = (loggers, max_level = "debug"))]
+    fn init_logging(loggers: &Bound<'_, PyAny>, max_level: &str) -> PyResult<bool> {
         use tracing_subscriber::prelude::*;
-        use tracing_subscriber::{filter::LevelFilter, fmt};
+        use tracing_subscriber::filter::LevelFilter;
 
-        let py_layer = crate::python::pylog::PyLoggerLayer::from_bundle(loggers)?;
+        let level = match max_level.to_ascii_lowercase().as_str() {
+            "error" => tracing::Level::ERROR,
+            "warn"  => tracing::Level::WARN,
+            "info"  => tracing::Level::INFO,
+            "debug" => tracing::Level::DEBUG,
+            "trace" => tracing::Level::TRACE,
+            other => return Err(PyValueError::new_err(
+                format!("invalid native log level {other:?}; expected one of \
+                         error|warn|info|debug|trace"))),
+        };
+
+        let py_layer = crate::python::pylog::PyLoggerLayer::from_bundle(loggers)?
+            .with_max_level(level);
 
         let installed = tracing_subscriber::registry()
-            .with(LevelFilter::DEBUG)
+            .with(LevelFilter::from_level(level))
             .with(py_layer)
             .try_init()
             .is_ok();
