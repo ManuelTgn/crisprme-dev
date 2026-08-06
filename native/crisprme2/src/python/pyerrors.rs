@@ -2,7 +2,7 @@ use pyo3::exceptions::{PyIOError, PyIndexError, PyValueError};
 use pyo3::PyErr;
 
 use crate::error::crisprme_errors::{
-    AnnotationError, ContigLabelsError, LiftoverError, PamError, PartitionError,
+    AnnotationError, ContigLabelsError, LiftoverError, PamError, PartitionError, ReportError,
 };
 
 impl From<AnnotationError> for PyErr {
@@ -70,6 +70,17 @@ impl From<LiftoverError> for PyErr {
             | LiftoverError::MissingHeader
             | LiftoverError::MissingColumn(_)
             | LiftoverError::BadRow { .. } => PyValueError::new_err(err.to_string()),
+        }
+    }
+}
+
+impl From<ReportError> for PyErr {
+    fn from(err: ReportError) -> PyErr {
+        match err {
+            ReportError::Io { .. } => PyIOError::new_err(err.to_string()),
+            ReportError::MissingHeader
+            | ReportError::MissingColumn(_)
+            | ReportError::BadRow { .. } => PyValueError::new_err(err.to_string()),
         }
     }
 }

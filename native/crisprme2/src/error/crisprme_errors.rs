@@ -174,3 +174,35 @@ impl LiftoverError {
         }
     }
 }
+
+/// Errors raised while merging lifted reports into the assembly report.
+///
+/// Maps to Python through [`crate::python::pyerrors`]: `Io` -> `IOError`,
+/// the rest -> `ValueError`.
+#[derive(Debug, Error)]
+pub enum ReportError {
+    #[error("{context}: {source}")]
+    Io {
+        context: String,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("lifted report has no header line")]
+    MissingHeader,
+
+    #[error("report is missing required column {0:?}")]
+    MissingColumn(String),
+
+    #[error("report line {line}: {msg}")]
+    BadRow { line: usize, msg: String },
+}
+
+impl ReportError {
+    pub(crate) fn io(context: impl Into<String>, source: std::io::Error) -> Self {
+        Self::Io {
+            context: context.into(),
+            source,
+        }
+    }
+}

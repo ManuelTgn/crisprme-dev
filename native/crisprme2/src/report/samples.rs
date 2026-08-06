@@ -154,6 +154,12 @@ impl SampleSetRegistry {
             table.render_presence(sample, mask, out);
         }
     }
+
+    /// Canonical `(sample, mask)` entries of an interned set, sorted by sample
+    #[inline]
+    pub fn entries_of(&self, id: SampleSetId) -> &[(u32, Presence)] {
+        &self.sets[id.0 as usize].0
+    }
 }
 
 #[cfg(test)]
