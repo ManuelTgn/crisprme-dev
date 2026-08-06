@@ -127,3 +127,41 @@ impl PartitionError {
         }
     }
 }
+
+/// Errors raised while parsing a chain file or applying liftover to a report.
+///
+/// Maps to Python through [`crate::python::pyerrors`]: `Io` -> `IOError`, the
+/// rest -> `ValueError`.
+#[derive(Debug, Error)]
+pub enum LiftoverError {
+    #[error("{context}: {source}")]
+    Io {
+        context: String,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("malformed chain file at line {line}: {msg}")]
+    MalformedChain { line: usize, msg: String },
+
+    #[error("intermediate report has no header line")]
+    MissingHeader,
+
+    #[error("report is missing required column {0:?}")]
+    MissingColumn(String),
+
+    #[error("report line {line}: {msg}")]
+    BadRow { line: usize, msg: String },
+}
+
+impl LiftoverError {
+    pub(crate) fn io(context: impl Into<String>, source: std::io::Error) -> Self {
+        Self::Io { context: context.into(), source }
+    }
+    pub(crate) fn malformed_chain(line: usize, msg: impl Into<String>) -> Self {
+        Self::MalformedChain { line, msg: msg.into() }
+    }
+    pub(crate) fn bad_row(line: usize, msg: impl Into<String>) -> Self {
+        Self::BadRow { line, msg: msg.into() }
+    }
+}
