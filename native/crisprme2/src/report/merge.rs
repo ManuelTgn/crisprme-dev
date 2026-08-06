@@ -1,4 +1,4 @@
-//! Within-sample merge: collapse one sample's lifted haplotype reports
+//! Within-sample merge (D2): collapse one sample's lifted haplotype reports
 //! into canonical [`MergedRow`]s.
 //!
 //! Reads every lifted report for a sample, stamps each row with its copy-
@@ -13,10 +13,12 @@ use std::io::BufRead;
 use crate::error::crisprme_errors::ReportError;
 use crate::liftover::mapper::MapStatus;
 use crate::model::occurence::Strand;
+use crate::partition::criteria::{primary_cmp, PrimaryCriteria};
+use crate::partition::AlignmentRow;
 use crate::report::row::{ClusterKey, MergedRow, NativeLoc, RefLoc, Scores};
 use crate::report::samples::{Presence, SamplePresence, SampleSetRegistry, SampleTable};
 
-/// Column names resolved from the lifted report header (order-independent).
+/// Column names D2 resolves from the lifted report header (order-independent).
 mod col {
     pub const CHROM: &str = "chromosome";
     pub const START: &str = "start";
@@ -82,8 +84,26 @@ impl PreRow {
         }
     }
 
-    fn edit_distance(&self) -> u16 {
-        self.mm as u16 + self.bdna as u16 + self.brna as u16
+    /// Borrow-free `AlignmentRow` view for ranking via the partitioner's
+    /// `primary_cmp`, so the merge and the primary/alternative split use one
+    /// definition of "best". Scores are laid out CFD, CRISTA, Elevation,
+    /// aggregate — the `ScoreKind` order.
+    fn as_alignment_row(&self) -> AlignmentRow {
+        AlignmentRow {
+            contig: self.native.contig.as_str().into(),
+            strand: self.native.strand,
+            start: self.native.start,
+            mm: self.mm,
+            bdna: self.bdna,
+            brna: self.brna,
+            scores: [
+                self.scores.cfd,
+                self.scores.crista,
+                self.scores.elevation,
+                self.scores.aggregate,
+            ],
+            target_aligned: self.target_aligned.clone(),
+        }
     }
 }
 
@@ -96,55 +116,19 @@ pub struct HaplotypeReport<'a> {
     pub expected_hap: u32,
 }
 
-/// Returns `true` if `a` outranks `b` as the cluster representative. Injected so
-/// D2 uses the same primary ordering as the partitioner.
-pub type PrimaryCmp = dyn Fn(&PreRow, &PreRow) -> bool;
-
-/// Default primary criteria, matching the partitioner's default order:
-/// edit distance, then DNA bulges, RNA bulges, mismatches (all ascending),
-/// then the fixed `(strand, target_aligned)` tiebreak. Scores are compared
-/// after the edit family (higher is better; `NaN` is least-primary).
-pub fn default_is_better(a: &PreRow, b: &PreRow) -> bool {
-    // ascending edit family: smaller is better
-    let (ea, eb) = (a.edit_distance(), b.edit_distance());
-    if ea != eb { return ea < eb; }
-    if a.bdna != b.bdna { return a.bdna < b.bdna; }
-    if a.brna != b.brna { return a.brna < b.brna; }
-    if a.mm != b.mm { return a.mm < b.mm; }
-    // aggregate score: higher better, NaN least
-    match cmp_score_desc(a.scores.aggregate, b.scores.aggregate) {
-        std::cmp::Ordering::Equal => {}
-        ord => return ord == std::cmp::Ordering::Less, // a ranks before b
-    }
-    // fixed tiebreak: forward strand first, then lexicographic target
-    let (sa, sb) = (a.native.strand.as_bit(), b.native.strand.as_bit());
-    if sa != sb { return sa > sb; } // Forward bit == 1 ranks first
-    a.target_aligned <= b.target_aligned
-}
-
-/// Higher score is more primary; NaN is least. Returns `Less` when `x` ranks
-/// before `y` (i.e. `x` is the better/primary one).
-fn cmp_score_desc(x: f32, y: f32) -> std::cmp::Ordering {
-    match (x.is_nan(), y.is_nan()) {
-        (true, true) => std::cmp::Ordering::Equal,
-        (true, false) => std::cmp::Ordering::Greater, // x worse
-        (false, true) => std::cmp::Ordering::Less,    // x better
-        (false, false) => y.partial_cmp(&x).unwrap_or(std::cmp::Ordering::Equal),
-    }
-}
-
 /// Merge one sample's lifted haplotype reports into canonical rows.
 ///
 /// `merge_bp` is the single-linkage window (the same value as the underlying
-/// search's `--merge`). `is_better` selects the cluster representative;
-/// [`default_is_better`] matches the partitioner. `open` yields a reader per
-/// path (injected so tests need no filesystem).
+/// search's `--merge`). `criteria` selects the cluster representative via the
+/// partitioner's `primary_cmp`, so "best" is defined once across the merge and
+/// the primary/alternative split. `open` yields a reader per path (injected so
+/// tests need no filesystem).
 pub fn merge_sample(
     reports: &[HaplotypeReport],
     table: &SampleTable,
     registry: &mut SampleSetRegistry,
     merge_bp: u32,
-    is_better: &PrimaryCmp,
+    criteria: &PrimaryCriteria,
     open: &dyn Fn(&str) -> std::io::Result<Box<dyn BufRead>>,
 ) -> Result<Vec<MergedRow>, ReportError> {
     // 1. parse every row of every haplotype into PreRows (presence stamped)
@@ -170,7 +154,7 @@ pub fn merge_sample(
             edge = rows[j].cluster_pos(); // chained-gap: advance the edge
             j += 1;
         }
-        out.push(fold_cluster(&rows[i..j], registry, is_better));
+        out.push(fold_cluster(&rows[i..j], registry, criteria));
         i = j;
     }
     Ok(out)
@@ -197,19 +181,23 @@ fn same_cluster(a: &PreRow, b: &PreRow, edge: u32, merge_bp: u32) -> bool {
     }
 }
 
-/// Fold a cluster into one `MergedRow`: representative by `is_better`,
-/// annotation OR-ed, per-sample presence OR-ed and interned once.
+/// Fold a cluster into one `MergedRow`: representative by `primary_cmp`
+/// (`Ordering::Less` == more primary), annotation OR-ed, per-sample presence
+/// OR-ed and interned once.
 fn fold_cluster(
     cluster: &[PreRow],
     registry: &mut SampleSetRegistry,
-    is_better: &PrimaryCmp,
+    criteria: &PrimaryCriteria,
 ) -> MergedRow {
-    let mut rep = 0;
-    for k in 1..cluster.len() {
-        if is_better(&cluster[k], &cluster[rep]) {
-            rep = k;
-        }
-    }
+    let rep = (0..cluster.len())
+        .min_by(|&i, &j| {
+            primary_cmp(
+                &cluster[i].as_alignment_row(),
+                &cluster[j].as_alignment_row(),
+                criteria,
+            )
+        })
+        .expect("cluster is non-empty by construction");
     let r = &cluster[rep];
 
     let annotation = cluster.iter().fold(0u32, |acc, x| acc | x.annotation);
@@ -239,15 +227,24 @@ fn parse_report(
     out: &mut Vec<PreRow>,
 ) -> Result<(), ReportError> {
     let mut header = String::new();
-    if reader.read_line(&mut header).map_err(|e| ReportError::io("reading header", e))? == 0 {
+    if reader
+        .read_line(&mut header)
+        .map_err(|e| ReportError::io("reading header", e))?
+        == 0
+    {
         return Err(ReportError::MissingHeader);
     }
     let sc = Schema::resolve(header.trim_end())?;
 
-    let bit = table.bit_of(rep.sample, rep.expected_hap).ok_or_else(|| ReportError::BadRow {
-        line: 1,
-        msg: format!("hap_id {} not in sample {}'s declared layout", rep.expected_hap, rep.sample),
-    })?;
+    let bit = table
+        .bit_of(rep.sample, rep.expected_hap)
+        .ok_or_else(|| ReportError::BadRow {
+            line: 1,
+            msg: format!(
+                "hap_id {} not in sample {}'s declared layout",
+                rep.expected_hap, rep.sample
+            ),
+        })?;
     let self_mask: Presence = 1 << bit;
 
     let mut line = String::new();
@@ -255,7 +252,11 @@ fn parse_report(
     loop {
         line.clear();
         ln += 1;
-        if reader.read_line(&mut line).map_err(|e| ReportError::io("reading report", e))? == 0 {
+        if reader
+            .read_line(&mut line)
+            .map_err(|e| ReportError::io("reading report", e))?
+            == 0
+        {
             break;
         }
         let t = line.trim_end();
@@ -270,12 +271,24 @@ fn parse_report(
             })
         };
         let pu32 = |v: &str, what: &str| -> Result<u32, ReportError> {
-            v.parse::<u32>().map_err(|_| ReportError::BadRow { line: ln, msg: format!("invalid {what} {v:?}") })
+            v.parse::<u32>().map_err(|_| ReportError::BadRow {
+                line: ln,
+                msg: format!("invalid {what} {v:?}"),
+            })
         };
         let pu8 = |v: &str, what: &str| -> Result<u8, ReportError> {
-            v.parse::<u8>().map_err(|_| ReportError::BadRow { line: ln, msg: format!("invalid {what} {v:?}") })
+            v.parse::<u8>().map_err(|_| ReportError::BadRow {
+                line: ln,
+                msg: format!("invalid {what} {v:?}"),
+            })
         };
-        let pf = |v: &str| -> f32 { if v == "NA" { f32::NAN } else { v.parse::<f32>().unwrap_or(f32::NAN) } };
+        let pf = |v: &str| -> f32 {
+            if v == "NA" {
+                f32::NAN
+            } else {
+                v.parse::<f32>().unwrap_or(f32::NAN)
+            }
+        };
 
         let native_strand = parse_strand(get(sc.strand)?, ln)?;
         let contig = get(sc.chrom)?.to_string();
@@ -289,12 +302,19 @@ fn parse_report(
                     contig: get(sc.ref_chr)?.to_string(),
                     start: pu32(get(sc.ref_pos)?, "hg38_pos")?,
                     strand: xor_strand(native_strand, flipped),
-                    status: if status == "ambiguous" { MapStatus::Ambiguous } else { MapStatus::Mapped },
+                    status: if status == "ambiguous" {
+                        MapStatus::Ambiguous
+                    } else {
+                        MapStatus::Mapped
+                    },
                 })
             }
             "unmapped" => None,
             other => {
-                return Err(ReportError::BadRow { line: ln, msg: format!("unknown map_status {other:?}") })
+                return Err(ReportError::BadRow {
+                    line: ln,
+                    msg: format!("unknown map_status {other:?}"),
+                })
             }
         };
 
@@ -309,7 +329,11 @@ fn parse_report(
             mm: pu8(get(sc.mm)?, "mismatches")?,
             bdna: pu8(get(sc.bdna)?, "dna_bulges")?,
             brna: pu8(get(sc.brna)?, "rna_bulges")?,
-            native: NativeLoc { contig, start: pu32(get(sc.start)?, "start")?, strand: native_strand },
+            native: NativeLoc {
+                contig,
+                start: pu32(get(sc.start)?, "start")?,
+                strand: native_strand,
+            },
             reference,
             scores: Scores {
                 cfd: pf(get(sc.cfd)?),
@@ -318,7 +342,10 @@ fn parse_report(
                 aggregate: pf(get(sc.aggregate)?),
             },
             annotation,
-            presence: SamplePresence { sample: rep.sample, mask: self_mask },
+            presence: SamplePresence {
+                sample: rep.sample,
+                mask: self_mask,
+            },
         });
     }
     Ok(())
@@ -326,29 +353,51 @@ fn parse_report(
 
 /// Resolved column indices for one report header.
 struct Schema {
-    chrom: usize, start: usize, strand: usize,
-    guide: usize, target: usize,
-    mm: usize, bdna: usize, brna: usize,
-    cfd: usize, crista: usize, elevation: usize, aggregate: usize,
+    chrom: usize,
+    start: usize,
+    strand: usize,
+    guide: usize,
+    target: usize,
+    mm: usize,
+    bdna: usize,
+    brna: usize,
+    cfd: usize,
+    crista: usize,
+    elevation: usize,
+    aggregate: usize,
     annotation: Option<usize>,
-    ref_chr: usize, ref_pos: usize, ref_flip: usize, map_status: usize,
+    ref_chr: usize,
+    ref_pos: usize,
+    ref_flip: usize,
+    map_status: usize,
 }
 
 impl Schema {
     fn resolve(header: &str) -> Result<Self, ReportError> {
         let cols: Vec<&str> = header.split('\t').collect();
         let find = |name: &str| {
-            cols.iter().position(|&c| c == name).ok_or_else(|| ReportError::MissingColumn(name.to_string()))
+            cols.iter()
+                .position(|&c| c == name)
+                .ok_or_else(|| ReportError::MissingColumn(name.to_string()))
         };
         Ok(Self {
-            chrom: find(col::CHROM)?, start: find(col::START)?, strand: find(col::STRAND)?,
-            guide: find(col::GUIDE)?, target: find(col::TARGET)?,
-            mm: find(col::MM)?, bdna: find(col::BDNA)?, brna: find(col::BRNA)?,
-            cfd: find(col::CFD)?, crista: find(col::CRISTA)?,
-            elevation: find(col::ELEVATION)?, aggregate: find(col::AGGREGATE)?,
+            chrom: find(col::CHROM)?,
+            start: find(col::START)?,
+            strand: find(col::STRAND)?,
+            guide: find(col::GUIDE)?,
+            target: find(col::TARGET)?,
+            mm: find(col::MM)?,
+            bdna: find(col::BDNA)?,
+            brna: find(col::BRNA)?,
+            cfd: find(col::CFD)?,
+            crista: find(col::CRISTA)?,
+            elevation: find(col::ELEVATION)?,
+            aggregate: find(col::AGGREGATE)?,
             annotation: cols.iter().position(|&c| c == col::ANNOTATION),
-            ref_chr: find(col::REF_CHR)?, ref_pos: find(col::REF_POS)?,
-            ref_flip: find(col::REF_FLIP)?, map_status: find(col::MAP_STATUS)?,
+            ref_chr: find(col::REF_CHR)?,
+            ref_pos: find(col::REF_POS)?,
+            ref_flip: find(col::REF_FLIP)?,
+            map_status: find(col::MAP_STATUS)?,
         })
     }
 }
@@ -357,7 +406,10 @@ fn parse_strand(s: &str, ln: usize) -> Result<Strand, ReportError> {
     match s {
         "+" => Ok(Strand::Forward),
         "-" => Ok(Strand::Reverse),
-        other => Err(ReportError::BadRow { line: ln, msg: format!("invalid strand {other:?}") }),
+        other => Err(ReportError::BadRow {
+            line: ln,
+            msg: format!("invalid strand {other:?}"),
+        }),
     }
 }
 
@@ -372,10 +424,12 @@ fn xor_strand(s: Strand, flipped: bool) -> Strand {
 fn validate_hap(contig: &str, rep: &HaplotypeReport, ln: usize) -> Result<(), ReportError> {
     let mut it = contig.splitn(3, '#');
     let (_s, h) = (it.next(), it.next());
-    let hap: u32 = h.and_then(|x| x.parse().ok()).ok_or_else(|| ReportError::BadRow {
-        line: ln,
-        msg: format!("contig {contig:?} is not PanSN sample#hap#contig"),
-    })?;
+    let hap: u32 = h
+        .and_then(|x| x.parse().ok())
+        .ok_or_else(|| ReportError::BadRow {
+            line: ln,
+            msg: format!("contig {contig:?} is not PanSN sample#hap#contig"),
+        })?;
     if hap != rep.expected_hap {
         return Err(ReportError::BadRow {
             line: ln,
@@ -397,20 +451,42 @@ mod tests {
         SampleTable::new(vec!["HG1".into()], vec![vec![1, 2]])
     }
 
-    fn opener(map: std::collections::HashMap<String, String>) -> impl Fn(&str) -> std::io::Result<Box<dyn BufRead>> {
-        move |p: &str| Ok(Box::new(Cursor::new(map.get(p).cloned().unwrap_or_default())) as Box<dyn BufRead>)
+    fn opener(
+        map: std::collections::HashMap<String, String>,
+    ) -> impl Fn(&str) -> std::io::Result<Box<dyn BufRead>> {
+        move |p: &str| {
+            Ok(Box::new(Cursor::new(map.get(p).cloned().unwrap_or_default())) as Box<dyn BufRead>)
+        }
     }
 
-    fn row(contig: &str, start: u32, strand: &str, target: &str, mm: u8, refc: &str, refp: &str, flip: &str, status: &str) -> String {
+    fn row(
+        contig: &str,
+        start: u32,
+        strand: &str,
+        target: &str,
+        mm: u8,
+        refc: &str,
+        refp: &str,
+        flip: &str,
+        status: &str,
+    ) -> String {
         format!("{contig}\t{start}\t{strand}\tGUIDE\t{target}\t{mm}\t0\t0\t0.5\tNA\tNA\t0.5\t0\t{refc}\t{refp}\t{flip}\t{status}")
     }
 
     #[test]
     fn homozygous_site_collapses_to_1_1() {
-        // same hg38 locus + allele on hap1 and hap2 -> one row, HG1:1|1
-        let hap1 = format!("{HDR}\n{}", row("HG1#1#c", 100, "+", "ACGT", 0, "chr2", "500", "0", "mapped"));
-        let hap2 = format!("{HDR}\n{}", row("HG1#2#c", 100, "+", "ACGT", 0, "chr2", "500", "0", "mapped"));
-        let map = [("h1".to_string(), hap1), ("h2".to_string(), hap2)].into_iter().collect();
+        // same reference locus + allele on hap1 and hap2 -> one row, HG1:1|1
+        let hap1 = format!(
+            "{HDR}\n{}",
+            row("HG1#1#c", 100, "+", "ACGT", 0, "chr2", "500", "0", "mapped")
+        );
+        let hap2 = format!(
+            "{HDR}\n{}",
+            row("HG1#2#c", 100, "+", "ACGT", 0, "chr2", "500", "0", "mapped")
+        );
+        let map = [("h1".to_string(), hap1), ("h2".to_string(), hap2)]
+            .into_iter()
+            .collect();
         let open = opener(map);
         let reports = [
             HaplotypeReport { path: "h1", sample: 0, expected_hap: 1 },
@@ -418,7 +494,7 @@ mod tests {
         ];
         let table = table();
         let mut reg = SampleSetRegistry::new();
-        let out = merge_sample(&reports, &table, &mut reg, 3, &default_is_better, &open).unwrap();
+        let out = merge_sample(&reports, &table, &mut reg, 3, &PrimaryCriteria::default(), &open).unwrap();
         assert_eq!(out.len(), 1);
         let mut s = String::new();
         reg.render(out[0].sample_set, &table, &mut s);
@@ -428,9 +504,14 @@ mod tests {
     #[test]
     fn heterozygous_site_stays_one_copy() {
         // present only on hap1 -> HG1:1|0
-        let hap1 = format!("{HDR}\n{}", row("HG1#1#c", 100, "+", "ACGT", 0, "chr2", "500", "0", "mapped"));
-        let hap2 = format!("{HDR}"); // hap2 has no rows
-        let map = [("h1".to_string(), hap1), ("h2".to_string(), hap2)].into_iter().collect();
+        let hap1 = format!(
+            "{HDR}\n{}",
+            row("HG1#1#c", 100, "+", "ACGT", 0, "chr2", "500", "0", "mapped")
+        );
+        let hap2 = HDR.to_string(); // hap2 has no rows
+        let map = [("h1".to_string(), hap1), ("h2".to_string(), hap2)]
+            .into_iter()
+            .collect();
         let open = opener(map);
         let reports = [
             HaplotypeReport { path: "h1", sample: 0, expected_hap: 1 },
@@ -438,7 +519,7 @@ mod tests {
         ];
         let table = table();
         let mut reg = SampleSetRegistry::new();
-        let out = merge_sample(&reports, &table, &mut reg, 3, &default_is_better, &open).unwrap();
+        let out = merge_sample(&reports, &table, &mut reg, 3, &PrimaryCriteria::default(), &open).unwrap();
         assert_eq!(out.len(), 1);
         let mut s = String::new();
         reg.render(out[0].sample_set, &table, &mut s);
@@ -447,38 +528,34 @@ mod tests {
 
     #[test]
     fn different_allele_same_locus_stays_split() {
-        let hap1 = format!("{HDR}\n{}\n{}",
+        // two alleles at one locus in one hap-1 file -> two rows
+        let hap1 = format!(
+            "{HDR}\n{}\n{}",
             row("HG1#1#c", 100, "+", "ACGT", 0, "chr2", "500", "0", "mapped"),
-            row("HG1#2#c", 100, "+", "ACGA", 1, "chr2", "500", "0", "mapped"));
+            row("HG1#1#c", 100, "+", "ACGA", 1, "chr2", "500", "0", "mapped")
+        );
         let map = [("h1".to_string(), hap1)].into_iter().collect();
         let open = opener(map);
-        // both rows in one file is unusual, but exercises allele sub-keying
         let reports = [HaplotypeReport { path: "h1", sample: 0, expected_hap: 1 }];
-        // expected_hap mismatch would fire; use two files instead in practice.
-        // Here hap2 row would fail validate_hap, so keep only the allele test at hap1:
-        let hap1b = format!("{HDR}\n{}\n{}",
-            row("HG1#1#c", 100, "+", "ACGT", 0, "chr2", "500", "0", "mapped"),
-            row("HG1#1#c", 100, "+", "ACGA", 1, "chr2", "500", "0", "mapped"));
-        let map2 = [("h1".to_string(), hap1b)].into_iter().collect();
-        let open2 = opener(map2);
         let table = table();
         let mut reg = SampleSetRegistry::new();
-        let out = merge_sample(&reports, &table, &mut reg, 3, &default_is_better, &open2).unwrap();
+        let out = merge_sample(&reports, &table, &mut reg, 3, &PrimaryCriteria::default(), &open).unwrap();
         assert_eq!(out.len(), 2); // two alleles at one locus -> two rows
-        let _ = open;
     }
 
     #[test]
     fn unmapped_never_clusters_with_mapped() {
-        let hap1 = format!("{HDR}\n{}\n{}",
+        let hap1 = format!(
+            "{HDR}\n{}\n{}",
             row("HG1#1#c", 100, "+", "ACGT", 0, "chr2", "500", "0", "mapped"),
-            row("HG1#1#c", 100, "+", "ACGT", 0, "NA", "NA", "NA", "unmapped"));
+            row("HG1#1#c", 100, "+", "ACGT", 0, "NA", "NA", "NA", "unmapped")
+        );
         let map = [("h1".to_string(), hap1)].into_iter().collect();
         let open = opener(map);
         let reports = [HaplotypeReport { path: "h1", sample: 0, expected_hap: 1 }];
         let table = table();
         let mut reg = SampleSetRegistry::new();
-        let out = merge_sample(&reports, &table, &mut reg, 3, &default_is_better, &open).unwrap();
+        let out = merge_sample(&reports, &table, &mut reg, 3, &PrimaryCriteria::default(), &open).unwrap();
         assert_eq!(out.len(), 2); // one mapped, one assembly-specific
         assert_eq!(out.iter().filter(|r| r.is_mapped()).count(), 1);
     }
