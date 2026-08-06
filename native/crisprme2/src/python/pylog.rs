@@ -29,8 +29,8 @@ use pyo3::types::PyAnyMethods;
 use tracing::field::{Field, Visit};
 use tracing::subscriber::Interest;
 use tracing::{Event, Level, Metadata, Subscriber};
-use tracing_subscriber::layer::{Context, Layer};
 use tracing_subscriber::filter::LevelFilter;
+use tracing_subscriber::layer::{Context, Layer};
 use tracing_subscriber::registry::LookupSpan;
 
 /// Owned handles to the three underlying `logging.Logger` objects.
@@ -76,7 +76,11 @@ impl PyLoggerLayer {
             .call_method0("get_logger")?
             .unbind();
         Ok(Self {
-            loggers: PyLoggers {basic, verbose, error},
+            loggers: PyLoggers {
+                basic,
+                verbose,
+                error,
+            },
             max_level: Level::DEBUG,
         })
     }

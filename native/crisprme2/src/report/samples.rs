@@ -26,7 +26,9 @@ pub struct SampleTable {
 impl SampleTable {
     pub fn new(names: Vec<String>, hap_layout: Vec<Vec<u32>>) -> Self {
         debug_assert_eq!(names.len(), hap_layout.len());
-        debug_assert!(hap_layout.iter().all(|h| h.len() <= Presence::BITS as usize));
+        debug_assert!(hap_layout
+            .iter()
+            .all(|h| h.len() <= Presence::BITS as usize));
         Self { names, hap_layout }
     }
 
@@ -44,7 +46,9 @@ impl SampleTable {
     /// if the hap_id is not part of this sample's declared layout.
     #[inline]
     pub fn bit_of(&self, sample: u32, hap_id: u32) -> Option<usize> {
-        self.hap_layout[sample as usize].iter().position(|&h| h == hap_id)
+        self.hap_layout[sample as usize]
+            .iter()
+            .position(|&h| h == hap_id)
     }
 
     /// Append one sample's presence mask as `1|0|1` over its declared copies.
@@ -96,7 +100,10 @@ impl Default for SampleSetRegistry {
 
 impl SampleSetRegistry {
     pub fn new() -> Self {
-        Self { sets: Vec::new(), intern: AHashMap::new() }
+        Self {
+            sets: Vec::new(),
+            intern: AHashMap::new(),
+        }
     }
 
     #[inline]
@@ -137,8 +144,14 @@ impl SampleSetRegistry {
         let sa = &self.sets[a.0 as usize].0;
         let sb = &self.sets[b.0 as usize].0;
         let mut merged: Vec<SamplePresence> = Vec::with_capacity(sa.len() + sb.len());
-        merged.extend(sa.iter().map(|&(s, m)| SamplePresence { sample: s, mask: m }));
-        merged.extend(sb.iter().map(|&(s, m)| SamplePresence { sample: s, mask: m }));
+        merged.extend(
+            sa.iter()
+                .map(|&(s, m)| SamplePresence { sample: s, mask: m }),
+        );
+        merged.extend(
+            sb.iter()
+                .map(|&(s, m)| SamplePresence { sample: s, mask: m }),
+        );
         self.intern(&merged)
     }
 
@@ -193,7 +206,7 @@ mod tests {
     fn union_is_per_sample_or() {
         let (t, mut r) = (table(), SampleSetRegistry::new());
         let a = r.intern(&[sp(0, 0b10), sp(1, 0b0001)]); // HG1:0|1, HG2:1|0|0|0
-        let b = r.intern(&[sp(0, 0b01)]);                // HG1:1|0
+        let b = r.intern(&[sp(0, 0b01)]); // HG1:1|0
         let u = r.union(a, b);
         let mut s = String::new();
         r.render(u, &t, &mut s);
@@ -214,6 +227,6 @@ mod tests {
         let t = table();
         assert_eq!(t.bit_of(0, 1), Some(0)); // HG1 hap_id 1 -> bit 0
         assert_eq!(t.bit_of(0, 2), Some(1)); // HG1 hap_id 2 -> bit 1
-        assert_eq!(t.bit_of(0, 0), None);    // hap_id 0 not in HG1's layout
+        assert_eq!(t.bit_of(0, 0), None); // hap_id 0 not in HG1's layout
     }
 }

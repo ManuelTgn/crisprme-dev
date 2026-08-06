@@ -1,19 +1,30 @@
+use ahash::AHashMap;
+use crossbeam_channel::Receiver;
+use pyo3::exceptions::PyValueError;
+use pyo3::prelude::*;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use crate::crispr::guide::Guide;
 use crate::crispr::{guide, pam};
 use crate::memory::batch::AlignmentRingBatch;
 use crate::model::occurence::Strand;
+use crate::sequence::iupac::Iupac;
 use crate::sequence::{iupac, scanner};
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+/// Key: the window's IUPAC bitmask bytes, right-padded with zeros to
+/// `WINDOW_MAX_BASES`
+pub type WindowKey = [u8; WINDOW_MAX_BASES];
 
-use ahash::AHashMap;
+/// Bases per window that fit in a `WindowKey`. Must equal `SEQ_MAX_LEN`
+pub const WINDOW_MAX_BASES: usize = 32;
 
-use crossbeam_channel::Receiver;
-use pyo3::exceptions::PyValueError;
-use pyo3::prelude::*;
-
-/// Key: owned window bytes (IUPAC bitmasks), length == size.
-type WindowKey = Box<[u8]>;
+#[inline(always)]
+fn pack_window(window: &[u8]) -> WindowKey {
+    debug_assert!(window.len() <= WINDOW_MAX_BASES);
+    let mut key = [0u8; WINDOW_MAX_BASES];
+    key[..window.len()].copy_from_slice(window);
+    key
+}
 
 /// Occurrence: packed (contig_id, pos, strand_bit) into u64.
 /// Layout: [ contig_id:31.. ] [ pos:32 bits ] [ strand:1 bit ]
@@ -105,8 +116,16 @@ impl TargetBatcher {
 
         if size > 0 && overlap_left < size.saturating_sub(1) {
             return Err(PyErr::new::<PyValueError, _>(format!(
-                "Invalid overlap_left={overlap_left}: must be >= size-1={} to avoid losing kmers at chunk boundaries",
+                "Invalid overlap_left={overlap_left}: must be >= size-1={} to avoid \
+                 losing kmers at chunk boundaries",
                 size.saturating_sub(1)
+            )));
+        }
+
+        if size > WINDOW_MAX_BASES {
+            return Err(PyErr::new::<PyValueError, _>(format!(
+                "Window size {size} exceeds the maximum of {WINDOW_MAX_BASES} bases \
+                 (guide + PAM + max bulge must fit in a WindowKey)"
             )));
         }
 
@@ -121,7 +140,7 @@ impl TargetBatcher {
             overlap_left,
             pam: pam,
             guide: guide,
-            map: AHashMap::new(),
+            map: AHashMap::with_capacity(max_unique),
             hits_in_batch: 0,
         })
     }
@@ -245,7 +264,7 @@ impl TargetBatcher {
 
             // Read candidate target sequence
             let window = &seq_bitmask[start..end];
-            let key: WindowKey = window.to_vec().into_boxed_slice();
+            let key: WindowKey = pack_window(window);
 
             // Read candidate target PAM sequence
             let pstart = end - 1;
@@ -301,9 +320,8 @@ impl TargetBatcher {
         self.map.len()
     }
 
-    // TODO: Check if this is the best way to do it
-    pub fn get_window_keys(&self) -> impl Iterator<Item = &WindowKey> {
-        self.map.keys()
+    pub fn get_window_keys(&self) -> impl Iterator<Item = WindowKey> + '_ {
+        self.map.keys().copied()
     }
 
     pub fn extract_alignment_rx(&mut self) -> Option<Receiver<AlignmentRingBatch>> {
@@ -317,12 +335,13 @@ impl TargetBatcher {
 
         // Fast path: whole map fits
         if self.map.len() <= cap {
-            let map = std::mem::take(&mut self.map);
-            let unique = map.len();
+            let unique = self.map.len();
             let mut windows = Vec::with_capacity(unique);
             let mut occs = Vec::with_capacity(unique);
             let mut total_hits = 0usize;
-            for (k, v) in map {
+            // drain() empties the map but keeps its table allocated, so the
+            // next batch does not rehash from zero capacity
+            for (k, v) in self.map.drain() {
                 total_hits += v.len();
                 windows.push(k);
                 occs.push(v);
@@ -339,7 +358,7 @@ impl TargetBatcher {
         let mut windows = Vec::with_capacity(cap);
         let mut occs = Vec::with_capacity(cap);
         let mut total_hits = 0usize;
-        let take: Vec<WindowKey> = self.map.keys().take(cap).cloned().collect();
+        let take: Vec<WindowKey> = self.map.keys().take(cap).copied().collect();
         for k in take {
             if let Some(v) = self.map.remove(&k) {
                 total_hits += v.len();
@@ -384,7 +403,9 @@ impl TargetBatcher {
 /// WindowBatch
 #[derive(Debug)]
 pub struct WindowBatch {
-    /// Unique windows, each length == sequence_len (aka `size` used in scanning/aligning)
+    /// Unique windows as packed `u128` keys, in emission order. Expand with
+    /// `unpack_window(key, size, out)`; `size` comes from
+    /// `TargetBatcher::get_sequence_len`
     pub windows: Vec<WindowKey>,
     /// Occurrences for each window (parallel to `windows`)
     pub occs: Vec<Vec<Occ>>,

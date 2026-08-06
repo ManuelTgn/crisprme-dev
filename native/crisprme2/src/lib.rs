@@ -45,6 +45,7 @@ pub mod _crisprme2_native {
 
     use crate::{
         annotation::features::FeatureRegistry,
+        batching::batching::WINDOW_MAX_BASES,
         bindings::cuda,
         crispr::pam::PAM,
         error::crisprme_errors::LiftoverError,
@@ -215,23 +216,19 @@ pub mod _crisprme2_native {
 
         /// Submit the content of a TargetBatcher
         pub fn submit(&mut self, py: Python<'_>, batcher: &mut TargetBatcher) -> PyResult<()> {
-            assert!(
-                batcher.get_sequence_len() <= SEQ_MAX_LEN,
-                "window sequence should fit inside a SeqFrame"
-            );
+            // Enforced in TargetBatcher::new; re-checked here because SeqFrame
+            // rows are fixed at SEQ_MAX_LEN and the two constants must agree.
+            let seq_len = batcher.get_sequence_len();
+            debug_assert_eq!(WINDOW_MAX_BASES, SEQ_MAX_LEN);
 
-            // Create compact representation
             let batch = batcher.flush_to_batch();
 
-            // Copy sequences
             let mut seqs = SeqFrame::alloc(&self.pool, batch.len());
             seqs.with_cols(|mut cols| {
-                for (i, content) in cols.content.iter_mut().enumerate() {
-                    // Copy content to frame
-                    let window = &batch.windows[i];
-                    for j in 0..window.len() {
-                        content[j] = Iupac::new(window[j]);
-                    }
+                for (content, key) in cols.content.iter_mut().zip(batch.windows.iter()) {
+                    // WindowKey and Seq::content are both 32 elements, and Iupac
+                    // is #[repr(transparent)] over u8, so this is one 32-byte move
+                    content.copy_from_slice(bytemuck::cast_slice::<u8, Iupac>(key));
                 }
             });
 
@@ -520,22 +517,25 @@ pub mod _crisprme2_native {
     #[pyfunction]
     #[pyo3(signature = (loggers, max_level = "debug"))]
     fn init_logging(loggers: &Bound<'_, PyAny>, max_level: &str) -> PyResult<bool> {
-        use tracing_subscriber::prelude::*;
         use tracing_subscriber::filter::LevelFilter;
+        use tracing_subscriber::prelude::*;
 
         let level = match max_level.to_ascii_lowercase().as_str() {
             "error" => tracing::Level::ERROR,
-            "warn"  => tracing::Level::WARN,
-            "info"  => tracing::Level::INFO,
+            "warn" => tracing::Level::WARN,
+            "info" => tracing::Level::INFO,
             "debug" => tracing::Level::DEBUG,
             "trace" => tracing::Level::TRACE,
-            other => return Err(PyValueError::new_err(
-                format!("invalid native log level {other:?}; expected one of \
-                         error|warn|info|debug|trace"))),
+            other => {
+                return Err(PyValueError::new_err(format!(
+                    "invalid native log level {other:?}; expected one of \
+                         error|warn|info|debug|trace"
+                )))
+            }
         };
 
-        let py_layer = crate::python::pylog::PyLoggerLayer::from_bundle(loggers)?
-            .with_max_level(level);
+        let py_layer =
+            crate::python::pylog::PyLoggerLayer::from_bundle(loggers)?.with_max_level(level);
 
         let installed = tracing_subscriber::registry()
             .with(LevelFilter::from_level(level))
