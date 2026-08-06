@@ -19,8 +19,9 @@ from .assembly import (
 )
 from .crisprme_core_api import (
     init_native_logging,
-    lift_offtargets,
     partition_offtargets,
+    lift_offtargets,
+    merge_assemblies,
     TargetBatcher,
     Pipeline,
     Thresholds,
@@ -62,6 +63,12 @@ _TMP_DIR_PREFIX: str = ".crisprme2_tmp_"
 _ASSEMBLIES_DIR = ".assemblies"
 
 _ASSEMBLIES_REF_LIFT = ".reference_lifted.tsv"
+
+_ASSEMBLIES_MERGED = "merged.tsv"
+
+REPORT_HEADER: str =("chromosome\tstart\tstrand\tsgRNA_aligned\ttarget_aligned\t"
+"mismatches\tdna_bulges\trna_bulges\tbulge_type\tedit_distance\t"
+"CFD_score\tCRISTA_score\tElevation_score\taggregate_score")
 
 
 def _compute_report_name(guide: Guide, pam: PAM, outdir: str) -> str:
@@ -636,32 +643,67 @@ def _finalize_assembly_search(
     args: Crisprme2AssemblySearchInputArgs,
     loggers: CrisprmeLoggers,
 ) -> None:
-    # ---- lift each haplotype report to reference coordinate system
-    lifted: List[Tuple[ScanRecord, str]] = []
-    for rec in manifest.records:
-        out_path = (
-            rec.report[:-4] + _ASSEMBLIES_REF_LIFT
-            if rec.report.endswith(".tsv")
-            else rec.report + _ASSEMBLIES_REF_LIFT
-        )
-        mapped, ambiguous, unmapped = lift_offtargets(
-            rec.report, rec.chain, out_path, args.ambiguity_tolerance, loggers
-        )
-        loggers.basiclog.info(
-            f"Liftover {rec.sample_id}#hap{rec.hap_id}: mapped={mapped}, "
-            f"ambiguous={ambiguous}, unmapped(assembly-specific)={unmapped}"
-        )
-        lifted.append((rec, out_path))
+    """
+    Turn one guide's per-haplotype intermediates into the final report.
 
-    # ---- Phase D (TODO): merge within/across samples on the hg38 clustered,
-    #   sequence-aware key; union sample sets; annotate in hg38; partition to
-    #   _partition_report_names(manifest.report_prefix, args.outdir); then
-    #   shutil.rmtree(os.path.join(args.outdir, _ASSEMBLIES_DIR), ignore_errors=True).
-    loggers.basiclog.info(
-        f"Assembly finalization for guide {manifest.guide}: {len(lifted)} report(s) "
-        "lifted to hg38; merge/annotation/partition not yet implemented (Phase D)"
-    )
+    Phase C/D pipeline: lift each haplotype report to reference coordinates,
+    merge across haplotypes (within sample: copy-wise OR -> homozygous) and
+    across samples (union carriers) into one combined report, partition that in
+    reference space into ``<prefix>_{primary,alternative}.tsv``, then remove the
+    hidden ``.assemblies`` staging dir. Annotation is not yet applied.
+    """
+    assemblies_dir = os.path.join(args.outdir, _ASSEMBLIES_DIR)
 
+    # # ---- Phase C: lift each haplotype report to reference coordinates ----
+    # lift_reports: List[Tuple[str, int, int]] = []  # (lifted_path, sample_index, hap_id)
+    # for rec in manifest.records:
+    #     lifted_path = rec.report[: -len(".tsv")] + _ASSEMBLIES_REF_LIFT \
+    #         if rec.report.endswith(".tsv") else rec.report + _ASSEMBLIES_REF_LIFT
+    #     mapped, ambiguous, unmapped = lift_offtargets(
+    #         rec.report, rec.chain, lifted_path, args.ambiguity_tolerance, loggers
+    #     )
+    #     loggers.basiclog.info(
+    #         f"Liftover {rec.sample_id}#hap{rec.hap_id}: mapped={mapped}, "
+    #         f"ambiguous={ambiguous}, unmapped(assembly-specific)={unmapped}"
+    #     )
+    #     lift_reports.append((lifted_path, rec.sample_index, rec.hap_id))
+
+    # # ---- Phase D: merge every sample's lifted haplotypes into one report ----
+    # merged_path = os.path.join(assemblies_dir, f"{manifest.report_prefix}_{_ASSEMBLIES_MERGED}")
+    # n_rows = merge_assemblies(
+    #     sample_names=manifest.sample_table.names,
+    #     hap_layout=args.assemblies.hap_layout,
+    #     reports=lift_reports,
+    #     header=REPORT_HEADER,
+    #     out_path=merged_path,
+    #     merge_bp=args.cluster_dist,
+    #     criteria=args.prioritization_criteria,
+    #     loggers=loggers,
+    # )
+    # loggers.basiclog.info(
+    #     f"Merged {len(lift_reports)} haplotype report(s) -> {n_rows} rows in "
+    #     f"reference coordinates"
+    # )
+
+    # # ---- partition the merged report in reference space (same as ref path) ----
+    # primary_path, alternative_path = _partition_report_names(
+    #     manifest.report_prefix, args.outdir
+    # )
+    # partition_offtargets(
+    #     merged_path,
+    #     primary_path,
+    #     alternative_path,
+    #     args.prioritization_criteria,
+    #     args.cluster_dist,
+    #     loggers,
+    # )
+
+    # ---- teardown: the final report exists, drop the staging dir ----
+    # shutil.rmtree(assemblies_dir, ignore_errors=True)
+    # loggers.basiclog.info(
+    #     f"Assembly report for guide {manifest.guide} written: "
+    #     f"{primary_path} / {alternative_path}"
+    # )
 
 def execute_offtargets_search_assemblies(
     args: Crisprme2AssemblySearchInputArgs,

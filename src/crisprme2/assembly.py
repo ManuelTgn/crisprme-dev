@@ -53,6 +53,16 @@ class AssemblyInputs:
     def sample_ids(self) -> List[str]:
         return [s.sample_id for s in self.samples]
 
+    @property
+    def hap_layout(self) -> List[List[int]]:
+        """Per-sample sorted PanSN hap_ids, in sample-id order.
+
+        Row ``i`` is sample ``sample_ids[i]``'s copies; its length is that
+        sample's ploidy. Feeds the native ``SampleTable`` so presence-bit ``b``
+        maps to ``hap_layout[sample][b]`` (declared-layout order).
+        """
+        return [[h.hap_id for h in s.haplotypes] for s in self.samples]
+
     def haplotypes(self) -> Iterator[Haplotype]:
         for sample in self.samples:
             yield from sample.haplotypes

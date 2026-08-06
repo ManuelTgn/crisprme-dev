@@ -80,7 +80,7 @@ impl SampleSet {
 
 /// Interned handle into `SampleSetRegistry`. `u32` indexes distinct sets — not
 /// a 32-sample cap.
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct SampleSetId(pub u32);
 
 pub struct SampleSetRegistry {
