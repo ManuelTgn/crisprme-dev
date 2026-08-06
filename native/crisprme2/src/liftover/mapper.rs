@@ -1,5 +1,5 @@
-//! Lift a single haplotype target position to the reference through a parsed 
-//! [`ChainFile`], with a tolerance-gated ambiguity flag. 
+//! Lift a single haplotype target position to the reference through a parsed
+//! [`ChainFile`], with a tolerance-gated ambiguity flag.
 //!
 //! # Anchoring
 //! Liftover is evaluated at **one** target coordinate per off-target — the
@@ -75,12 +75,18 @@ impl<'a> LiftOver<'a> {
             Some(p) => p,
             None => return LiftResult::NoMap(MapStatus::Unmapped),
         };
-        let ambiguous = secondaries.iter().any(|&q2| abs_diff(q, q2) > self.tolerance);
+        let ambiguous = secondaries
+            .iter()
+            .any(|&q2| abs_diff(q, q2) > self.tolerance);
         LiftResult::Ok(Lifted {
             ref_name: primary_chain.q_name.clone(),
             ref_pos: q,
             flipped,
-            status: if ambiguous { MapStatus::Ambiguous } else { MapStatus::Mapped },
+            status: if ambiguous {
+                MapStatus::Ambiguous
+            } else {
+                MapStatus::Mapped
+            },
         })
     }
 }
@@ -120,5 +126,9 @@ fn map_in_chain(chain: &Chain, t_pos: u64) -> Option<(u64, bool)> {
 
 #[inline]
 fn abs_diff(a: u64, b: u64) -> u64 {
-    if a >= b { a - b } else { b - a }
+    if a >= b {
+        a - b
+    } else {
+        b - a
+    }
 }

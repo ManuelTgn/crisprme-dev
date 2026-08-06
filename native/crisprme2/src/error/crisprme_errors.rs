@@ -156,12 +156,21 @@ pub enum LiftoverError {
 
 impl LiftoverError {
     pub(crate) fn io(context: impl Into<String>, source: std::io::Error) -> Self {
-        Self::Io { context: context.into(), source }
+        Self::Io {
+            context: context.into(),
+            source,
+        }
     }
     pub(crate) fn malformed_chain(line: usize, msg: impl Into<String>) -> Self {
-        Self::MalformedChain { line, msg: msg.into() }
+        Self::MalformedChain {
+            line,
+            msg: msg.into(),
+        }
     }
     pub(crate) fn bad_row(line: usize, msg: impl Into<String>) -> Self {
-        Self::BadRow { line, msg: msg.into() }
+        Self::BadRow {
+            line,
+            msg: msg.into(),
+        }
     }
 }

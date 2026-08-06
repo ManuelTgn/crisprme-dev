@@ -44,9 +44,13 @@ pub fn lift_report_core<R: BufRead, W: Write>(
         None => return Err(LiftoverError::MissingHeader),
     };
     let cols: Vec<&str> = header.split('\t').collect();
-    let ci = cols.iter().position(|&c| c == contig_col)
+    let ci = cols
+        .iter()
+        .position(|&c| c == contig_col)
         .ok_or_else(|| LiftoverError::MissingColumn(contig_col.into()))?;
-    let si = cols.iter().position(|&c| c == start_col)
+    let si = cols
+        .iter()
+        .position(|&c| c == start_col)
         .ok_or_else(|| LiftoverError::MissingColumn(start_col.into()))?;
 
     writeln!(writer, "{}\t{}", header, LIFTOVER_HEADER.join("\t"))
@@ -60,20 +64,34 @@ pub fn lift_report_core<R: BufRead, W: Write>(
         }
         let line_no = idx + 2; // 1-based, +1 for the header
         let fields: Vec<&str> = line.split('\t').collect();
-        let contig = *fields.get(ci)
+        let contig = *fields
+            .get(ci)
             .ok_or_else(|| LiftoverError::bad_row(line_no, "missing contig field"))?;
-        let start_s = *fields.get(si)
+        let start_s = *fields
+            .get(si)
             .ok_or_else(|| LiftoverError::bad_row(line_no, "missing start field"))?;
-        let start: u64 = start_s.parse()
+        let start: u64 = start_s
+            .parse()
             .map_err(|_| LiftoverError::bad_row(line_no, format!("invalid start {start_s:?}")))?;
 
         let (chr, pos, flip, status) = match lifter.lift(normalize_contig(contig), start) {
             LiftResult::Ok(l) => {
                 let status = match l.status {
-                    MapStatus::Ambiguous => { stats.ambiguous += 1; "ambiguous" }
-                    _ => { stats.mapped += 1; "mapped" }
+                    MapStatus::Ambiguous => {
+                        stats.ambiguous += 1;
+                        "ambiguous"
+                    }
+                    _ => {
+                        stats.mapped += 1;
+                        "mapped"
+                    }
                 };
-                (l.ref_name, l.ref_pos.to_string(), if l.flipped { "1" } else { "0" }, status)
+                (
+                    l.ref_name,
+                    l.ref_pos.to_string(),
+                    if l.flipped { "1" } else { "0" },
+                    status,
+                )
             }
             LiftResult::NoMap(_) => {
                 stats.unmapped += 1;
@@ -104,16 +122,27 @@ mod tests {
         // chain: target CM1 [0,5) -> ref chr2 [100,105)
         let cf = ChainFile::parse(Cursor::new(
             "chain 100 CM1 20 + 0 5 chr2 300 + 100 105 1\n5\n",
-        )).unwrap();
+        ))
+        .unwrap();
         let lifter = LiftOver::new(&cf, 10);
         let report = "chromosome\tstart\tstrand\nS#1#CM1\t2\t+\nS#1#CM1\t9\t-\n";
         let mut out = Vec::new();
-        let stats = lift_report_core(Cursor::new(report), &mut out, &lifter, "chromosome", "start").unwrap();
+        let stats = lift_report_core(
+            Cursor::new(report),
+            &mut out,
+            &lifter,
+            "chromosome",
+            "start",
+        )
+        .unwrap();
         let out = String::from_utf8(out).unwrap();
         let lines: Vec<&str> = out.lines().collect();
-        assert_eq!(lines[0], "chromosome\tstart\tstrand\thg38_chr\thg38_pos\thg38_flipped\tmap_status");
-        assert_eq!(lines[1], "S#1#CM1\t2\t+\tchr2\t102\t0\tmapped");   // 2 in [0,5) -> 102
-        assert_eq!(lines[2], "S#1#CM1\t9\t-\tNA\tNA\tNA\tunmapped");   // 9 outside chain
+        assert_eq!(
+            lines[0],
+            "chromosome\tstart\tstrand\thg38_chr\thg38_pos\thg38_flipped\tmap_status"
+        );
+        assert_eq!(lines[1], "S#1#CM1\t2\t+\tchr2\t102\t0\tmapped"); // 2 in [0,5) -> 102
+        assert_eq!(lines[2], "S#1#CM1\t9\t-\tNA\tNA\tNA\tunmapped"); // 9 outside chain
         assert_eq!((stats.mapped, stats.unmapped), (1, 1));
     }
 }

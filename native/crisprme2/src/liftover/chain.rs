@@ -34,7 +34,10 @@ impl Strand {
         match tok {
             "+" => Ok(Strand::Forward),
             "-" => Ok(Strand::Reverse),
-            other => Err(LiftoverError::malformed_chain(line, format!("invalid strand {other:?}"))),
+            other => Err(LiftoverError::malformed_chain(
+                line,
+                format!("invalid strand {other:?}"),
+            )),
         }
     }
 }
@@ -143,8 +146,9 @@ impl ChainFile {
 
     /// Open and parse a chain file from a path (plain text).
     pub fn from_path(path: impl AsRef<std::path::Path>) -> Result<Self, LiftoverError> {
-        let file = std::fs::File::open(&path)
-            .map_err(|e| LiftoverError::io(format!("opening chain file {}", path.as_ref().display()), e))?;
+        let file = std::fs::File::open(&path).map_err(|e| {
+            LiftoverError::io(format!("opening chain file {}", path.as_ref().display()), e)
+        })?;
         Self::parse(std::io::BufReader::new(file))
     }
 
@@ -172,7 +176,6 @@ impl ChainFile {
         self.chains.is_empty()
     }
 }
-
 
 struct Header {
     id: u64,
@@ -212,7 +215,11 @@ fn parse_header(line: &str, ln: usize) -> Result<Header, LiftoverError> {
     let q_strand = Strand::parse(f[9], ln)?;
     let q_start_file = parse_u64(f[10], ln, "qStart")?;
     let q_end_file = parse_u64(f[11], ln, "qEnd")?;
-    let id = if f.len() == 13 { parse_u64(f[12], ln, "id")? } else { 0 };
+    let id = if f.len() == 13 {
+        parse_u64(f[12], ln, "id")?
+    } else {
+        0
+    };
 
     if t_end < t_start || q_end_file < q_start_file {
         return Err(LiftoverError::malformed_chain(ln, "end < start in header"));
@@ -221,8 +228,17 @@ fn parse_header(line: &str, ln: usize) -> Result<Header, LiftoverError> {
         return Err(LiftoverError::malformed_chain(ln, "end > size in header"));
     }
     Ok(Header {
-        id, score, t_name, t_size, t_start, t_end, q_name, q_size, q_strand,
-        q_start_file, q_end_file,
+        id,
+        score,
+        t_name,
+        t_size,
+        t_start,
+        t_end,
+        q_name,
+        q_size,
+        q_strand,
+        q_start_file,
+        q_end_file,
     })
 }
 
@@ -247,7 +263,10 @@ fn finalize(
     ln: usize,
 ) -> Result<Chain, LiftoverError> {
     if data.is_empty() {
-        return Err(LiftoverError::malformed_chain(ln, "chain has no aligned blocks"));
+        return Err(LiftoverError::malformed_chain(
+            ln,
+            "chain has no aligned blocks",
+        ));
     }
     let last = data.len() - 1;
     let mut blocks = Vec::with_capacity(data.len());
@@ -269,7 +288,12 @@ fn finalize(
             // minus-strand file interval [q, q+size) -> plus-strand
             Strand::Reverse => (h.q_size - (q + size), h.q_size - q),
         };
-        blocks.push(Block { t_start: t, t_end: t + size, q_start, q_end });
+        blocks.push(Block {
+            t_start: t,
+            t_end: t + size,
+            q_start,
+            q_end,
+        });
 
         let (dt, dq) = gap.unwrap_or((0, 0));
         t += size + dt;
@@ -297,9 +321,18 @@ fn finalize(
     debug_assert!(blocks.windows(2).all(|w| w[0].t_start < w[1].t_start));
 
     Ok(Chain {
-        id: h.id, score: h.score, t_name: h.t_name, t_size: h.t_size,
-        t_start: h.t_start, t_end: h.t_end, q_name: h.q_name, q_size: h.q_size,
-        q_strand: h.q_strand, q_start, q_end, blocks,
+        id: h.id,
+        score: h.score,
+        t_name: h.t_name,
+        t_size: h.t_size,
+        t_start: h.t_start,
+        t_end: h.t_end,
+        q_name: h.q_name,
+        q_size: h.q_size,
+        q_strand: h.q_strand,
+        q_start,
+        q_end,
+        blocks,
     })
 }
 
@@ -312,7 +345,6 @@ fn parse_i64(tok: &str, ln: usize, field: &str) -> Result<i64, LiftoverError> {
     tok.parse::<i64>()
         .map_err(|_| LiftoverError::malformed_chain(ln, format!("invalid {field} value {tok:?}")))
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -332,8 +364,18 @@ mod tests {
         assert_eq!(
             c.blocks,
             vec![
-                Block { t_start: 0, t_end: 5, q_start: 0, q_end: 5 },
-                Block { t_start: 7, t_end: 11, q_start: 8, q_end: 12 },
+                Block {
+                    t_start: 0,
+                    t_end: 5,
+                    q_start: 0,
+                    q_end: 5
+                },
+                Block {
+                    t_start: 7,
+                    t_end: 11,
+                    q_start: 8,
+                    q_end: 12
+                },
             ]
         );
         assert_eq!((c.t_end, c.q_end), (11, 12));
@@ -348,8 +390,18 @@ mod tests {
         assert_eq!(
             c.blocks,
             vec![
-                Block { t_start: 0, t_end: 5, q_start: 25, q_end: 30 },
-                Block { t_start: 7, t_end: 11, q_start: 18, q_end: 22 },
+                Block {
+                    t_start: 0,
+                    t_end: 5,
+                    q_start: 25,
+                    q_end: 30
+                },
+                Block {
+                    t_start: 7,
+                    t_end: 11,
+                    q_start: 18,
+                    q_end: 22
+                },
             ]
         );
         assert_eq!((c.q_start, c.q_end), (18, 30));
@@ -380,7 +432,10 @@ chain 22419049526 CM101396.1 244346724 + 0 5 chr2 242193529 + 0 5 1
 
     #[test]
     fn data_outside_chain_is_error() {
-        assert!(matches!(parse_str("5 2 3\n").unwrap_err(), LiftoverError::Malformed { .. }));
+        assert!(matches!(
+            parse_str("5 2 3\n").unwrap_err(),
+            LiftoverError::Malformed { .. }
+        ));
     }
 
     #[test]
