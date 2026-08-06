@@ -61,6 +61,8 @@ _TMP_DIR_PREFIX: str = ".crisprme2_tmp_"
 # consumed by liftover/merge, removed at the end of the assembly run (not here)
 _ASSEMBLIES_DIR = ".assemblies"
 
+_ASSEMBLIES_REF_LIFT = ".reference_lifted.tsv"
+
 
 def _compute_report_name(guide: Guide, pam: PAM, outdir: str) -> str:
     return os.path.join(outdir, f"{guide.sequence}_{pam.pam}.tsv")
@@ -634,11 +636,14 @@ def _finalize_assembly_search(
     args: Crisprme2AssemblySearchInputArgs,
     loggers: CrisprmeLoggers,
 ) -> None:
-    # ---- Phase C: lift each haplotype report to hg38 (additive) ----
+    # ---- lift each haplotype report to reference coordinate system
     lifted: List[Tuple[ScanRecord, str]] = []
     for rec in manifest.records:
-        out_path = rec.report[:-4] + ".hg38.tsv" if rec.report.endswith(".tsv") \
-            else rec.report + ".hg38.tsv"
+        out_path = (
+            rec.report[:-4] + _ASSEMBLIES_REF_LIFT
+            if rec.report.endswith(".tsv")
+            else rec.report + _ASSEMBLIES_REF_LIFT
+        )
         mapped, ambiguous, unmapped = lift_offtargets(
             rec.report, rec.chain, out_path, args.ambiguity_tolerance, loggers
         )
