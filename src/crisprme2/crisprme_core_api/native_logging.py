@@ -115,9 +115,9 @@ def init_native_logging(loggers: CrisprmeLoggers, max_level: str = "info") -> No
         Most verbose native level forwarded to Python. One of
         ``error|warn|info|debug|trace``. Events below this are dropped in Rust
         at the ``tracing`` callsite, before the message is formatted and before
-        the GIL is acquired. Defaults to ``"info"``: native ``debug!`` events 
-        are emitted from per-frame pipeline closures on several worker threads, 
-        and forwarding them costs a GIL acquisition and a rotating-file write 
+        the GIL is acquired. Defaults to ``"info"``: native ``debug!`` events
+        are emitted from per-frame pipeline closures on several worker threads,
+        and forwarding them costs a GIL acquisition and a rotating-file write
         *each*.
 
     Raises
