@@ -132,15 +132,6 @@ def _chunk_sequence(
     return sequence.chunk(CHUNKSIZE, overlap), len(sequence)
 
 
-def _compute_chunk_seq_stran_pairs(
-    chunk_seq: str, upstream: bool, loggers: CrisprmeLoggers
-) -> List[Tuple[str, int]]:
-    chunk_seq_rc = reverse_complement(chunk_seq, loggers)
-    if upstream:  # force pam downstream the target sequence
-        return [(chunk_seq_rc, 1), (chunk_seq, 0)]
-    return [(chunk_seq, 1), (chunk_seq_rc, 0)]
-
-
 def _submit_and_log(
     pipeline: Pipeline, batcher: TargetBatcher, label: str, loggers: CrisprmeLoggers
 ) -> None:
@@ -171,6 +162,11 @@ def _process_contig(
 ) -> None:
     with fasta as fa:
         chunk_seqs, seqlen = _chunk_sequence(fa, contig, overlap, loggers)
+        # Strand labels, identical for every chunk. An upstream PAM is handled
+        # by scanning the reverse complement and calling *that* strand 1, which
+        # forces the PAM downstream of the target
+        strand_fwd: int = 0 if upstream else 1
+        strand_rc: int = 1 if upstream else 0
         for i, chunk_seq in enumerate(chunk_seqs):
             # absolute genomic start of the full chunk (including left overlap for i > 0)
             core_start: int = i * CHUNKSIZE
@@ -184,17 +180,15 @@ def _process_contig(
                     f"shorter than window size ({size}), skipping"
                 )
                 continue
-            # assign chunk sequence-strand pairs based on PAM position
-            for seq, strand in _compute_chunk_seq_stran_pairs(
-                chunk_seq, upstream, loggers
-            ):
-                result = batcher.feed_chunk(
-                    contig_id, chunk_start, seq, strand, core_len
+            # Both orientations from one encode; the reverse complement is
+            # built Rust-side from the encoded forward bitmask
+            result = batcher.feed_chunk_both(
+                contig_id, chunk_start, chunk_seq, strand_fwd, strand_rc, core_len
+            )
+            if result.flushed:
+                _submit_and_log(
+                    pipeline, batcher, f"contig={contig!r} chunk={i}", loggers
                 )
-                if result.flushed:
-                    _submit_and_log(
-                        pipeline, batcher, f"contig={contig!r} chunk={i}", loggers
-                    )
 
 
 def _partition_report_names(prefix: str, outdir: str) -> Tuple[str, str]:

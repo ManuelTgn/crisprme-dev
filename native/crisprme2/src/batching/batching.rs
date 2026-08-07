@@ -42,6 +42,21 @@ type Occ = u64;
 /// drops.
 type OccList = SmallVec<[Occ; 2]>;
 
+/// Result of scanning one physical orientation of a chunk.
+///
+/// The two variants exist because they map to different `FeedStatus.flushed`
+/// values in the current public API: a chunk too short to hold a window reports
+/// `false` unconditionally, whereas a chunk that was actually scanned reports
+/// `should_flush()`. Collapsing them would be a silent behaviour change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FeedOutcome {
+    /// `chunk_len < size` — no window could be extracted, nothing was touched.
+    TooShort,
+    /// The accept window was established and any hits were recorded. Also
+    /// covers the empty-accept-window case, which today reports `should_flush()`.
+    Scanned,
+}
+
 #[inline(always)]
 fn pack_occ(contig_id: u16, pam_id: u16, pos: u32, strand_bit: u8) -> Occ {
     ((contig_id as u64) << 49)
@@ -108,8 +123,11 @@ pub struct TargetBatcher {
 
     /// Reusable IUPAC-encoding buffer for `feed_chunk`. Held here so the
     /// per-chunk encode does not allocate and free a chunk-sized `Vec` on
-    /// every call (twice per chunk, once per strand)
+    /// every call (twice per chunk, once per strand).
     scratch: Vec<u8>,
+    /// Reverse-complement bitmask buffer, sibling to `scratch`. Held across
+    /// chunks so the RC pass allocates only on the first chunk.
+    scratch_rc: Vec<u8>,
 }
 
 #[pymethods]
@@ -159,144 +177,110 @@ impl TargetBatcher {
             map: AHashMap::with_capacity(max_unique),
             hits_in_batch: 0,
             scratch: Vec::new(),
+            scratch_rc: Vec::new(),
         })
     }
 
     pub fn feed_chunk(
         &mut self,
+        py: Python<'_>,
         contig_id: u16,
         chunk_start: u32,
         strand: u8,
         chunk_seq: &str,
         valid_len: usize,
     ) -> PyResult<FeedStatus> {
-        iupac::sequence_encoder_into(chunk_seq, &mut self.scratch);
-        let seq_bitmask: &[u8] = &self.scratch;
+        // `feed_bitmask` takes `&mut self`, so the scratch buffer is moved out
+        // for the duration of the call and moved back afterwards — on the error
+        // path too — to keep its allocation alive across chunks.
+        let mut buf = std::mem::take(&mut self.scratch);
+        iupac::sequence_encoder_into(chunk_seq, &mut buf);
+        let outcome =
+            py.detach(|| self.feed_bitmask(&buf, contig_id, chunk_start, strand, valid_len));
+        self.scratch = buf;
 
-        let pos_local = scanner::scan_targets_bitmask(
-            &seq_bitmask,
-            &self.pam,
-            self.size,
-            self.upstream,
-            self.threads,
-        )
-        .map_err(|e| PyErr::new::<PyValueError, _>(e))?;
-
-        if cfg!(debug_assertions) {
-            eprintln!(
-                "[DEBUG] contig_id={} chunk_start={} size={} raw_hits={}",
-                contig_id,
-                chunk_start,
-                self.size,
-                pos_local.len()
-            );
-            for i in 0..pos_local.len().min(20) {
-                eprintln!(
-                    "  -> local_pos={} strand={}",
-                    pos_local[i],
-                    if strand == 1 { '+' } else { '-' }
-                );
-            }
-        }
-
-        let chunk_len = seq_bitmask.len();
-        if self.size == 0 || chunk_len < self.size {
-            return Ok(FeedStatus {
-                flushed: false,
-                stats: BatcherStats {
-                    hits_in_batch: self.hits_in_batch,
-                    unique_windows: self.map.len(),
-                },
-            });
-        }
-
-        let max_start_excl = chunk_len - self.size + 1;
-        let core_len = valid_len;
-
-        let (accept_lo, mut accept_hi) = if chunk_start == 0 {
-            (0usize, core_len)
-        } else {
-            let ov = self.overlap_left;
-            let recovery = self.size.saturating_sub(1);
-            let lo = ov.saturating_sub(recovery);
-            let hi = ov + core_len;
-            (lo, hi)
+        let flushed = match outcome? {
+            FeedOutcome::TooShort => false,
+            FeedOutcome::Scanned => self.should_flush(),
         };
-
-        if accept_hi > max_start_excl {
-            accept_hi = max_start_excl;
-        }
-
-        if accept_hi <= accept_lo {
-            let flushed = self.should_flush();
-            return Ok(FeedStatus {
-                flushed,
-                stats: BatcherStats {
-                    hits_in_batch: self.hits_in_batch,
-                    unique_windows: self.map.len(),
-                },
-            });
-        }
-
-        // Per-chunk, not per-hit: which physical orientation did the scanner see?
-        let scanned_on_rc = Strand::from_bit(strand).scanned_on_revcomp(self.upstream);
-        let plen = self.pam.bytes.len();
-
-        for i in 0..pos_local.len() {
-            let p = pos_local[i];
-            if p < accept_lo || p >= accept_hi {
-                continue;
-            }
-
-            let start = p;
-            let end = start + (self.size - plen) + 1;
-
-            // Left-most FORWARD coordinate of this window.
-            //
-            // `chunk_start` is a forward coordinate; `p` indexes the *scanned*
-            // sequence. On a forward chunk the two frames agree and they simply
-            // add. On an RC chunk the scanned frame runs against the forward
-            // strand, so index `p` sits `chunk_len - p - size` bases from the
-            // chunk's forward start — the old `chunk_start + p` mixed the two
-            // frames.
-            //
-            //   forward chunk: chunk_start + p
-            //   RC chunk:      chunk_start + chunk_len - p - size
-            let window_fwd_left = if scanned_on_rc {
-                // `end <= chunk_len` holds because `p < max_start_excl`;
-                // checked anyway so a future change to the accept-window can't
-                // silently wrap
-                let back = chunk_len.checked_sub(end).ok_or_else(|| {
-                    PyErr::new::<PyValueError, _>(format!(
-                        "window [{start},{end}) escapes chunk (len={chunk_len})"
-                    ))
-                })?;
-                chunk_start as usize + back - plen + 1
-            } else {
-                chunk_start as usize + start
-            };
-
-            if window_fwd_left > u32::MAX as usize {
-                return Err(PyErr::new::<PyValueError, _>("Position overflow"));
-            }
-
-            // Read candidate target sequence
-            let window = &seq_bitmask[start..end];
-            let key: WindowKey = pack_window(window);
-
-            // Read candidate target PAM sequence
-            let pstart = end - 1;
-            let wpam = &seq_bitmask[pstart..pstart + plen];
-            let pam_id = self.pam.pam_index(wpam);
-
-            let occ = pack_occ(contig_id, pam_id as u16, window_fwd_left as u32, strand);
-
-            self.map.entry(key).or_default().push(occ);
-            self.hits_in_batch += 1;
-        }
-
         Ok(FeedStatus {
-            flushed: self.should_flush(),
+            flushed,
+            stats: BatcherStats {
+                hits_in_batch: self.hits_in_batch,
+                unique_windows: self.map.len(),
+            },
+        })
+    }
+
+    /// Feed both physical orientations of one chunk from a single encode.
+    ///
+    /// `chunk_seq` is the forward chunk; the reverse-complement bitmask is
+    /// derived from the encoded forward bitmask rather than from a second
+    /// ASCII string, so the caller no longer builds one and the chunk is
+    /// encoded once instead of twice.
+    ///
+    /// `strand_fwd` and `strand_rc` are the strand bits stamped on each
+    /// orientation's occurrences. They are supplied by the caller rather than
+    /// derived here because an upstream PAM swaps them — the RC pass is the
+    /// one labelled strand 1, which forces the PAM downstream of the target.
+    ///
+    /// `chunk_start` is a forward contig coordinate and applies unchanged to
+    /// both passes; `feed_bitmask` converts frames per hit.
+    ///
+    /// Unlike two separate `feed_chunk` calls, the flush signal is evaluated
+    /// once, after both orientations. Batch boundaries therefore differ from
+    /// the two-call form; the set of emitted rows does not.
+    pub fn feed_chunk_both(
+        &mut self,
+        py: Python<'_>,
+        contig_id: u16,
+        chunk_start: u32,
+        strand_fwd: u8,
+        strand_rc: u8,
+        chunk_seq: &str,
+        valid_len: usize,
+    ) -> PyResult<FeedStatus> {
+        // `feed_bitmask` takes `&mut self`, so both buffers are moved out for
+        // the duration and moved back afterwards — on the error path too — to
+        // keep their allocations alive across chunks.
+        let mut fwd = std::mem::take(&mut self.scratch);
+        let mut rc = std::mem::take(&mut self.scratch_rc);
+
+        // `chunk_seq` borrows Python-owned memory, so the encode must stay
+        // inside the GIL — it is the only step that touches it. Everything
+        // after this point is pure Rust over owned buffers.
+        iupac::sequence_encoder_into(chunk_seq, &mut fwd);
+
+        // Release the GIL for the RC build, both rayon scans, and the batching
+        // loop. None of it touches the interpreter, and it is the bulk of the
+        // call.
+        let (res_fwd, res_rc) = py.detach(|| {
+            iupac::revcomp_bitmask_into(&fwd, &mut rc);
+            let a = self.feed_bitmask(&fwd, contig_id, chunk_start, strand_fwd, valid_len);
+            let b = if a.is_ok() {
+                self.feed_bitmask(&rc, contig_id, chunk_start, strand_rc, valid_len)
+            } else {
+                Ok(FeedOutcome::TooShort) // discarded; the forward error is returned
+            };
+            (a, b)
+        });
+
+        self.scratch = fwd;
+        self.scratch_rc = rc;
+
+        let outcome_fwd = res_fwd?;
+        let outcome_rc = res_rc?;
+
+        // Matches the two-call form: a chunk too short for a window reported
+        // `false` unconditionally, anything else reported `should_flush()`.
+        let flushed = if outcome_fwd == FeedOutcome::TooShort && outcome_rc == FeedOutcome::TooShort
+        {
+            false
+        } else {
+            self.should_flush()
+        };
+        Ok(FeedStatus {
+            flushed,
             stats: BatcherStats {
                 hits_in_batch: self.hits_in_batch,
                 unique_windows: self.map.len(),
@@ -415,6 +399,136 @@ impl TargetBatcher {
     }
     pub fn get_guide(&self) -> Guide {
         self.guide.clone()
+    }
+
+    /// Scan one already-encoded orientation of a chunk and record its hits.
+    ///
+    /// `bitmask` is the IUPAC-encoded chunk in the orientation to scan, and
+    /// `strand` is the strand bit stamped onto every occurrence it produces.
+    /// `chunk_start` is always a *forward* contig coordinate regardless of
+    /// which orientation `bitmask` holds; the frame conversion happens in
+    /// `window_fwd_left` below.
+    ///
+    /// Split out of `feed_chunk` so that a chunk encoded once can be scanned in
+    /// both orientations without re-crossing the FFI boundary.
+    fn feed_bitmask(
+        &mut self,
+        bitmask: &[u8],
+        contig_id: u16,
+        chunk_start: u32,
+        strand: u8,
+        valid_len: usize,
+    ) -> PyResult<FeedOutcome> {
+        let pos_local = scanner::scan_targets_bitmask(
+            bitmask,
+            &self.pam,
+            self.size,
+            self.upstream,
+            self.threads,
+        )
+        .map_err(|e| PyErr::new::<PyValueError, _>(e))?;
+
+        if cfg!(debug_assertions) {
+            eprintln!(
+                "[DEBUG] contig_id={} chunk_start={} size={} raw_hits={}",
+                contig_id,
+                chunk_start,
+                self.size,
+                pos_local.len()
+            );
+            for i in 0..pos_local.len().min(20) {
+                eprintln!(
+                    "  -> local_pos={} strand={}",
+                    pos_local[i],
+                    if strand == 1 { '+' } else { '-' }
+                );
+            }
+        }
+
+        let chunk_len = bitmask.len();
+        if self.size == 0 || chunk_len < self.size {
+            return Ok(FeedOutcome::TooShort);
+        }
+
+        let max_start_excl = chunk_len - self.size + 1;
+        let core_len = valid_len;
+
+        let (accept_lo, mut accept_hi) = if chunk_start == 0 {
+            (0usize, core_len)
+        } else {
+            let ov = self.overlap_left;
+            let recovery = self.size.saturating_sub(1);
+            let lo = ov.saturating_sub(recovery);
+            let hi = ov + core_len;
+            (lo, hi)
+        };
+
+        if accept_hi > max_start_excl {
+            accept_hi = max_start_excl;
+        }
+
+        if accept_hi <= accept_lo {
+            return Ok(FeedOutcome::Scanned);
+        }
+
+        // Per-chunk, not per-hit: which physical orientation did the scanner see?
+        let scanned_on_rc = Strand::from_bit(strand).scanned_on_revcomp(self.upstream);
+        let plen = self.pam.bytes.len();
+
+        for i in 0..pos_local.len() {
+            let p = pos_local[i];
+            if p < accept_lo || p >= accept_hi {
+                continue;
+            }
+
+            let start = p;
+            let end = start + (self.size - plen) + 1;
+
+            // Left-most FORWARD coordinate of this window.
+            //
+            // `chunk_start` is a forward coordinate; `p` indexes the *scanned*
+            // sequence. On a forward chunk the two frames agree and they simply
+            // add. On an RC chunk the scanned frame runs against the forward
+            // strand, so index `p` sits `chunk_len - p - size` bases from the
+            // chunk's forward start — the old `chunk_start + p` mixed the two
+            // frames.
+            //
+            //   forward chunk: chunk_start + p
+            //   RC chunk:      chunk_start + chunk_len - p - size
+            let window_fwd_left = if scanned_on_rc {
+                // `end <= chunk_len` holds because `p < max_start_excl`;
+                // checked anyway so a future change to the accept-window can't
+                // silently wrap
+                let back = chunk_len.checked_sub(end).ok_or_else(|| {
+                    PyErr::new::<PyValueError, _>(format!(
+                        "window [{start},{end}) escapes chunk (len={chunk_len})"
+                    ))
+                })?;
+                chunk_start as usize + back - plen + 1
+            } else {
+                chunk_start as usize + start
+            };
+
+            if window_fwd_left > u32::MAX as usize {
+                return Err(PyErr::new::<PyValueError, _>("Position overflow"));
+            }
+
+            // Read candidate target sequence
+            let window = &bitmask[start..end];
+            let key: WindowKey = pack_window(window);
+
+            // Read candidate target PAM sequence
+            let pstart = end - 1;
+            let wpam = &bitmask[pstart..pstart + plen];
+            let pam_id = self.pam.pam_index(wpam);
+
+            let occ = pack_occ(contig_id, pam_id as u16, window_fwd_left as u32, strand);
+
+            self.map.entry(key).or_default().push(occ);
+            self.hits_in_batch += 1;
+        }
+
+        Ok(FeedOutcome::Scanned)
     }
 }
 
