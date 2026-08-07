@@ -10,6 +10,7 @@ use crate::memory::batch::AlignmentRingBatch;
 use crate::model::occurence::Strand;
 use crate::sequence::iupac::Iupac;
 use crate::sequence::{iupac, scanner};
+use smallvec::SmallVec;
 
 /// Key: the window's IUPAC bitmask bytes, right-padded with zeros to
 /// `WINDOW_MAX_BASES`
@@ -30,6 +31,16 @@ fn pack_window(window: &[u8]) -> WindowKey {
 /// Layout: [ contig_id:31.. ] [ pos:32 bits ] [ strand:1 bit ]
 /// occ = (contig_id << 33) | (pos << 1) | strand
 type Occ = u64;
+
+/// Occurrences of one unique window.
+///
+/// `SmallVec<[Occ; 2]>` occupies the same 24 bytes as `Vec<Occ>` — the inline
+/// `[u64; 2]` fits in the space `Vec` uses for its pointer and capacity — so
+/// this costs nothing in map-entry size. In a genome-wide 25-mer scan the
+/// overwhelming majority of windows occur once or twice, and those now never
+/// touch the heap: no `grow_one` on insert, and no `free` when `WindowBatch`
+/// drops.
+type OccList = SmallVec<[Occ; 2]>;
 
 #[inline(always)]
 fn pack_occ(contig_id: u16, pam_id: u16, pos: u32, strand_bit: u8) -> Occ {
@@ -92,8 +103,13 @@ pub struct TargetBatcher {
     guide: guide::Guide,
 
     // state
-    map: AHashMap<WindowKey, Vec<Occ>>,
+    map: AHashMap<WindowKey, OccList>,
     hits_in_batch: usize,
+
+    /// Reusable IUPAC-encoding buffer for `feed_chunk`. Held here so the
+    /// per-chunk encode does not allocate and free a chunk-sized `Vec` on
+    /// every call (twice per chunk, once per strand)
+    scratch: Vec<u8>,
 }
 
 #[pymethods]
@@ -142,6 +158,7 @@ impl TargetBatcher {
             guide: guide,
             map: AHashMap::with_capacity(max_unique),
             hits_in_batch: 0,
+            scratch: Vec::new(),
         })
     }
 
@@ -153,7 +170,8 @@ impl TargetBatcher {
         chunk_seq: &str,
         valid_len: usize,
     ) -> PyResult<FeedStatus> {
-        let seq_bitmask: Vec<u8> = iupac::sequence_encoder(chunk_seq);
+        iupac::sequence_encoder_into(chunk_seq, &mut self.scratch);
+        let seq_bitmask: &[u8] = &self.scratch;
 
         let pos_local = scanner::scan_targets_bitmask(
             &seq_bitmask,
@@ -408,7 +426,7 @@ pub struct WindowBatch {
     /// `TargetBatcher::get_sequence_len`
     pub windows: Vec<WindowKey>,
     /// Occurrences for each window (parallel to `windows`)
-    pub occs: Vec<Vec<Occ>>,
+    pub occs: Vec<OccList>,
     /// Total occurrences across all windows
     pub total_hits: usize,
 }

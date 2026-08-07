@@ -286,3 +286,19 @@ pub fn sequence_encoder_strict(sequence: &str) -> Option<Vec<u8>> {
     }
     Some(out)
 }
+
+/// Encode `sequence` into `out`, reusing its existing allocation.
+///
+/// Identical output to [`sequence_encoder`]; the difference is that `out` is
+/// cleared rather than dropped, so a caller holding a long-lived scratch
+/// buffer pays no allocation after the first chunk.
+#[inline]
+pub fn sequence_encoder_into(sequence: &str, out: &mut Vec<u8>) {
+    out.clear();  // retains capacity
+    out.extend(
+        sequence
+            .as_bytes()
+            .iter()
+            .map(|&b| Iupac::from_ascii_lossy(b).as_u8()),
+    );
+}
