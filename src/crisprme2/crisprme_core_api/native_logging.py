@@ -18,6 +18,10 @@ tracing level  Python destination                     file(s)
 ``DEBUG``      ``verboselog``                         ``verbose.log``
 =============  =====================================  =========================
 
+Levels more verbose than ``max_level`` (see :func:`init_native_logging`) are
+dropped in Rust and never reach these loggers. Python-side logging calls are
+unaffected.
+
 The bridge is a *process-global* subscriber: it must be installed **once**,
 early in the run, before any native subsystem (``TargetBatcher``,
 ``Pipeline``, ...) is constructed — otherwise the events emitted during their
@@ -93,7 +97,7 @@ def _require_native(loggers: CrisprmeLoggers) -> None:
 # ==============================================================================
 
 
-def init_native_logging(loggers: CrisprmeLoggers) -> None:
+def init_native_logging(loggers: CrisprmeLoggers, max_level: str = "info") -> None:
     """
     Install the Rust -> Python logging bridge.
 
@@ -107,6 +111,14 @@ def init_native_logging(loggers: CrisprmeLoggers) -> None:
     loggers : CrisprmeLoggers
         The logger bundle whose ``basiclog`` / ``verboselog`` / ``errorlog``
         receive the forwarded Rust events.
+    max_level : str
+        Most verbose native level forwarded to Python. One of
+        ``error|warn|info|debug|trace``. Events below this are dropped in Rust
+        at the ``tracing`` callsite, before the message is formatted and before
+        the GIL is acquired. Defaults to ``"info"``: native ``debug!`` events
+        are emitted from per-frame pipeline closures on several worker threads,
+        and forwarding them costs a GIL acquisition and a rotating-file write
+        *each*.
 
     Raises
     ------
@@ -136,7 +148,7 @@ def init_native_logging(loggers: CrisprmeLoggers) -> None:
         return
     loggers.verboselog.debug("Installing native (Rust) -> Python logging bridge")
     try:
-        installed = _rust_init_logging(loggers)  # type: ignore[misc]
+        installed = _rust_init_logging(loggers, max_level)  # type: ignore[misc]
         if not installed:
             loggers.basiclog.info(
                 "Native logging bridge NOT installed - a tracing subscriber was "

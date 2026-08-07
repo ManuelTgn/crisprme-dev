@@ -59,7 +59,12 @@ pub struct Scores {
 
 impl Default for Scores {
     fn default() -> Self {
-        Self { cfd: f32::NAN, crista: f32::NAN, elevation: f32::NAN, aggregate: f32::NAN }
+        Self {
+            cfd: f32::NAN,
+            crista: f32::NAN,
+            elevation: f32::NAN,
+            aggregate: f32::NAN,
+        }
     }
 }
 
@@ -174,8 +179,14 @@ mod tests {
         MergedRow {
             guide_aligned: "GUIDE".into(),
             target_aligned: target.into(),
-            mm, bdna, brna,
-            native: NativeLoc { contig: "S#1#CM1".into(), start: 100, strand: Strand::Forward },
+            mm,
+            bdna,
+            brna,
+            native: NativeLoc {
+                contig: "S#1#CM1".into(),
+                start: 100,
+                strand: Strand::Forward,
+            },
             reference,
             scores: Scores::default(),
             annotation: 0,
@@ -193,11 +204,24 @@ mod tests {
 
     #[test]
     fn mapped_key_uses_reference_coords() {
-        let refloc = RefLoc { contig: "chr2".into(), start: 500, strand: Strand::Reverse, status: MapStatus::Mapped };
+        let refloc = RefLoc {
+            contig: "chr2".into(),
+            start: 500,
+            strand: Strand::Reverse,
+            status: MapStatus::Mapped,
+        };
         let r = row("ACGT", 0, 0, 0, Some(refloc));
         match r.cluster_key() {
-            ClusterKey::Mapped { contig, start, allele, .. } => {
-                assert_eq!((contig.as_str(), start, allele.as_ref()), ("chr2", 500, "ACGT"));
+            ClusterKey::Mapped {
+                contig,
+                start,
+                allele,
+                ..
+            } => {
+                assert_eq!(
+                    (contig.as_str(), start, allele.as_ref()),
+                    ("chr2", 500, "ACGT")
+                );
             }
             _ => panic!("mapped row must produce a Mapped key"),
         }
@@ -205,14 +229,34 @@ mod tests {
 
     #[test]
     fn unmapped_sorts_after_mapped() {
-        let mapped = ClusterKey::Mapped { contig: "chr2".into(), strand: 1, start: 0, allele: "A".into() };
-        let unmapped = ClusterKey::Unmapped { contig: "S#1#CM1".into(), strand: 1, start: 0, allele: "A".into() };
+        let mapped = ClusterKey::Mapped {
+            contig: "chr2".into(),
+            strand: 1,
+            start: 0,
+            allele: "A".into(),
+        };
+        let unmapped = ClusterKey::Unmapped {
+            contig: "S#1#CM1".into(),
+            strand: 1,
+            start: 0,
+            allele: "A".into(),
+        };
         assert!(mapped < unmapped); // Mapped variant orders first
     }
 
     #[test]
     fn same_locus_different_allele_keys_differ() {
-        let rl = |s: &str| Some(RefLoc { contig: "chr2".into(), start: 500, strand: Strand::Forward, status: MapStatus::Mapped });
-        assert_ne!(row("ACGT", 0, 0, 0, rl("x")).cluster_key(), row("ACGA", 0, 0, 0, rl("x")).cluster_key());
+        let rl = |s: &str| {
+            Some(RefLoc {
+                contig: "chr2".into(),
+                start: 500,
+                strand: Strand::Forward,
+                status: MapStatus::Mapped,
+            })
+        };
+        assert_ne!(
+            row("ACGT", 0, 0, 0, rl("x")).cluster_key(),
+            row("ACGA", 0, 0, 0, rl("x")).cluster_key()
+        );
     }
 }

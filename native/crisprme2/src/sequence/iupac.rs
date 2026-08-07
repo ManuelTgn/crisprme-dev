@@ -35,6 +35,7 @@ const IUPAC_LOOKUP_TABLE: [u8; 256] = {
     set_iupac!(b'C', 0b0010);
     set_iupac!(b'G', 0b0100);
     set_iupac!(b'T', 0b1000);
+    set_iupac!(b'U', 0b1000); // == T
 
     set_iupac!(b'R', 0b0101); // A or G
     set_iupac!(b'Y', 0b1010); // C or T
@@ -51,6 +52,37 @@ const IUPAC_LOOKUP_TABLE: [u8; 256] = {
     // Any Base
     set_iupac!(b'N', 0b1111); // A, C, G, or T
 
+    table
+};
+
+/// Complement of a 4-bit IUPAC mask, indexed by the mask itself.
+///
+/// Complementing a *set* of bases is the union of its members' complements, so
+/// building this over all 16 masks covers every IUPAC code, not just A/C/G/T:
+/// `R = A|G = 0b0101` maps to `0b1010 = C|T = Y`, `B = 0b1110` to
+/// `0b0111 = V`, `S` and `W` to themselves, `N` to `N`. The `0b0000` invalid
+/// sentinel maps to itself. The mapping is an involution — see
+/// `complement_is_an_involution` below.
+const IUPAC_COMPLEMENT_NIBBLE: [u8; 16] = {
+    let mut table = [0u8; 16];
+    let mut m = 0usize;
+    while m < 16 {
+        let mut c = 0u8;
+        if m & 0b0001 != 0 {
+            c |= 0b1000;
+        } // A -> T
+        if m & 0b0010 != 0 {
+            c |= 0b0100;
+        } // C -> G
+        if m & 0b0100 != 0 {
+            c |= 0b0010;
+        } // G -> C
+        if m & 0b1000 != 0 {
+            c |= 0b0001;
+        } // T -> A
+        table[m] = c;
+        m += 1;
+    }
     table
 };
 
@@ -110,57 +142,11 @@ impl Iupac {
 
     #[inline(always)]
     pub fn complement(self) -> Self {
-        let mut code = 0;
-        if self.0 & 0b0001 != 0 {
-            code |= 0b1000;
-        } // A -> T
-        if self.0 & 0b0010 != 0 {
-            code |= 0b0100;
-        } // C -> G
-        if self.0 & 0b0100 != 0 {
-            code |= 0b0010;
-        } // G -> C
-        if self.0 & 0b1000 != 0 {
-            code |= 0b0001;
-        } // T -> A
-
-        if self.0 & 0b0101 != 0 {
-            code |= 0b1010;
-        } // R -> Y
-        if self.0 & 0b1010 != 0 {
-            code |= 0b0101;
-        } // Y -> R
-        if self.0 & 0b0110 != 0 {
-            code |= 0b0110;
-        } // S -> S
-        if self.0 & 0b1001 != 0 {
-            code |= 0b1001;
-        } // W -> W
-        if self.0 & 0b1100 != 0 {
-            code |= 0b0011;
-        } // K -> M
-        if self.0 & 0b0011 != 0 {
-            code |= 0b1100;
-        } // M -> K
-
-        if self.0 & 0b1110 != 0 {
-            code |= 0b0111;
-        } // B -> V
-        if self.0 & 0b1101 != 0 {
-            code |= 0b1011;
-        } // D -> H
-        if self.0 & 0b1011 != 0 {
-            code |= 0b1101;
-        } // H -> D
-        if self.0 & 0b0111 != 0 {
-            code |= 0b1110;
-        } // V -> B
-
-        if self.0 & 0b1111 != 0 {
-            code |= 0b1111;
-        } // N -> N
-
-        Self(code)
+        // The previous implementation tested overlap (`&`) rather than
+        // membership for each degenerate rule, so every rule fired for every
+        // input and the final `& 0b1111` line forced the result to `N`
+        // unconditionally. See `complement_covers_every_iupac_code`.
+        Self(IUPAC_COMPLEMENT_NIBBLE[(self.0 & 0x0F) as usize])
     }
 
     #[inline(always)]
@@ -285,4 +271,38 @@ pub fn sequence_encoder_strict(sequence: &str) -> Option<Vec<u8>> {
         out.push(Iupac::try_from_ascii(b)?.as_u8());
     }
     Some(out)
+}
+
+/// Encode `sequence` into `out`, reusing its existing allocation.
+///
+/// Identical output to [`sequence_encoder`]; the difference is that `out` is
+/// cleared rather than dropped, so a caller holding a long-lived scratch
+/// buffer pays no allocation after the first chunk.
+#[inline]
+pub fn sequence_encoder_into(sequence: &str, out: &mut Vec<u8>) {
+    out.clear(); // retains capacity
+    out.extend(
+        sequence
+            .as_bytes()
+            .iter()
+            .map(|&b| Iupac::from_ascii_lossy(b).as_u8()),
+    );
+}
+
+/// Reverse-complement an already-encoded IUPAC bitmask into `out`.
+///
+/// Equivalent to encoding the ASCII reverse complement of the same sequence:
+/// every IUPAC code, degenerate ones included, maps to its correct partner.
+///
+/// `out` is cleared rather than dropped, so a caller holding a scratch buffer
+/// pays no allocation after the first chunk.
+#[inline]
+pub fn revcomp_bitmask_into(src: &[u8], out: &mut Vec<u8>) {
+    out.clear();
+    out.reserve(src.len());
+    out.extend(
+        src.iter()
+            .rev()
+            .map(|&m| Iupac::new(m).complement().as_u8()),
+    );
 }

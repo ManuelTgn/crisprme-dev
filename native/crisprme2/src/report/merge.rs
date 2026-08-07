@@ -165,18 +165,33 @@ pub fn merge_sample(
 fn same_cluster(a: &PreRow, b: &PreRow, edge: u32, merge_bp: u32) -> bool {
     match (a.cluster_key(), b.cluster_key()) {
         (
-            ClusterKey::Mapped { contig: ca, strand: sa, allele: la, .. },
-            ClusterKey::Mapped { contig: cb, strand: sb, allele: lb, .. },
+            ClusterKey::Mapped {
+                contig: ca,
+                strand: sa,
+                allele: la,
+                ..
+            },
+            ClusterKey::Mapped {
+                contig: cb,
+                strand: sb,
+                allele: lb,
+                ..
+            },
         )
         | (
-            ClusterKey::Unmapped { contig: ca, strand: sa, allele: la, .. },
-            ClusterKey::Unmapped { contig: cb, strand: sb, allele: lb, .. },
-        ) => {
-            ca == cb
-                && sa == sb
-                && la == lb
-                && b.cluster_pos().saturating_sub(edge) <= merge_bp
-        }
+            ClusterKey::Unmapped {
+                contig: ca,
+                strand: sa,
+                allele: la,
+                ..
+            },
+            ClusterKey::Unmapped {
+                contig: cb,
+                strand: sb,
+                allele: lb,
+                ..
+            },
+        ) => ca == cb && sa == sb && la == lb && b.cluster_pos().saturating_sub(edge) <= merge_bp,
         _ => false,
     }
 }
@@ -489,12 +504,28 @@ mod tests {
             .collect();
         let open = opener(map);
         let reports = [
-            HaplotypeReport { path: "h1", sample: 0, expected_hap: 1 },
-            HaplotypeReport { path: "h2", sample: 0, expected_hap: 2 },
+            HaplotypeReport {
+                path: "h1",
+                sample: 0,
+                expected_hap: 1,
+            },
+            HaplotypeReport {
+                path: "h2",
+                sample: 0,
+                expected_hap: 2,
+            },
         ];
         let table = table();
         let mut reg = SampleSetRegistry::new();
-        let out = merge_sample(&reports, &table, &mut reg, 3, &PrimaryCriteria::default(), &open).unwrap();
+        let out = merge_sample(
+            &reports,
+            &table,
+            &mut reg,
+            3,
+            &PrimaryCriteria::default(),
+            &open,
+        )
+        .unwrap();
         assert_eq!(out.len(), 1);
         let mut s = String::new();
         reg.render(out[0].sample_set, &table, &mut s);
@@ -514,12 +545,28 @@ mod tests {
             .collect();
         let open = opener(map);
         let reports = [
-            HaplotypeReport { path: "h1", sample: 0, expected_hap: 1 },
-            HaplotypeReport { path: "h2", sample: 0, expected_hap: 2 },
+            HaplotypeReport {
+                path: "h1",
+                sample: 0,
+                expected_hap: 1,
+            },
+            HaplotypeReport {
+                path: "h2",
+                sample: 0,
+                expected_hap: 2,
+            },
         ];
         let table = table();
         let mut reg = SampleSetRegistry::new();
-        let out = merge_sample(&reports, &table, &mut reg, 3, &PrimaryCriteria::default(), &open).unwrap();
+        let out = merge_sample(
+            &reports,
+            &table,
+            &mut reg,
+            3,
+            &PrimaryCriteria::default(),
+            &open,
+        )
+        .unwrap();
         assert_eq!(out.len(), 1);
         let mut s = String::new();
         reg.render(out[0].sample_set, &table, &mut s);
@@ -536,10 +583,22 @@ mod tests {
         );
         let map = [("h1".to_string(), hap1)].into_iter().collect();
         let open = opener(map);
-        let reports = [HaplotypeReport { path: "h1", sample: 0, expected_hap: 1 }];
+        let reports = [HaplotypeReport {
+            path: "h1",
+            sample: 0,
+            expected_hap: 1,
+        }];
         let table = table();
         let mut reg = SampleSetRegistry::new();
-        let out = merge_sample(&reports, &table, &mut reg, 3, &PrimaryCriteria::default(), &open).unwrap();
+        let out = merge_sample(
+            &reports,
+            &table,
+            &mut reg,
+            3,
+            &PrimaryCriteria::default(),
+            &open,
+        )
+        .unwrap();
         assert_eq!(out.len(), 2); // two alleles at one locus -> two rows
     }
 
@@ -552,10 +611,22 @@ mod tests {
         );
         let map = [("h1".to_string(), hap1)].into_iter().collect();
         let open = opener(map);
-        let reports = [HaplotypeReport { path: "h1", sample: 0, expected_hap: 1 }];
+        let reports = [HaplotypeReport {
+            path: "h1",
+            sample: 0,
+            expected_hap: 1,
+        }];
         let table = table();
         let mut reg = SampleSetRegistry::new();
-        let out = merge_sample(&reports, &table, &mut reg, 3, &PrimaryCriteria::default(), &open).unwrap();
+        let out = merge_sample(
+            &reports,
+            &table,
+            &mut reg,
+            3,
+            &PrimaryCriteria::default(),
+            &open,
+        )
+        .unwrap();
         assert_eq!(out.len(), 2); // one mapped, one assembly-specific
         assert_eq!(out.iter().filter(|r| r.is_mapped()).count(), 1);
     }

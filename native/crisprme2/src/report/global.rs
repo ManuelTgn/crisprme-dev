@@ -35,7 +35,12 @@ fn view(r: &MergedRow) -> AlignmentRow {
         mm: r.mm,
         bdna: r.bdna,
         brna: r.brna,
-        scores: [r.scores.cfd, r.scores.crista, r.scores.elevation, r.scores.aggregate],
+        scores: [
+            r.scores.cfd,
+            r.scores.crista,
+            r.scores.elevation,
+            r.scores.aggregate,
+        ],
         target_aligned: r.target_aligned.clone(),
     }
 }
@@ -53,12 +58,32 @@ fn cluster_pos(r: &MergedRow) -> u32 {
 fn same_cluster(a: &MergedRow, b: &MergedRow, edge: u32, merge_bp: u32) -> bool {
     match (a.cluster_key(), b.cluster_key()) {
         (
-            ClusterKey::Mapped { contig: ca, strand: sa, allele: la, .. },
-            ClusterKey::Mapped { contig: cb, strand: sb, allele: lb, .. },
+            ClusterKey::Mapped {
+                contig: ca,
+                strand: sa,
+                allele: la,
+                ..
+            },
+            ClusterKey::Mapped {
+                contig: cb,
+                strand: sb,
+                allele: lb,
+                ..
+            },
         )
         | (
-            ClusterKey::Unmapped { contig: ca, strand: sa, allele: la, .. },
-            ClusterKey::Unmapped { contig: cb, strand: sb, allele: lb, .. },
+            ClusterKey::Unmapped {
+                contig: ca,
+                strand: sa,
+                allele: la,
+                ..
+            },
+            ClusterKey::Unmapped {
+                contig: cb,
+                strand: sb,
+                allele: lb,
+                ..
+            },
         ) => ca == cb && sa == sb && la == lb && b_cluster_pos_within(b, edge, merge_bp),
         _ => false,
     }
@@ -150,10 +175,15 @@ mod tests {
     }
     fn table() -> SampleTable {
         // HG1, HG2 both diploid, PanSN haps {1,2}
-        SampleTable::new(vec!["HG1".into(), "HG2".into()], vec![vec![1, 2], vec![1, 2]])
+        SampleTable::new(
+            vec!["HG1".into(), "HG2".into()],
+            vec![vec![1, 2], vec![1, 2]],
+        )
     }
     fn open(map: HashMap<String, String>) -> impl Fn(&str) -> std::io::Result<Box<dyn BufRead>> {
-        move |p: &str| Ok(Box::new(Cursor::new(map.get(p).cloned().unwrap_or_default())) as Box<dyn BufRead>)
+        move |p: &str| {
+            Ok(Box::new(Cursor::new(map.get(p).cloned().unwrap_or_default())) as Box<dyn BufRead>)
+        }
     }
 
     #[test]
@@ -164,21 +194,53 @@ mod tests {
             ("g1h2".into(), HDR.to_string()),
             ("g2h1".into(), format!("{HDR}\n{}", r("HG2#1#c", "ACGT"))),
             ("g2h2".into(), format!("{HDR}\n{}", r("HG2#2#c", "ACGT"))),
-        ].into_iter().collect();
+        ]
+        .into_iter()
+        .collect();
         let op = open(m);
         let samples = [
-            SampleReports { sample: 0, haplotypes: vec![
-                HaplotypeReport { path: "g1h1", sample: 0, expected_hap: 1 },
-                HaplotypeReport { path: "g1h2", sample: 0, expected_hap: 2 },
-            ]},
-            SampleReports { sample: 1, haplotypes: vec![
-                HaplotypeReport { path: "g2h1", sample: 1, expected_hap: 1 },
-                HaplotypeReport { path: "g2h2", sample: 1, expected_hap: 2 },
-            ]},
+            SampleReports {
+                sample: 0,
+                haplotypes: vec![
+                    HaplotypeReport {
+                        path: "g1h1",
+                        sample: 0,
+                        expected_hap: 1,
+                    },
+                    HaplotypeReport {
+                        path: "g1h2",
+                        sample: 0,
+                        expected_hap: 2,
+                    },
+                ],
+            },
+            SampleReports {
+                sample: 1,
+                haplotypes: vec![
+                    HaplotypeReport {
+                        path: "g2h1",
+                        sample: 1,
+                        expected_hap: 1,
+                    },
+                    HaplotypeReport {
+                        path: "g2h2",
+                        sample: 1,
+                        expected_hap: 2,
+                    },
+                ],
+            },
         ];
         let table = table();
         let mut reg = SampleSetRegistry::new();
-        let out = merge_global(&samples, &table, &mut reg, 3, &PrimaryCriteria::default(), &op).unwrap();
+        let out = merge_global(
+            &samples,
+            &table,
+            &mut reg,
+            3,
+            &PrimaryCriteria::default(),
+            &op,
+        )
+        .unwrap();
         assert_eq!(out.len(), 1);
         let mut s = String::new();
         reg.render(out[0].sample_set, &table, &mut s);

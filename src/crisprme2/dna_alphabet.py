@@ -146,6 +146,11 @@ IUPAC_ENCODER: Dict[str, str] = {
 }
 
 
+_RC_TABLE = bytes.maketrans(
+    "".join(RC.keys()).encode("ascii"),
+    "".join(RC.values()).encode("ascii"),
+)
+
 # ------------------------------------------------------------------------------
 # sequence utility functions
 # ------------------------------------------------------------------------------
@@ -188,7 +193,7 @@ def reverse_complement(sequence: str, loggers: CrisprmeLoggers) -> str:
         rc = reverse_complement("NGG", loggers)    # "CCN"
     """
     try:
-        return "".join([RC[nt] for nt in sequence[::-1]])
+        return sequence.encode("ascii").translate(_RC_TABLE)[::-1].decode("ascii")
     except (KeyError, Exception) as e:
         loggers.errorlog.log_raise_exception(
             f"Failed reverse complement on {sequence}: {e}",

@@ -139,24 +139,47 @@ mod tests {
     use crate::report::samples::{SamplePresence, SampleSetRegistry, SampleTable};
 
     fn table() -> SampleTable {
-        SampleTable::new(vec!["HG1".into(), "HG2".into()], vec![vec![1, 2], vec![1, 2]])
+        SampleTable::new(
+            vec!["HG1".into(), "HG2".into()],
+            vec![vec![1, 2], vec![1, 2]],
+        )
     }
 
     fn mapped_row(reg: &mut SampleSetRegistry) -> MergedRow {
         let ss = reg.intern(&[
-            SamplePresence { sample: 0, mask: 0b11 }, // HG1 hom
-            SamplePresence { sample: 1, mask: 0b01 }, // HG2 het
+            SamplePresence {
+                sample: 0,
+                mask: 0b11,
+            }, // HG1 hom
+            SamplePresence {
+                sample: 1,
+                mask: 0b01,
+            }, // HG2 het
         ]);
         MergedRow {
             guide_aligned: "GUIDE".into(),
             target_aligned: "ACGTACGT".into(),
-            mm: 1, bdna: 0, brna: 0,
-            native: NativeLoc { contig: "HG1#1#c".into(), start: 100, strand: Strand::Forward },
+            mm: 1,
+            bdna: 0,
+            brna: 0,
+            native: NativeLoc {
+                contig: "HG1#1#c".into(),
+                start: 100,
+                strand: Strand::Forward,
+            },
             reference: Some(RefLoc {
-                contig: "chr2".into(), start: 500, end: 523,
-                strand: Strand::Reverse, status: MapStatus::Mapped,
+                contig: "chr2".into(),
+                start: 500,
+                end: 523,
+                strand: Strand::Reverse,
+                status: MapStatus::Mapped,
             }),
-            scores: Scores { cfd: 0.5, crista: f32::NAN, elevation: f32::NAN, aggregate: 0.5 },
+            scores: Scores {
+                cfd: 0.5,
+                crista: f32::NAN,
+                elevation: f32::NAN,
+                aggregate: 0.5,
+            },
             annotation: 0,
             sample_set: ss,
         }
@@ -169,24 +192,27 @@ mod tests {
         let mut s = String::new();
         render_row(&row, &reg, &table(), &mut s);
         let f: Vec<&str> = s.split('\t').collect();
-        assert_eq!(f[0], "chr2");            // hg38 contig replaces chromosome
-        assert_eq!(f[1], "500");             // hg38 start replaces start
-        assert_eq!(f[2], "-");               // resolved hg38 strand
+        assert_eq!(f[0], "chr2"); // hg38 contig replaces chromosome
+        assert_eq!(f[1], "500"); // hg38 start replaces start
+        assert_eq!(f[2], "-"); // resolved hg38 strand
         assert_eq!(f[f.len() - 2], "HG1:1|1,HG2:1|0"); // samples
-        assert_eq!(f[f.len() - 1], "mapped");          // map_status last
+        assert_eq!(f[f.len() - 1], "mapped"); // map_status last
     }
 
     #[test]
     fn unmapped_row_uses_native_coords_and_flag() {
         let mut reg = SampleSetRegistry::new();
-        let ss = reg.intern(&[SamplePresence { sample: 0, mask: 0b01 }]);
+        let ss = reg.intern(&[SamplePresence {
+            sample: 0,
+            mask: 0b01,
+        }]);
         let mut row = mapped_row(&mut reg);
         row.reference = None;
         row.sample_set = ss;
         let mut s = String::new();
         render_row(&row, &reg, &table(), &mut s);
         let f: Vec<&str> = s.split('\t').collect();
-        assert_eq!(f[0], "HG1#1#c");         // native contig surfaces
+        assert_eq!(f[0], "HG1#1#c"); // native contig surfaces
         assert_eq!(f[1], "100");
         assert_eq!(f[2], "+");
         assert_eq!(f[f.len() - 1], "unmapped");

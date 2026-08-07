@@ -178,6 +178,19 @@ def _validate_overlap(size: int, overlap: int, loggers: CrisprmeLoggers) -> None
         )
 
 
+def _check_rust_status(
+    rust_status: Any, batcher_id: int, loggers: CrisprmeLoggers
+) -> FeedResult:
+    result = FeedResult.from_rust(rust_status)
+    if result.flushed:
+        loggers.verboselog.debug(
+            f"Batcher {batcher_id}: flush threshold reached - "
+            f"{result.stats.hits_in_batch} hits, "
+            f"{result.stats.unique_windows} unique windows"
+        )
+    return result
+
+
 # ==============================================================================
 # public wrapper
 # ==============================================================================
@@ -354,14 +367,50 @@ class TargetBatcher:
                 Crisprme2BatcherError,
             )
         # feed current sequence chunk to batcher to collect targets
-        result = FeedResult.from_rust(rust_status)
-        if result.flushed:
-            self._loggers.verboselog.debug(
-                f"Batcher {self.id}: flush threshold reached - "
-                f"{result.stats.hits_in_batch} hits, "
-                f"{result.stats.unique_windows} unique windows"
+        return _check_rust_status(rust_status, self.id, self._loggers)
+
+    def feed_chunk_both(
+        self,
+        contig_id: int,
+        chunk_start: int,
+        chunk_seq: str,
+        strand_fwd: int,
+        strand_rc: int,
+        valid_len: int,
+    ) -> FeedResult:
+        """
+        Feed both orientations of *chunk_seq* from a single encode.
+
+        Equivalent to two :meth:`feed_chunk` calls — forward then reverse
+        complement — except the reverse complement is derived inside Rust from
+        the encoded forward chunk, so no RC string is built in Python and the
+        chunk crosses the FFI boundary once.
+
+        Parameters
+        ----------
+        strand_fwd, strand_rc : int
+            Strand bits for the forward and reverse-complement passes. For a
+            downstream PAM these are ``1`` and ``0``; an upstream PAM swaps
+            them.
+
+        Notes
+        -----
+        The flush signal is evaluated once, after both orientations, so batch
+        boundaries differ from two separate ``feed_chunk`` calls. The set of
+        emitted rows is unaffected.
+        """
+        self._total_chunks_fed = 1
+        try:
+            rust_status = self._batcher.feed_chunk_both(
+                contig_id, chunk_start, strand_fwd, strand_rc, chunk_seq, valid_len
             )
-        return result
+        except Exception as e:
+            self._loggers.errorlog.log_raise_exception(
+                f"feed_chunk_both() failed (contig={contig_id}, start={chunk_start}): {e}",
+                os.EX_DATAERR,
+                Crisprme2BatcherError,
+            )
+        return _check_rust_status(rust_status, self.id, self._loggers)
 
     def finalize(self) -> BatchStats:
         """

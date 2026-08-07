@@ -73,41 +73,44 @@ pub fn scan_targets_bitmask(
                 let extended_chunk = &seq_bitmask[extended_start..extended_stop];
                 let chunk_len = extended_chunk.len();
 
-                // define positions and strands arrays for current chunk
-                let mut chunk_pos: Vec<usize> = Vec::new();
+                // NGG passes ~1/16 of positions; starting from zero capacity
+                // costs a realloc chain per task
+                let mut chunk_pos: Vec<usize> =
+                    Vec::with_capacity((orig_stop - orig_start) / 16 + 16);
 
                 if chunk_len >= size {
                     for i in 0..=(chunk_len - size) {
                         // global position within contig chunk
                         let global_pos = extended_start + i;
 
-                        if global_pos < orig_start || global_pos >= orig_stop {
-                            continue;
+                        if global_pos >= orig_stop {
+                            break;
                         }
 
                         // retrieve target candidate
                         let target_bitmask = unsafe { extended_chunk.get_unchecked(i..i + size) };
 
-                        if target_bitmask.iter().any(|&b| b == N_MASK) {
-                            continue; // skip if candidate contains any N
-                        }
-
-                        if pam.unconstrained {
-                            // degenerate PAM -> skip PAM matching
-                            chunk_pos.push(global_pos);
-                        } else {
-                            // perform PAM matching to filter out candidates
+                        // PAM first. For a constrained PAM this is 2-3 byte ANDs and
+                        // rejects the large majority of positions (~15/16 for NGG),
+                        // while the N scan touches all `size` bytes. Both conditions
+                        // must hold to accept, so reordering cannot change the result
+                        if !pam.unconstrained {
                             let found_match = if use_sparse {
                                 matches_pattern_sparse(target_bitmask, pam_start, &idx, &mask)
                             } else {
                                 let pam_slice = &target_bitmask[pam_start..pam_start + plen];
                                 matches_pattern(pam_slice, pat)
                             };
-
-                            if found_match {
-                                chunk_pos.push(global_pos);
+                            if !found_match {
+                                continue;
                             }
                         }
+
+                        if target_bitmask.iter().any(|&b| b == N_MASK) {
+                            continue; // skip if candidate contains any N
+                        }
+
+                        chunk_pos.push(global_pos);
                     }
                 }
 
