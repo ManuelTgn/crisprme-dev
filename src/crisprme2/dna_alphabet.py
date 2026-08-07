@@ -193,7 +193,7 @@ def reverse_complement(sequence: str, loggers: CrisprmeLoggers) -> str:
         rc = reverse_complement("NGG", loggers)    # "CCN"
     """
     try:
-       return sequence.encode("ascii").translate(_RC_TABLE)[::-1].decode("ascii")
+        return sequence.encode("ascii").translate(_RC_TABLE)[::-1].decode("ascii")
     except (KeyError, Exception) as e:
         loggers.errorlog.log_raise_exception(
             f"Failed reverse complement on {sequence}: {e}",

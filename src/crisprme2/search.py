@@ -66,9 +66,11 @@ _ASSEMBLIES_REF_LIFT = ".reference_lifted.tsv"
 
 _ASSEMBLIES_MERGED = "merged.tsv"
 
-REPORT_HEADER: str =("chromosome\tstart\tstrand\tsgRNA_aligned\ttarget_aligned\t"
-"mismatches\tdna_bulges\trna_bulges\tbulge_type\tedit_distance\t"
-"CFD_score\tCRISTA_score\tElevation_score\taggregate_score")
+REPORT_HEADER: str = (
+    "chromosome\tstart\tstrand\tsgRNA_aligned\ttarget_aligned\t"
+    "mismatches\tdna_bulges\trna_bulges\tbulge_type\tedit_distance\t"
+    "CFD_score\tCRISTA_score\tElevation_score\taggregate_score"
+)
 
 
 def _compute_report_name(guide: Guide, pam: PAM, outdir: str) -> str:
@@ -704,6 +706,7 @@ def _finalize_assembly_search(
     #     f"Assembly report for guide {manifest.guide} written: "
     #     f"{primary_path} / {alternative_path}"
     # )
+
 
 def execute_offtargets_search_assemblies(
     args: Crisprme2AssemblySearchInputArgs,

@@ -294,7 +294,7 @@ pub fn sequence_encoder_strict(sequence: &str) -> Option<Vec<u8>> {
 /// buffer pays no allocation after the first chunk.
 #[inline]
 pub fn sequence_encoder_into(sequence: &str, out: &mut Vec<u8>) {
-    out.clear();  // retains capacity
+    out.clear(); // retains capacity
     out.extend(
         sequence
             .as_bytes()

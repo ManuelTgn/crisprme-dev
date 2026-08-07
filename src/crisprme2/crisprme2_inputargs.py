@@ -151,7 +151,9 @@ class Crisprme2SearchInputArgsBase(Crisprme2InputArgs, ABC):
         self._annotation_names = (
             list(names)
             if names
-            else [f"annotation_{i}" for i, _ in enumerate(self._args.annotations, start=1)]
+            else [
+                f"annotation_{i}" for i, _ in enumerate(self._args.annotations, start=1)
+            ]
         )
 
     def _validate_cluster_dist(self) -> None:
