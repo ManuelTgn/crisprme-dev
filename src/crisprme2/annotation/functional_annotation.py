@@ -129,7 +129,16 @@ class FunctionalAnnotator(Transformer):
         Shared logger bundle for error routing.
     """
 
-    __slots__ = ("_anns", "_pam_len", "_pam_upstream", "_contigs", "_loggers", "_stack")
+    __slots__ = (
+        "_anns",
+        "_pam_len",
+        "_pam_upstream",
+        "_contigs",
+        "_loggers",
+        "_stack",
+        "_rows_seen",
+        "_fetch_groups",
+    )
 
     def __init__(
         self,
@@ -161,6 +170,10 @@ class FunctionalAnnotator(Transformer):
                 Crisprme2FunctionalAnnotationError,
             )
         self._anns = tuple(anns)
+        # Instrumentation for the interval cache: how many rows asked for an
+        # annotation vs how many distinct intervals actually reached tabix.
+        self._rows_seen = 0
+        self._fetch_groups = 0
         loggers.verboselog.info(
             f"AnnotationTransformer ready with {len(self._anns)} annotation BED(s)"
         )
@@ -168,6 +181,13 @@ class FunctionalAnnotator(Transformer):
     # -- resource lifecycle ----------------------------------------------------
 
     def close(self) -> None:
+        if self._rows_seen:
+            self._loggers.basiclog.info(
+                f"Annotation interval cache: {self._rows_seen} rows -> "
+                f"{self._fetch_groups} distinct intervals "
+                f"({100.0 * self._fetch_groups / self._rows_seen:.1f}% fetch rate, "
+                f"{self._rows_seen / max(self._fetch_groups, 1):.2f}x reuse)"
+            )
         self._stack.close()
 
     def __enter__(self) -> "FunctionalAnnotator":
@@ -209,13 +229,35 @@ class FunctionalAnnotator(Transformer):
         out = [np.zeros(n, dtype=np.uint32) for _ in self._anns]
         contigs = self._contigs
         n_contigs = len(contigs)
-        for i in range(n):
+        n_ann = len(self._anns)
+
+        # Visit rows in genomic order so rows sharing an interval land next to
+        # each other. Ordering is internal only: every result is written back to
+        # its original row index `i`, so `out` is bit-identical.
+        order = np.lexsort((stop, start, contig_id)).tolist()
+
+        # One-entry cache. `fetch_features` is a pure function of
+        # (contig, lo, hi) for a given open BED, so reuse across identical keys
+        # is exact; the sort guarantees duplicates are adjacent, so a single
+        # slot catches all of them.
+        prev_key: tuple[int, int, int] | None = None
+        prev_masks: list[int] = []
+        for i in order:
             cid = int(contig_id[i])
             if cid >= n_contigs:
                 continue  # unmapped contig -> leave this row unannotated
-            contig = contigs[cid]
             lo, hi = int(start[i]), int(stop[i])
-            for s, (bed, registry) in enumerate(self._anns):
-                out[s][i] = registry.accumulate(bed.fetch_features(contig, lo, hi))
+            self._rows_seen += 1
+            key = (cid, lo, hi)
+            if key != prev_key:
+                contig = contigs[cid]
+                prev_masks = [
+                    registry.accumulate(bed.fetch_features(contig, lo, hi))
+                    for bed, registry in self._anns
+                ]
+                prev_key = key
+                self._fetch_groups += 1
+            for s in range(n_ann):
+                out[s][i] = prev_masks[s]
         for s in range(len(self._anns)):
             slots[s][:] = out[s]  # bulk copy into the zero-copy Rust buffer
